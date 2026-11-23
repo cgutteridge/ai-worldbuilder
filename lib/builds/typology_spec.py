@@ -27,7 +27,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import land_use
-import shop_body
+import terrace_body
 from roof_material import load_catalogue, normalise_material, roof_blocks
 
 # house_build walls run six blocks, two storeys of three. It cannot say otherwise.
@@ -58,8 +58,6 @@ ROOF_SHAPES = {
     'skillion': 'shed',
 }
 SHOP_BUILDINGS = frozenset({'retail', 'supermarket', 'kiosk', 'commercial'})
-# Lidar ridge above eave that reads as a pitched body behind the shopfront, not a flat box.
-MIN_BODY_RISE_M = 1.5
 
 
 def generate(buildings, streets=()) -> dict:
@@ -127,8 +125,8 @@ def load_buildings(index, *, way_ids=None, bbox=None, lidar=None, profile_at=Non
     @param bbox: inclusive ``(x0, z0, x1, z1)``, or None
     @param lidar: optional ``cells -> metres or None`` (tests); default reads the cache
     @param profile_at: optional ``(tx, tz) -> profile or None`` (tests)
-    @param eave_ridge: optional ``cells -> (eave_m, ridge_m) or None`` (tests); sampled for shop-like
-        buildings only, default reads the lidar cache
+    @param eave_ridge: optional ``cells -> (eave_m, ridge_m) or None`` (tests); sampled for buildings
+        whose class has a body recipe only, default reads the lidar cache
     @returns: ``(building mappings, street polylines)`` for :func:`generate`
     @raises ValueError: when the request is not exactly one of way ids or a box
     """
@@ -168,7 +166,7 @@ def load_buildings(index, *, way_ids=None, bbox=None, lidar=None, profile_at=Non
             'lidar_m': sample,
             'profile': profiles[cell],
         })
-        if _shop_like(row['tags']):
+        if _body_params(row['tags']):
             heights = eave_fn(row['cells'])
             if heights:
                 buildings[-1]['eave_m'], buildings[-1]['ridge_m'] = heights
@@ -258,10 +256,10 @@ def _prepare(raw: dict, way_id: str) -> dict:
     if not isinstance(section, dict):
         base['reason'] = 'no district palette'
         return base
-    shop = _shop_evidence(cls, tags, raw)
-    if shop:
-        # lidar eave and ridge are the shop's height truth; building:levels is not needed and does not veto
-        levels, level_reason, lidar_reason = shop_body.storeys_from_eave(shop[0]), None, None
+    body = _body_evidence(cls, tags, raw)
+    if body:
+        # lidar eave and ridge are the body's height truth; building:levels is not needed and does not veto
+        levels, level_reason, lidar_reason = terrace_body.storeys_from_eave(body[0]), None, None
     else:
         levels, level_reason = _levels(tags)
         lidar_reason = None if level_reason else _lidar_agrees(raw.get('lidar_m'), levels)
@@ -286,7 +284,7 @@ def _prepare(raw: dict, way_id: str) -> dict:
     if material_reason:
         base['reason'] = material_reason
         return base
-    if shop and form not in PITCHED_FORMS:
+    if body and form not in PITCHED_FORMS:
         form = 'gable'   # the lidar ridge says pitched; a district default of flat does not override it
     slope = 'pitched' if form in PITCHED_FORMS else 'flatish'
     resolved = roof_blocks(family, slope)
@@ -295,8 +293,9 @@ def _prepare(raw: dict, way_id: str) -> dict:
         return base
     base.update(
         cls=cls, levels=levels, form=form, roof_source=roof_source, family=family, wall=wall,
-        path='house' if house else 'shop' if shop else 'feature',
-        eave_m=shop[0] if shop else None, ridge_m=shop[1] if shop else None,
+        path='house' if house else 'body' if body else 'feature',
+        eave_m=body[0] if body else None, ridge_m=body[1] if body else None,
+        body_params=body[2] if body else None,
         profile_name=str(profile.get('name') or '').strip() or 'district',
     )
     return base
@@ -317,24 +316,26 @@ def _as_cells(raw) -> set[tuple[int, int]] | None:
     return cells
 
 
-def _shop_like(tags: dict) -> bool:
-    """A building the tags call a shop (a ``shop=*`` tag or a retail-type ``building=*``)."""
-    return bool(tags.get('shop')) or tags.get('building') in SHOP_BUILDINGS
+def _body_params(tags: dict) -> dict | None:
+    """The class's terrace-house body recipe for a building's own tags, or None (class has none)."""
+    cls, _why = land_use.building_class(tags)
+    return land_use.body_recipe(cls) if cls else None
 
 
-def _shop_evidence(cls, tags: dict, raw: dict):
-    """``(eave_m, ridge_m)`` when a commercial shop has lidar that reads as a pitched terrace body, else None.
+def _body_evidence(cls, tags: dict, raw: dict):
+    """``(eave_m, ridge_m, recipe)`` when the class has a body recipe and lidar reads as a pitched body, else None.
 
-    A building tagged ``roof:shape=flat``, or whose lidar ridge stands less than ``MIN_BODY_RISE_M`` above
-    its eave, is a flat commercial box and keeps the feature path. Keyed on the land-use class and the
-    shop tags, so any street with the same lidar reading gets the same body, not just one town.
+    A ``roof:shape=flat`` tag, a ridge less than the recipe's ``min_rise_m`` above the eave, or missing
+    lidar leaves the building on its ordinary path. Keyed on the land-use class table, so a new class
+    gains the typology by adding a ``body`` row, not by code.
     """
-    if cls != 'commercial' or not _shop_like(tags) or tags.get('roof:shape') == 'flat':
+    params = land_use.body_recipe(cls) if cls else None
+    if params is None or tags.get('roof:shape') == 'flat':
         return None
     eave, ridge = raw.get('eave_m'), raw.get('ridge_m')
-    if not shop_body.finite(eave, ridge) or ridge - eave < MIN_BODY_RISE_M:
+    if not terrace_body.reads_pitched(eave, ridge, params):
         return None
-    return float(eave), float(ridge)
+    return float(eave), float(ridge), params
 
 
 def _box(cells: set[tuple[int, int]]) -> tuple[int, int, int, int] | None:
@@ -614,8 +615,8 @@ def _emit(group: list[dict], axis: str | None, streets) -> dict:
             'groups': [{'nos': labels, 'mode': 'group' if kind == 'terrace' else 'each', 'front': front}],
         }
         return {'builder': 'house_build', 'spec': spec}
-    if ordered[0]['path'] == 'shop':
-        return {'builder': 'house_build', 'spec': _shop_spec(name, note, ordered, ways, front)}
+    if ordered[0]['path'] == 'body':
+        return {'builder': 'house_build', 'spec': _body_spec(name, note, ordered, ways, front)}
     spec = {
         'name': name,
         'notes': note,
@@ -631,17 +632,18 @@ def _emit(group: list[dict], axis: str | None, streets) -> dict:
     return {'builder': 'feature_build', 'spec': spec}
 
 
-def _shop_spec(name: str, note: str, ordered: list[dict], ways: dict, front: str) -> dict:
-    """A house_build spec for shops: terrace-house body over a shopfront, one roof per shop (#333)."""
-    block = {row['label']: shop_body.recipe(row['eave_m'], row['ridge_m'], row['cells'], front)
+def _body_spec(name: str, note: str, ordered: list[dict], ways: dict, front: str) -> dict:
+    """A house_build spec for terrace-house bodies: one roof per building, numbers from lidar and the class recipe (#333)."""
+    block = {row['label']: terrace_body.recipe(row['eave_m'], row['ridge_m'], row['cells'], front,
+                                               row['body_params'])
              for row in ordered}
     return {
         'name': name,
-        'notes': note + ' Shop body from lidar eave and ridge (lib/builds/shop_body.py).',
+        'notes': note + ' Terrace-house body from lidar eave and ridge (lib/builds/terrace_body.py).',
         'ways': ways,
         'roofs': {row['label']: row['family'] for row in ordered},
         'roof_pitch': {label: item.pop('roof_pitch') for label, item in block.items()},
-        'shopfront': block,
+        'body': block,
         'groups': [{'nos': [row['label'] for row in ordered], 'mode': 'each', 'front': front}],
     }
 

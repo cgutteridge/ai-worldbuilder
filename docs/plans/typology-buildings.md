@@ -299,25 +299,25 @@ roofs. The district profile file for Southampton is world work, not a tool task:
 - A first terrace apply aborted because a parallel `site_lock.py run` with the same owner name released the
   lock; use a distinct owner per command when running two at once.
 
-## Task 333: terrace-house body over a shopfront (code landed, not yet judged in game)
+## Task 333: terrace-house body from lidar and a class recipe (code landed, not yet judged in game)
 
-`house_build` gains an optional per-label `shopfront` block, and `lib/builds/shop_body.py` derives it from lidar.
-`typology_spec` emits it for a shop whose lidar reads as a pitched body.
+One mechanism, no per-street or per-side code. `house_build` takes an optional per-label `body` block;
+`lib/builds/terrace_body.py` derives it from lidar eave and ridge and the class's `body` recipe in
+`config/land-use-classes.json`; `typology_spec` emits it for any class that has a recipe, when lidar reads pitched.
 
-- **Body:** wall storeys from the lidar eave (`eave_m`, a low percentile of DSM minus DTM); a pitched roof whose
-  `roof_pitch` reproduces the lidar ridge (clamped to 0.6 to 1.0, since `house_build` reads 0.5 and below as slab rings).
-- **Shopfront:** the front `front_depth` (default 3) columns are one storey under a flat bottom-slab roof; the body's
-  upper front wall stands over it. The strip is glazed between piers with the door framed. Pane width, piers and the
-  facade rhythm are the glazing recipe of task 431; fascia and sign colour are task 437.
-- **Per-side difference by evidence, not compass side:** where the ridge stands at least 3 m above the eave the roof
-  has room for a dormer top floor (flush wall dormers, one per five front columns, one to three); where it does not
-  the upper storey gets a square glass bay window on a solid base. The west parade (three storeys with a dormer top
-  floor) and the east parade (two storeys, upper bay, pitched roof) should fall out of their own lidar. Any street
-  with the same reading gets the same body; a `shopfront` block in a hand spec, or the recipe's `override`, replaces
-  any derived value.
-- **Keyed by class:** the generator takes a building of class `commercial` with a `shop=*` tag or a retail-type
-  `building=*`, with no town-specific data. A `roof:shape=flat` tag, a ridge under 1.5 m above the eave, or no
-  lidar keeps the old `feature_build` flat-box path.
-- **Not done:** rotated footprints and rows by adjacency (task 427), glazing recipe (431), fascia and signs (437).
-  The lidar percentiles (eave 15th, ridge 95th) and the dormer and bay thresholds are first guesses; judge them on the
-  Portswood Road parades (cell 50,-36) before trusting them.
+- **Recipe is data:** `body` on a land-use class row sets `front_depth` (columns of one-storey flat front range),
+  `attic_rise_m` (ridge above eave that leaves room for dormers), `min_rise_m` (below it the lidar reads flat) and
+  `glazed_front`. Only `commercial` ships one. A new class gains the typology by adding a row; the table validator
+  refuses a bad row.
+- **Body:** wall storeys from the lidar eave; `roof_pitch` reproduces the lidar ridge, clamped to 0.6 to 1.0 because
+  `house_build` reads 0.5 and below as slab rings.
+- **Front range:** the front `front_depth` columns are one storey under a flat bottom-slab roof, with the body's upper
+  front wall over it. `glazed_front` glazes the ground front between piers with the door framed (pane width and
+  rhythm are the glazing recipe of task 431; fascia and signs are task 437).
+- **Dormer or bay, by evidence:** roof room gives flush wall dormers (one per five front columns, one to three);
+  none gives a square glass bay on a solid base. Streets that differ side to side differ by their own lidar.
+- **Degrades, never crashes:** no recipe, no lidar, a `roof:shape=flat` tag or a low ridge keeps the old path; a
+  dormer with no room under the ridge, or a bay whose columns a neighbour owns, is dropped with a log line.
+- **Not done:** rotated footprints and rows by adjacency (427), glazing recipe (431), fascia and signs (437). The lidar
+  percentiles (eave 15th, ridge 95th) and the recipe numbers are first guesses; judge them on the Portswood Road
+  parades (cell 50,-36) before trusting them.

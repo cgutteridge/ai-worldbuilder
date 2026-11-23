@@ -1,16 +1,16 @@
-"""Terrace-house body over a shopfront ground floor (task #333).
+"""Terrace-house body from lidar evidence (task #333).
 
-A UK high street is mostly Victorian or Edwardian houses with a shopfront ground
-floor. This module is the pure geometry and evidence rules for that typology; it
-places nothing. ``house_build`` reads a per-label ``shopfront`` spec block and calls
-in here for the numbers and the column positions.
+Many UK buildings are a pitched house-like body, often with a one-storey flat
+front added over a ground floor (a shopfront, a porch range). This module holds
+the pure evidence rules and column geometry for that body; it places nothing.
+``house_build`` reads a per-label ``body`` spec block and calls in here.
 
-Evidence, not compass side, decides the per-side difference. A building whose
-lidar says the roof has room (ridge well above the eave) gets dormers in the
-roof; a building without that room gets a bay window on its upper storey. The
-owner's Portswood Road parades fall out of that rule (west side: three storeys
-with a dormer top floor; east side: two storeys, upper bay, pitched roof), and so
-does any other street whose lidar reads the same.
+One mechanism, driven by evidence and a class recipe (``body`` in
+``config/land-use-classes.json``), with no per-street or per-side branches. A
+building whose lidar shows room in the roof (ridge well above the eave) gets
+dormers; one without gets a bay window on its upper storey. A street where one
+side reads three storeys with a dormer top floor and the other two storeys with a
+bay therefore differs by its own lidar, not by code.
 
 Heights are metres of lidar above ground (DSM minus DTM): ``eave_m`` is the low
 roofline (the 10th percentile, which ignores dormer slivers) and ``ridge_m`` the
@@ -24,14 +24,12 @@ import math
 from cellmath import DIRS, OPP
 
 STOREY_H = 3
-# Metres of roof above the eave that leave room for a dormer top floor (sill, two
-# panes of window and a cap are four blocks; the dormer sits on the wall top).
-ATTIC_RISE_M = 3.0
 # house_build treats a roof_pitch of 0.5 or less as legacy slab rings; a pitched
 # body needs more. One block per block is a 45 degree roof.
 MIN_PITCH, MAX_PITCH = 0.6, 1.0
-# Depth of the single-storey shopfront added in front of the body.
-FRONT_DEPTH = 3
+# Class recipe fallbacks (the land-use table row overrides them): no front strip, and a dormer
+# needs a sill, two panes and a cap (four blocks) of roof above the eave.
+DEFAULTS = {'front_depth': 0, 'attic_rise_m': 3.0, 'min_rise_m': 1.5, 'glazed_front': False}
 # A dormer or bay is three columns wide; keep a column of wall each side.
 MARGIN = 2
 SPACING = 4
@@ -73,7 +71,7 @@ def pitch_from_lidar(eave_m: float, ridge_m: float, short_side: int) -> float:
 
 
 def front_strip(cells: set, front: str, depth: int) -> set:
-    """Columns of the single-storey shopfront: the front ``depth`` rows of the footprint.
+    """Columns of the single-storey front range: the front ``depth`` rows of the footprint.
 
     The strip is measured along the front direction from the footprint's front-most
     column, so a stepped (rotated) outline gets a strip that follows its front.
@@ -95,7 +93,7 @@ def front_strip(cells: set, front: str, depth: int) -> set:
 
 
 def front_row(body: set, front: str) -> set:
-    """Body columns whose front neighbour is not body: the wall row the street sees above the shopfront."""
+    """Body columns whose front neighbour is not body: the wall row the street sees above the front range."""
     fx, fz = DIRS[front]
     return {c for c in body if (c[0] + fx, c[1] + fz) not in body}
 
@@ -155,9 +153,15 @@ def dormer_count(front_len: int) -> int:
     return max(1, min(3, round(front_len / 5)))
 
 
+def reads_pitched(eave_m, ridge_m, params: dict | None = None) -> bool:
+    """Whether lidar eave and ridge say a pitched body: both finite and ``min_rise_m`` apart or more."""
+    params = {**DEFAULTS, **(params or {})}
+    return finite(eave_m, ridge_m) and ridge_m - eave_m >= params['min_rise_m']
+
+
 def recipe(eave_m: float, ridge_m: float, cells: set, front: str,
-           *, strip_depth: int = FRONT_DEPTH, override: dict | None = None) -> dict:
-    """The ``shopfront`` spec block for one building, from lidar eave and ridge.
+           params: dict | None = None, *, override: dict | None = None) -> dict:
+    """The ``body`` spec block for one building, from lidar eave and ridge and a class recipe.
 
     Dormer top floor where the roof has room, a bay window where it has not. An
     ``override`` (from a hand spec or street-level evidence) replaces any value.
@@ -166,17 +170,18 @@ def recipe(eave_m: float, ridge_m: float, cells: set, front: str,
     @param ridge_m: lidar ridge height above ground, metres
     @param cells: footprint columns
     @param front: face direction onto the street
-    @param strip_depth: shopfront strip depth, columns
+    @param params: the class's ``body`` recipe (``land_use.body_recipe``); defaults when None
     @param override: keys of the block to force
-    @returns: ``{storeys, front_depth, dormers, bay, roof_pitch}``
+    @returns: ``{storeys, front_depth, dormers, bay, glazed_front, roof_pitch}``
     """
-    strip = front_strip(cells, front, strip_depth)
-    depth = strip_depth if strip else 0
+    params = {**DEFAULTS, **(params or {})}
+    strip = front_strip(cells, front, params['front_depth'])
+    depth = params['front_depth'] if strip else 0
     body = cells - strip
     bx = [x for x, _ in body]
     bz = [z for _, z in body]
     short = min(max(bx) - min(bx), max(bz) - min(bz)) + 1
-    attic = (ridge_m - eave_m) >= ATTIC_RISE_M
+    attic = (ridge_m - eave_m) >= params['attic_rise_m']
     runs = lateral_runs(front_row(body, front), front)
     longest = len(runs[0]) if runs else 0
     block = {
@@ -184,6 +189,7 @@ def recipe(eave_m: float, ridge_m: float, cells: set, front: str,
         'front_depth': depth,
         'dormers': dormer_count(longest) if attic else 0,
         'bay': not attic,
+        'glazed_front': params['glazed_front'],
         'roof_pitch': pitch_from_lidar(eave_m, ridge_m, short),
     }
     block.update(override or {})
@@ -218,30 +224,29 @@ def dormer_cells(centre: tuple[int, int], front: str) -> dict:
 
 
 def validate_block(label: str, block: dict) -> None:
-    """Check one ``shopfront`` spec block.
+    """Check one ``body`` spec block.
 
     @param label: house label (for error text)
     @param block: the block
     @raises ValueError: when a key is unknown or a value is out of range
     """
-    allowed = {'storeys', 'front_depth', 'dormers', 'bay', 'bay_storey', 'unit'}
+    allowed = {'storeys', 'front_depth', 'dormers', 'bay', 'bay_storey', 'glazed_front'}
     extra = set(block) - allowed
     if extra:
-        raise ValueError(f'shopfront[{label!r}]: unknown keys {sorted(extra)}')
+        raise ValueError(f'body[{label!r}]: unknown keys {sorted(extra)}')
     for key, low, high in (('storeys', 1, MAX_STOREYS), ('front_depth', 0, 8), ('dormers', 0, 3)):
         if key in block:
             value = block[key]
             if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
-                raise ValueError(f'shopfront[{label!r}].{key} must be an integer in [{low}, {high}]')
-    if 'bay' in block and not isinstance(block['bay'], bool):
-        raise ValueError(f'shopfront[{label!r}].bay must be true or false')
+                raise ValueError(f'body[{label!r}].{key} must be an integer in [{low}, {high}]')
+    for key in ('bay', 'glazed_front'):
+        if key in block and not isinstance(block[key], bool):
+            raise ValueError(f'body[{label!r}].{key} must be true or false')
     if 'bay_storey' in block:
         value = block['bay_storey']
         storeys = block.get('storeys', 2)
         if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value < storeys:
-            raise ValueError(f'shopfront[{label!r}].bay_storey must be an upper storey (1..storeys-1)')
-    if 'unit' in block and not isinstance(block['unit'], str):
-        raise ValueError(f'shopfront[{label!r}].unit must be text')
+            raise ValueError(f'body[{label!r}].bay_storey must be an upper storey (1..storeys-1)')
 
 
 def finite(*values) -> bool:

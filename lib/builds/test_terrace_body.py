@@ -1,4 +1,4 @@
-"""Task #333: terrace-house body over a shopfront ground floor. Synthetic footprints, no world data."""
+"""Task #333: terrace-house body from lidar evidence and a class recipe. Synthetic footprints, no world data."""
 from __future__ import annotations
 
 import io
@@ -10,10 +10,12 @@ from pathlib import Path
 from unittest import mock
 
 import house_build as H
-import shop_body as S
+import land_use
+import terrace_body as S
 import typology_spec as T
 
 FLOOR = 50
+PARAMS = land_use.body_recipe('commercial')   # the shipped class recipe: 3-column front strip, glazed front
 FOOTPRINT = {(x, z) for x in range(10, 19) for z in range(20, 34)}   # 9 wide, 14 deep, street to the south
 
 
@@ -35,14 +37,39 @@ class EvidenceTest(unittest.TestCase):
         self.assertGreater(S.MIN_PITCH, 0.5)   # house_build reads 0.5 and below as slab rings
 
     def test_roof_room_decides_dormers_over_a_bay(self):
-        west = S.recipe(6.5, 10.0, FOOTPRINT, 'S')    # three-storey: eave two storeys, ridge well above
-        east = S.recipe(6.0, 8.0, FOOTPRINT, 'S')     # two-storey: little roof above the eave
+        west = S.recipe(6.5, 10.0, FOOTPRINT, 'S', PARAMS)    # three-storey: eave two storeys, ridge well above
+        east = S.recipe(6.0, 8.0, FOOTPRINT, 'S', PARAMS)     # two-storey: little roof above the eave
         self.assertEqual((west['storeys'], west['bay'], west['dormers'] > 0), (2, False, True))
         self.assertEqual((east['storeys'], east['bay'], east['dormers']), (2, True, 0))
-        self.assertEqual(west['front_depth'], S.FRONT_DEPTH)
+        self.assertEqual((west['front_depth'], west['glazed_front']), (3, True))
+
+    def test_recipe_comes_from_the_class_table_and_degrades_without_one(self):
+        self.assertEqual(PARAMS, {'front_depth': 3, 'attic_rise_m': 3.0, 'min_rise_m': 1.5, 'glazed_front': True})
+        self.assertIsNone(land_use.body_recipe('residential'))
+        self.assertIsNone(land_use.body_recipe('banana'))
+        bare = S.recipe(6.5, 10.0, FOOTPRINT, 'S')   # no recipe: no strip, no glazing, still a body
+        self.assertEqual((bare['front_depth'], bare['glazed_front']), (0, False))
+        self.assertTrue(S.reads_pitched(6.0, 8.0, PARAMS))
+        self.assertFalse(S.reads_pitched(6.0, 7.0, PARAMS))
+        self.assertFalse(S.reads_pitched(None, 8.0, PARAMS))
+        self.assertFalse(S.reads_pitched(float('nan'), 8.0, PARAMS))
+        # a recipe is data: a deeper attic threshold moves the dormer/bay choice with no code change
+        tall = S.recipe(6.5, 10.0, FOOTPRINT, 'S', {**PARAMS, 'attic_rise_m': 4.0})
+        self.assertEqual((tall['bay'], tall['dormers']), (True, 0))
+
+    def test_class_table_refuses_a_bad_body_recipe(self):
+        import json
+        doc = json.loads(land_use.TABLE_PATH.read_text())
+        row = next(r for r in doc['classes'] if r['id'] == 'residential')
+        for bad in ({'front_depth': 9}, {'colour': 1}, {'glazed_front': 1}, {'min_rise_m': -1}, []):
+            with self.subTest(bad=bad), self.assertRaises(land_use.TableError):
+                land_use.validate_table({**doc, 'classes': [
+                    {**r, 'body': bad} if r is row else r for r in doc['classes']]})
+        land_use.validate_table({**doc, 'classes': [
+            {**r, 'body': {'front_depth': 0}} if r is row else r for r in doc['classes']]})
 
     def test_override_replaces_the_derived_values(self):
-        block = S.recipe(6.0, 8.0, FOOTPRINT, 'S', override={'bay': False, 'dormers': 1, 'front_depth': 0})
+        block = S.recipe(6.0, 8.0, FOOTPRINT, 'S', PARAMS, override={'bay': False, 'dormers': 1, 'front_depth': 0})
         self.assertEqual((block['bay'], block['dormers'], block['front_depth']), (False, 1, 0))
 
     def test_strip_runs_and_positions(self):
@@ -83,7 +110,7 @@ def write_spec(spec):
 
 def shop_spec(block, *, front='S', pitch=1.0, **extra):
     return {'name': 'shop', 'ways': {'99': 'A'}, 'roofs': {'A': 'brick'}, 'roof_pitch': {'A': pitch},
-            'groups': [{'nos': ['A'], 'front': front}], 'floor_min': FLOOR, 'shopfront': {'A': block}, **extra}
+            'groups': [{'nos': ['A'], 'front': front}], 'floor_min': FLOOR, 'body': {'A': block}, **extra}
 
 
 def plan_cells(spec, cells=FOOTPRINT):
@@ -131,33 +158,33 @@ class SpecTest(unittest.TestCase):
 
     def test_a_shop_spec_loads_and_a_house_spec_is_unchanged(self):
         spec = self.load(shop_spec({'storeys': 2, 'front_depth': 3}))
-        self.assertEqual(spec['shopfront']['A']['front_depth'], 3)
+        self.assertEqual(spec['body']['A']['front_depth'], 3)
         plain = self.load({'name': 'x', 'ways': {'1': 'A'}, 'roofs': {'A': 'brick'},
                            'groups': [{'nos': ['A'], 'front': 'S'}]})
-        self.assertEqual(plain['shopfront'], {})
+        self.assertEqual(plain['body'], {})
 
     def test_bad_blocks_are_refused_with_the_reason(self):
         cases = ((shop_spec({'storeys': 2}, pitch=0.5), 'roof_pitch above 0.5'),
                  (shop_spec({'dormers': 9}), 'dormers'),
                  (shop_spec({'storeys': 2}, groups=[{'nos': ['A'], 'front': 'S', 'mode': 'group'}]), 'mode "each"'),
-                 (shop_spec({}, shopfront={'Z': {}}), "label 'Z'"),
-                 (shop_spec({}, shopfront=[]), 'label-to-block'))
+                 (shop_spec({}, body={'Z': {}}), "label 'Z'"),
+                 (shop_spec({}, body=[]), 'label-to-block'))
         for spec, text in cases:
             with self.subTest(text=text), self.assertRaisesRegex(SystemExit, text):
                 self.load(spec)
 
 
-class ShopBuildTest(unittest.TestCase):
-    """The planned blocks: shopfront strip, upper wall, dormers and bay, on synthetic ground."""
+class BodyBuildTest(unittest.TestCase):
+    """The planned blocks: body strip, upper wall, dormers and bay, on synthetic ground."""
 
     @classmethod
     def setUpClass(cls):
         cls.dormers, cls.dormer_log = plan_cells(shop_spec(
-            {'storeys': 2, 'front_depth': 3, 'dormers': 2, 'bay': False}))
+            {'storeys': 2, 'front_depth': 3, 'glazed_front': True, 'dormers': 2, 'bay': False}))
         cls.bay, cls.bay_log = plan_cells(shop_spec(
-            {'storeys': 2, 'front_depth': 3, 'dormers': 0, 'bay': True}))
+            {'storeys': 2, 'front_depth': 3, 'glazed_front': True, 'dormers': 0, 'bay': True}))
         cls.three, cls.three_log = plan_cells(shop_spec(
-            {'storeys': 3, 'front_depth': 3, 'dormers': 1, 'bay': False}))
+            {'storeys': 3, 'front_depth': 3, 'glazed_front': True, 'dormers': 1, 'bay': False}))
 
     def test_strip_is_one_storey_under_a_flat_bottom_slab_roof(self):
         cells = self.dormers
@@ -183,7 +210,7 @@ class ShopBuildTest(unittest.TestCase):
         self.assertEqual(name(cells[13, FLOOR + 1, 33]), 'bricks')
         self.assertEqual(name(cells[15, FLOOR + 1, 33]), 'bricks')
         glass = [x for x, state in row.items() if 'glass' in state]
-        self.assertTrue(glass, 'the shopfront has glazing')
+        self.assertTrue(glass, 'the body has glazing')
         for x in glass:
             self.assertEqual(name(cells[x, FLOOR + 2, 33]), name(cells[x, FLOOR + 1, 33]))
             self.assertEqual(name(cells[x, FLOOR, 33]), 'bricks')   # a sill under the glass
@@ -250,8 +277,8 @@ class ShopBuildTest(unittest.TestCase):
         self.assertEqual(name(cells[14, FLOOR + 6, 25]), 'bricks')
 
 
-class ShopGeneratorTest(unittest.TestCase):
-    """typology_spec emits a house_build shopfront spec when lidar reads as a pitched body."""
+class BodyGeneratorTest(unittest.TestCase):
+    """typology_spec emits a house_build body spec when lidar reads as a pitched body."""
 
     PROFILE = {
         'name': 'Fixture',
@@ -272,12 +299,12 @@ class ShopGeneratorTest(unittest.TestCase):
         self.assertEqual(item['builder'], 'house_build')
         spec = item['spec']
         self.assertEqual(spec['groups'], [{'nos': ['a', 'b', 'c'], 'mode': 'each', 'front': 'S'}])
-        self.assertEqual(set(spec['shopfront']), {'a', 'b', 'c'})
+        self.assertEqual(set(spec['body']), {'a', 'b', 'c'})
         self.assertGreater(spec['roof_pitch']['a'], 0.5)
-        block = spec['shopfront']['a']
+        block = spec['body']['a']
         self.assertEqual((block['storeys'], block['bay'], block['dormers'] > 0), (2, False, True))
         self.assertNotIn('roof_pitch', block)
-        self.assertIn('lib/builds/shop_body.py', spec['notes'])
+        self.assertIn('lib/builds/terrace_body.py', spec['notes'])
         path = write_spec(spec)
         try:
             H.load_spec(path)
@@ -290,7 +317,7 @@ class ShopGeneratorTest(unittest.TestCase):
         self.assertEqual(report['needs_designer'], [{'way_id': w, 'reason': 'missing building:levels'}
                                                      for w in ('1', '2', '3')])
         report = T.generate(self.shops(6.0, 8.0), self.STREET)
-        block = report['specs'][0]['spec']['shopfront']['a']
+        block = report['specs'][0]['spec']['body']['a']
         self.assertEqual((block['bay'], block['dormers']), (True, 0))
 
     def test_flat_tag_or_missing_lidar_keeps_the_feature_path(self):
@@ -307,9 +334,15 @@ class ShopGeneratorTest(unittest.TestCase):
         # a shop= tag on a plain building=yes still reads as a shop, and a house never becomes one
         report = T.generate(self.shops(6.5, 10.0, tags={'building': 'yes', 'shop': 'bakery'}), self.STREET)
         self.assertEqual(report['specs'][0]['builder'], 'house_build')
-        self.assertIn('shopfront', report['specs'][0]['spec'])
+        self.assertIn('body', report['specs'][0]['spec'])
         house = T.generate(self.shops(6.5, 10.0, tags={'building': 'house'}), self.STREET)
-        self.assertNotIn('shopfront', json.dumps(house['specs']))
+        self.assertNotIn('body', json.dumps(house['specs']))
+
+    def test_class_without_a_body_recipe_is_untouched_whatever_its_lidar(self):
+        office = self.shops(6.5, 10.0, tags={'building': 'industrial'})
+        profile = {'name': 'Fixture', 'classes': {'industrial': {'palette': ['bricks'], 'roofs': ['gable']}}}
+        report = T.generate([dict(row, profile=profile) for row in office], self.STREET)
+        self.assertNotIn('"body"', json.dumps(report['specs']))
 
     def test_district_default_of_flat_does_not_override_pitched_lidar(self):
         report = T.generate(self.shops(6.5, 10.0), self.STREET)
