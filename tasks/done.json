@@ -3927,5 +3927,16 @@
       "builderTask": false,
       "notes": "matplotlib is imported by site_kit, coverage and osm_footprints but is not declared; three dry-run tests fail after a clean pip install -e . Declare it (or make the imports lazy and document an extra). GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/10\n\nClosed at 210315419e7d196067e8be6a9685893d11b5c924: Declare matplotlib in pyproject.toml dependencies and README.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/424-matplotlib-dep"}
+  ,
+    {
+      "id": 389,
+      "title": "Find what triggers Minecraft rate-limit waits during applies",
+      "status": "done",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "From the 2026-11-21 B35 rebuild thread. The same plan applied four times: fill stage took 122 s with 1 rate-limit retry, 605 s with 10, 485 s with 7, 125 s with 0 (each retry is a fixed 'Minecraft rate limit: retrying in 60s' wait). Unknown what triggers it. One unverified guess: other Minecraft MCP calls (teleport, scan, capture) from a parallel session while an apply runs. Spike: log request timestamps and the server's limit response during an apply, run once with no other calls and once with background calls, and record the limit, whether it is per second or per window, and whether the writer's pacing (see McpWriter, the paced MCP interval in rules/slow-commands.md) can stay under it. Output: a short finding in docs/ with numbers, and either a tuned pacing constant or a filed fix. Acceptance: the finding states the limit and the cause with measurements.\n\nWave investigation 2026-11-22: partial measured findings at docs/plans/minecraft-rate-limit.md. Installed limiter behavior and 60-second Retry-After are reproduced; current config files say 600 RPM but loaded/historical quotas and the original apply cause need measured traces. Saved B35 spec identified as worlds/southampton-build/site/builds/w146985470.json; live paired undo/apply trial remains pending concrete operation review. Owner approved current Codex model/effort for this wave, fresh Codex reviewers in place of unavailable Sonnet, and local merges only (no push).\n\nClosed at f937832eafbe851ae359f0dd4b8f457189770589: Finding: 600 RPM token bucket; concurrent MCP clients cause waits; bounded exponential 429 backoff.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/389-rate-limit-waits"}
   ]
 }
