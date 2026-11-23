@@ -99,13 +99,13 @@
     {
       "id": 441,
       "title": "Typology generator: terrace recipe (separate roofs per house or pair, alternating roof colour)",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
       "builderTask": false,
       "notes": "From trial #257 (docs/plans/typology-buildings.md: terrace verdict, chimney finding, Recommendation on terrace recipes). The Northcote Road terrace was built with spec mode `group`: one roof over all 20 houses, hence one continuous roof and a single central chimney (house_build.roof() plans one chimney per roof unit). The aerial shows roofs per house or pair, alternating red tile and grey slate. Deliverable: in the typology generator (lib/builds/typology_spec.py) add a terrace recipe: emit mode `each` or per-pair roof units for a terrace row, one chimney stack per party wall (using the domestic chimney option from task 430), and alternating roof material per house or pair taken from a small class palette. Defaults for other classes unchanged. Non-builder: fixtures on a synthetic terrace footprint (20 houses in a row, plus a rotated row) show per-house roof units, stacks on the party walls, and alternating materials; the emitted spec validates in house_build; no live apply. Blocked by 427 (rotated footprints, rows by adjacency) and 430 (domestic chimney option); task 432 (terrace recipe trial on Northcote Road) follows it and runs the live build and the owner's verdict.\n\n\nReview corrections (2026-11-23): 427 and 430 have landed, so this is ready. Put the alternating roof palette in config/land-use-classes.json on the class row, beside the 333 `body` recipe and the glazing and sign fields task 431 will add. Task 431 also edits typology_spec.py: do not run them in one parallel wave."
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/441-terrace-recipe"},
     
     
     
