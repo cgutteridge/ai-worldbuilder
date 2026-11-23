@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the worldbuilder-tasks skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 442,
+  "nextTaskId": 443,
   "tasks": [
     
     
@@ -320,6 +320,16 @@
       ],
       "builderTask": false,
       "notes": "From trial #257 (docs/plans/typology-buildings.md: terrace verdict, chimney finding, Recommendation on terrace recipes). The Northcote Road terrace was built with spec mode `group`: one roof over all 20 houses, hence one continuous roof and a single central chimney (house_build.roof() plans one chimney per roof unit). The aerial shows roofs per house or pair, alternating red tile and grey slate. Deliverable: in the typology generator (lib/builds/typology_spec.py) add a terrace recipe: emit mode `each` or per-pair roof units for a terrace row, one chimney stack per party wall (using the domestic chimney option from task 430), and alternating roof material per house or pair taken from a small class palette. Defaults for other classes unchanged. Non-builder: fixtures on a synthetic terrace footprint (20 houses in a row, plus a rotated row) show per-house roof units, stacks on the party walls, and alternating materials; the emitted spec validates in house_build; no live apply. Blocked by 427 (rotated footprints, rows by adjacency) and 430 (domestic chimney option); task 432 (terrace recipe trial on Northcote Road) follows it and runs the live build and the owner's verdict.\n"
+    },
+    {
+      "id": 442,
+      "title": "Car-park bay lines draw a dense white grid on 50,-35 (S-117)",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "From the 2026-11-23 trial of fix #336 on cell 50,-35 (issue I-053 \"Car-park bay lines do not match the real car park\"; snags S-116 from the owner, S-117 from the agent; screenshots on both). The owner saw long white stripes on the east side. After the stale hand patch (feature w1480342683_carpark_lines_removed, 557 gray_concrete blocks) was undone and ground redone, the north-west car park shows a dense white brick-like grid of many short rows, not rows at right angles to the aisle with gaps. I-053's cause text (\"no repo code reproduces this today\") is stale and should be updated when this lands.\n\nChecked 2026-11-23: all 339 white_concrete blocks in the east of the cell are in the ground redo's own block list, so none are old leftovers. The generator is lib/layers/bay_lines.py (mark_car_park_bays / bay_line_columns, called from lib/layers/ground_layer.py near line 838).\n\nVerified in the code (reviewer and agent): bay_line_columns loops every car-park polygon against every aisle segment in the cell, so an aisle paints bay lines into any car-park polygon it is near, even one it does not belong to. Each column is owned by its single nearest segment, so bands from different segments cannot stack. The line phase restarts at the start of each segment, so a bent aisle gets uneven spacing (gaps or doubled lines) at its joins. The pri==parking filter already keeps lines off plaza and driveway columns.\n\nNOT verified: which of these actually makes the grid at 50,-35. Step 1 is to dump the 50,-35 aisles (points, segment lengths, which polygon each lies in) and the bay columns coloured by owning segment, and say which cause holds.\n\nDeliverable (after step 1, fix the cause found): candidates are (a) associate each aisle with its own car-park polygon; (b) measure the spacing along a whole bent aisle instead of restarting at each segment; (c) draw nothing where the geometry cannot give consistent rows (nothing invented, as now). Files: lib/layers/bay_lines.py and lib/layers/test_bay_lines.py; update the layout statement in docs/plans/industrial-commercial.md (lines about 71 and 189, which cites #336). No change to the surface rule (#338).\n\nCheck line per snag (S-116 and S-117): after ground is redone on 50,-35, a scan of its white_concrete bay columns shows no two lines closer than 2 blocks along one aisle, each row at right angles to its aisle; a unit test covers a bent multi-segment aisle and two neighbouring car parks. The owner's in-game look at 50,-35 is the snag review.\nSize: m, because the cause is not yet known. Not a builder task: the check is a scan command; the in-game look is the owner's snag review. I-053 stays open until the owner confirms.\n"
     }
   ]
 }
