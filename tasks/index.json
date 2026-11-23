@@ -45,14 +45,14 @@
     {
       "id": 333,
       "title": "Shop typology: terrace-house body over a shopfront ground floor",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "l",
       "blockedBy": [
         
       ],
       "notes": "Owner: west-side shops are three storeys with a dormer top floor, east-side shops two storeys with an upper bay window and pitched roofs, not flat commercial. This is the question blocked spike #257 asks, so file work only after its findings (blockedBy 257); alternative is to add the owner's west/east evidence to #257. Deliverable: storeys and dormers from lidar eave and ridge, pitched roofs, upper bay windows, reusing the terrace builder (scripts/house_build.py). Check: west and east parades of 50,-36 show dormers and bay windows by side; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258).\n\nSequencing (housekeeping review): land #407 (shared stoop/ground helpers) and #408 (feature_build split) before starting builder code here.\n\nTrial #257 findings (docs/plans/typology-buildings.md, 2026-11-22): rule-built shops on Portswood Road came out as flat-roofed brick boxes with default entrances and awnings; roof form and shopfront detail came only from hand specs. The class-recipe table for glazing is task 431; this task keeps per-side storeys, dormers, bay windows and pitched roofs from the aerial.\n\nPointer (2026-11-22, parade snag S-111/S-113): the owner's street view of 233 Portswood Road shows the typology: a two-storey brick building with a pitched roof behind and a one-storey flat shopfront roof added in front; the real run is mostly black fascias. Footprints that belong to one building (Kovan & Ramo's belongs to its neighbour) cannot come from the map tags and are needs-designer. Builder tasks from the same snags: 434 (feature roof stairs/octant), 435 (signs falling off), 436 (doors one level low), 437 (sign and fascia options).\n\nReview correction (2026-11-22): also read task 427 (rotated footprints, rows by adjacency) and 431 (glazing and facade recipe)."
-    , "builderTask": true},
+    , "builderTask": true, "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/333-shop-typology-terrace-body"},
     
     
     
