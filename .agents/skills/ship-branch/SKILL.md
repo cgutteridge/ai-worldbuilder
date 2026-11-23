@@ -64,18 +64,17 @@ not edit files or run mutating git commands.
 
 **Return shape** (only):
 
-- `APPROVE` — ready to merge, or
-- `CHANGES` — list findings, each tagged **blocker** or **nit**.
+- `APPROVE` — no blockers; list any nonblocking **nits** once.
+- `CHANGES` — list blockers preventing merge, each tagged **blocker**.
 
-Done when the return is exactly one of those verdicts with findings tagged.
-Nits do not loop: open a tracker follow-up later (orchestrator on main), or
-drop if trivial. Only blockers continue the loop.
+File nits as follow-ups on main, or drop trivial ones. Nits do not trigger a
+fixer, re-review or another test run. Only blockers continue the loop.
 
 ### 3. Fixer (same worktree)
 
 On `CHANGES` with blockers, or on test failure: dispatch a **fixer** at the
 default model and normal effort in this worktree. Fix blockers only (or the
-failing tests). Do not chase nits.
+failing tests).
 
 Done when the fixer reports the blockers/tests addressed and exits. Increment
 the round counter. If rounds > 3 → **stop** (below). Else re-run tests

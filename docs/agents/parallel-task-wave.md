@@ -2,6 +2,13 @@
 
 The ai-worldbuilder side of the `parallel-task-wave` skill (installed from the `local-tasks` kit).
 
+## Coordination
+
+Parallelise only independent ready tickets. Use tracker claims for ownership.
+Update one concise handoff checkpoint when a ticket lands, blocks or transfers
+ownership; link existing task, branch and test records. Routine progress belongs
+in chat.
+
 ## Model gate before launch
 
 Apply the [task model requirement](model-and-effort.md#task-model-requirement)
