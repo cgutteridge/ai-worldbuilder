@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the worldbuilder-tasks skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 449,
+  "nextTaskId": 450,
   "tasks": [
     
     {
@@ -183,6 +183,18 @@
       "blockedBy": [],
       "builderTask": true,
       "notes": "Live build of #333 + #427 at cell 50,-36 (2026-11-23) read back clean but looked wrong: blank stepped brick walls, roofs of solid brick, nearly no windows (house_build.windows passes no corner_evidence, so every wall column of a 45-degree stair-step wall is a corner and is refused: 'corner pier / tread too short'), no bays, mostly 1-storey bodies, most shops without a door. Fix generally (no street- or shop-specific code): (1) windows on stepped faces in house_build.windows, (2) roof material default for the commercial class (full-block brick roofs), (3) storeys and bay from evidence, (4) doors. Check on ONE shop first, in game, then the group. Source: session notes; docs/plans/typology-buildings.md."
-    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/447-live-parade-fixes"}
+    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/447-live-parade-fixes"},
+    {
+      "id": 449,
+      "title": "Ground: car-park bay lines read from the aerial image (no generated grid)",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [
+        442
+      ],
+      "builderTask": false,
+      "notes": "Replaces the removed generated bay-line grid (see the remove-the-generator task, I-053). Owner decisions 2026-11-23: bay lines come from the aerial image, even if messier; the generated grid was a disaster and is gone.\n\nGOAL. In the ground pass, mark a block white_concrete where the aerial shows a painted bay line inside a mapped car park (amenity=parking polygon, surface). Nothing else gets painted.\n\nRULES (owner):\n- Copy only what the image shows. Remove single-pixel specks (the existing majority filter or similar). No straightening, no joining of gaps, no invented lines, no line from aisle geometry.\n- Car parks only. Road centre and edge lines, zebra crossings and kerb yellows are separate later tasks, one kind at a time.\n- Where the aerial is too soft to show lines clearly, draw nothing for that car park and list it in the ground report as \"aerial too soft\". No fallback guess. The test for clear enough is part of this task.\n- Lines draw only on columns the ground pass has made tarmac inside that car park (not lawn, aisle, road or path), as the old generator did. They are written by the ground pass itself (see rules/craftsmanship.md on ground-layer markings).\n\nSTEPS:\n1. Read-only trial on 50,-35 (the owner knows that car park). Using the aerial the ground pass already uses (ground_sources.aerial_rgb, or the sharp registered aerial if the cell has one), plot the pale-thin-streak signal over each car park and say whether real bay lines show. STOP RULE: if the aerial does not show the lines on 50,-35, report with the picture and the numbers and stop; do not lower the threshold until something appears.\n2. If lines show, add the detector, a clear-enough test and the 'aerial too soft' report row, with unit tests on synthetic aerial fixtures (a clean line, a faint line, specks, a soft car park with no line).\n3. Dry-run the ground pass on 50,-35 and one more cell that has a car park. Compare the drawn lines with the aerial crop by eye; write the picture path in the report.\n\nNot a builder task: tool code with synthetic fixtures. The owner's in-game look at 50,-35 is the review. Blocked by the removal task: do not start until the generator is deleted.\n"
+    }
   ]
 }
