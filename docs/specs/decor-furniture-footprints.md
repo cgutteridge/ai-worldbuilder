@@ -1,11 +1,11 @@
 # Multi-block furniture footprints in decor (task #305)
 
-Design only; no code, no tests, nothing under `worlds/`. Written for task #306 (picnic tables, issue I-008, snag S-033), which builds from this note without further design questions. Claims were checked by reading the code on 2026-11-19; the one data check (item 2) was run on the Hampshire extract.
+Original design for task #306; ground support and reporting updated by #444. Written for task #306 (picnic tables, issue I-008, snag S-033), which builds from this note without further design questions. Claims were checked by reading the code on 2026-11-19; the one data check (item 2) was run on the Hampshire extract.
 
 ## 0. What exists
 
 - `place_furniture` (`lib/layers/decor_layer.py`) takes one `ground_at` top per item; every recipe voxel is `(x, top+dy, z)`. Recipes in `lib/sources/street_furniture.py` are `(dy, block)` pairs with no `dx`/`dz`, so a table with a bench each side cannot be written.
-- `lib/layers/outbuildings.py` (#251) and `place_outbuildings` already answer the multi-column questions for sheds: a footprint is all or nothing; it is refused (not halved) when it crosses the cell edge, and when any column is on a route/clearance/opening (`keep_clear`), a mapped way, a house, or the carriageway. Each column's ground is its own lidar terrain. This note reuses those answers and says where furniture differs and why.
+- `lib/layers/outbuildings.py` (#251) and `place_outbuildings` already answer the multi-column questions for sheds: a footprint is all or nothing; it is refused (not halved) when it crosses the cell edge, and when any column is on a route/clearance/opening (`keep_clear`), a mapped way, a house, or the carriageway. Each column's ground is its own lidar terrain. Task #444 adds a shared `level_and_shift` helper for level furniture support; #446 applies it to sheds and garages separately. Hedges, fences and walls continue to follow terrain.
 - Kinds to add: **`picnic_table`** (rectangular, from the map and designer) and **`picnic_table_round`** (designer only; no map tag distinguishes a round one).
 
 ## 1. Footprint format (question 1)
@@ -14,7 +14,7 @@ A new table `FOOTPRINTS: dict[str, list[tuple[int, int, int, str]]]` in `street_
 
 - `FURNITURE_KINDS = frozenset(RECIPES) | frozenset(FOOTPRINTS)`; every `in sf.RECIPES` test that means "is street furniture" becomes `in sf.FURNITURE_KINDS` (`decor_plan.py` lines about 395, 600, 613, 695; `street_furniture.py` `designer_items`; the decor plan's map-furniture loop keeps a triple when `kind in FURNITURE_KINDS`). `KINDS` gains the two names.
 - `footprint(kind, rotation=0) -> list[(dx, dz, dy, block)]`: for a `RECIPES` kind it returns `[(0, 0, dy, block), ...]`, so `place_furniture` has **one code path** for every kind. For a `FOOTPRINTS` kind it rotates the offsets (section 2).
-- Every footprint column is within one block of the anchor (`|dx|, |dz| <= 1`, a 3 x 3 box). This is a contract, not a coincidence: `decor_columns` warms only the anchor plus `WARM_RING = 1`,. A test asserts the radius so a bigger kind has to change the warm-up too.
+- Every footprint column is within one block of the anchor (`|dx|, |dz| <= 1`, a 3 x 3 box). This is a contract, not a coincidence: `decor_columns` warms the footprint plus the one-block shift range (radius 2 for current multi-block recipes). A test asserts the radius so a bigger kind has to change the warm-up too.
 
 Blocks (rotation 0, long axis along x):
 
@@ -33,7 +33,23 @@ A table top at table height (top slab, no leg) over a half block of air is an in
 
 ## 3. Ground height (question 3)
 
-Each footprint column stands on **its own** lidar terrain (`ground_at`), as outbuildings do per column, and each voxel is `ground + dy` over that column. Differs from a shed (which takes the highest column as its base and steps its walls) because a table has no walls to step: every column must be within **one block** of the anchor column's ground, else the whole item is refused with `uneven ground`. A column with no ground keeps the existing reasons (`no ground at terrain`, `feature above terrain`, `no surface`).
+Every furniture footprint stands on **one level** (ground spread limit **0**). Measure `ground_spread` as the highest minus lowest `ground_at` top over all columns, rather than each column against the anchor. Missing ground keeps the existing reasons (`no ground at terrain`, `feature above terrain`, `no surface`).
+
+When the original anchor fails only on level, try all eight adjacent anchors, nearest first (cardinals before diagonals, ties by x then z). Every candidate must pass every clearance, cell, surface and ownership guard. A successful move is reported as `placed_at`; mapped `x,z` stay unchanged. Road-edge furniture retains its existing kerbside search.
+
+If no adjacent anchor is level, fill low columns at the **original anchor** up to the highest ground, using each low column's local surface block. Never cut terrain; never add more than **2 blocks per column**. Support fill and the raised recipe both pass the voxel guards. Steeper spots remain unplaced with `uneven ground` and `blocked_column`. Hedges, fences and walls are excluded.
+
+Separate cell caps allow at most ceil(30% of final placed items) needing a 1-block fill and ceil(10%) needing a 2-block fill, each at least one. Items without fill count in the denominator. Place unfilled items first, then rank filled items by maximum depth and blocks added, smallest first. Recheck both caps whenever rejecting an item changes the denominator; remove rejected support and furniture together, and report `ground fill cell cap`. These are deterministic planning decisions; no builder model is involved.
+
+Task #444 measurement (2026-11-23, Southampton cell 48,-44): the round table at
+6174,-5594 has terrain tops 52,52,53,53,52 (spread 1); the table at
+6178,-5592 has five tops at 53 (spread 0). Keep limit 0: it matches the owner's
+one-level requirement and the dry run places all 39 accepted furniture items
+with supported spread 0. The first table moves west to 6173,-5594; the second
+stays mapped. Neither requires fill. The world-owned dry report is
+`verification/site/highfield_48_m44_decor-dry-report.json`. This is deterministic
+planning against the saved world, without live apply; in-game snag review remains
+the owner's check.
 
 ## 4. Filters (question 4)
 
@@ -48,9 +64,9 @@ New for multi-block kinds: `place_furniture` takes `barrier_voxels` (the `found`
 ## 5. Report rows (question 5)
 
 Placed, multi-block (extra keys over today's row `x, z, kind, source, blocks, on_terrain, moved_to_terrain, note, plan_id`):
-`{'x', 'z' (anchor), 'kind', 'source', 'plan_id', 'blocks': n, 'rotation': 90, 'footprint': [[x, z], ...], 'on_terrain', 'moved_to_terrain' (any column)}`. Single-column rows are unchanged (no `rotation`, no `footprint`).
+`{'x', 'z' (anchor), 'kind', 'source', 'plan_id', 'blocks': n, 'rotation': 90, 'footprint': [[x, z], ...], 'on_terrain', 'moved_to_terrain' (any column)}`. Every row gains `ground_spread` (0 for single-column or level support, null when ground cannot be measured). A moved item carries `original_ground_spread`. Filled rows carry `original_ground_spread` and `ground_fill: {columns: [{column: [x,z], blocks, block}], blocks_added, max_depth}`; their supported `ground_spread` is 0. Single-column rows have no `rotation` or `footprint`. The dry-run stats include `furniture_ground_fill` with `items_placed`, `filled_by_1`, `filled_by_2`, both shares and `refused_for_cap`.
 
-Refused: `dplan.mark_unplaced(row, reason)` as now; the copy keeps `rotation` and gains `blocked_column: [x, z]` (the first failing column). Reasons reused: `outside cell` (anchor), `on path/road/water column`, `against build`, `on carriageway`, `entrance opening or route reserved`, `no ground at terrain`, `no surface`, `feature above terrain`, `blocked by live or owned block`. New: `crosses the cell edge` (wording as outbuildings), `uneven ground`, `overlaps a planned barrier`, and **`overlaps another furniture item`**: today `pos in found` shares the message `blocked by live or owned block`, which is wrong when the blocker is another table. Check order inside the voxel loop: `pos in owned` gives `feature above terrain`, else `pos in found` gives `overlaps another furniture item`, else `blocked by live or owned block`. This also corrects two single-column items at one position. Provenance and `furniture_by_provenance` need no change.
+Refused: `dplan.mark_unplaced(row, reason)`, plus measured `ground_spread` (null if unavailable); cap refusals also carry `required_ground_fill`; the copy keeps `rotation` and gains `blocked_column: [x, z]` (the first failing column). Reasons reused: `outside cell` (anchor), `on path/road/water column`, `against build`, `on carriageway`, `entrance opening or route reserved`, `no ground at terrain`, `no surface`, `feature above terrain`, `blocked by live or owned block`. New: `crosses the cell edge` (wording as outbuildings), `uneven ground`, `overlaps a planned barrier`, and **`overlaps another furniture item`**: today `pos in found` shares the message `blocked by live or owned block`, which is wrong when the blocker is another table. Check order inside the voxel loop: `pos in owned` gives `feature above terrain`, else `pos in found` gives `overlaps another furniture item`, else `blocked by live or owned block`. This also corrects two single-column items at one position. Provenance and `furniture_by_provenance` need no change.
 
 ## 6. Round table (question 6)
 

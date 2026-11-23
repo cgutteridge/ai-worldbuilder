@@ -411,15 +411,123 @@ class TestPicnicFootprints(unittest.TestCase):
         _f, _r, unplaced = self.place([self.table(x=200)])
         self.assertEqual(self.reasons(unplaced), ['outside cell'])
 
-    def test_ground_more_than_one_block_off_the_anchor_is_uneven(self):
+    def test_uneven_table_moves_one_block_to_a_level_spot(self):
         self.raise_ground(11, 21, 2)
-        found, _r, unplaced = self.place([self.table()])
-        self.assertEqual(found, {})
+        found, rows, unplaced = self.place([self.table()])
+        self.assertEqual(unplaced, [])
+        self.assertEqual(rows[0]['placed_at'], [9, 20])
+        self.assertEqual(rows[0]['ground_spread'], 0)
+        self.assertEqual(rows[0]['original_ground_spread'], 2)
+        self.assertEqual({p[1] for p in found}, {self.GROUND + 1})
+
+    def test_diagonal_shift_is_allowed_and_covered_by_snapshot(self):
+        self.raise_ground(10, 20, 1)
+        found, rows, unplaced = self.place([self.table(kind='picnic_table_round')])
+        self.assertEqual(unplaced, [])
+        self.assertEqual(rows[0]['placed_at'], [9, 19])
+        self.assertEqual({p[1] for p in found}, {self.GROUND + 1})
+        warm = dl.decor_columns([], [self.table(kind='picnic_table_round')])
+        self.assertTrue({(p[0], p[2]) for p in found} <= warm)
+
+    def test_opposite_arms_at_plus_and_minus_one_share_one_level(self):
+        for x in range(8, 13):
+            for z in range(18, 23):
+                height = x % 3
+                self.raise_ground(x, z, height)
+        found, rows, unplaced = self.place([self.table(kind='picnic_table_round')])
+        self.assertEqual(unplaced, [])
+        self.assertEqual(rows[0]['original_ground_spread'], 2)
+        self.assertEqual(rows[0]['ground_spread'], 0)
+        slabs = {p[1] for p, block in found.items() if 'slab' in block}
+        self.assertEqual(slabs, {self.GROUND + 3})
+
+    def test_no_level_spot_fills_only_low_columns_with_local_material(self):
+        self.raise_ground(10, 20, 2)
+        self.live[(9, self.GROUND, 19)] = 'minecraft:dirt'
+        found, rows, unplaced = self.place([self.table()])
+        self.assertEqual(unplaced, [])
+        fill = rows[0]['ground_fill']
+        self.assertEqual((fill['max_depth'], fill['blocks_added']), (2, 16))
+        self.assertEqual(found[(9, self.GROUND + 1, 19)], 'dirt')
+        self.assertEqual(found[(9, self.GROUND + 2, 19)], 'dirt')
+        self.assertEqual({p[1] for p, b in found.items() if 'slab' in b}, {self.GROUND + 3})
+        self.assertNotIn('placed_at', rows[0])
+
+    def test_more_than_two_blocks_cannot_be_filled(self):
+        self.raise_ground(10, 20, 3)
+        found, rows, unplaced = self.place([self.table()])
+        self.assertEqual((found, rows), ({}, []))
         self.assertEqual(self.reasons(unplaced), ['uneven ground'])
-        self.raise_ground(11, 21, 1)                                 # one block off stands on its own ground
-        found, _r, unplaced = self.place([self.table()])
-        self.assertEqual((len(found), unplaced), (9, []))
-        self.assertEqual({p[1] for p in found if (p[0], p[2]) == (11, 21)}, {self.GROUND + 2})
+        self.assertEqual(unplaced[0]['ground_spread'], 3)
+        self.assertIn('blocked_column', unplaced[0])
+
+    def test_fill_checks_support_and_raised_recipe_for_obstacles(self):
+        self.raise_ground(10, 20, 2)
+        self.live[(9, self.GROUND + 1, 19)] = 'minecraft:stone'
+        found, rows, unplaced = self.place([self.table()])
+        self.assertEqual((found, rows), ({}, []))
+        self.assertEqual(self.reasons(unplaced), ['blocked by live or owned block'])
+        self.assertEqual(unplaced[0]['ground_spread'], 2)
+
+    def test_shift_rechecks_clearance_and_fill_cannot_bypass_it(self):
+        self.raise_ground(11, 21, 3)
+        # Only west and north could escape the raised corner; reserve their new columns.
+        clear = {(8, z) for z in range(18, 23)} | {(x, 18) for x in range(8, 13)}
+        found, rows, unplaced = self.place([self.table()], keep_clear=clear)
+        self.assertEqual((found, rows), ({}, []))
+        self.assertEqual(self.reasons(unplaced), ['uneven ground'])
+
+    def test_fill_caps_use_final_denominator_and_keep_smallest_first(self):
+        for depth, flat_count, fill_count, expected in ((1, 6, 4, 3), (2, 8, 2, 1)):
+            with self.subTest(depth=depth):
+                self.setUp()
+                items = [self.table(x=10 + 5 * i, z=20) for i in range(fill_count)]
+                for item in items:
+                    self.raise_ground(item['x'], item['z'], depth)
+                # This item needs less fill and must survive despite being last.
+                self.raise_ground(items[-1]['x'] + 1, 20, depth)
+                items += [self.table(x=10 + 5 * i, z=40) for i in range(flat_count)]
+                found, rows, unplaced = self.place(items)
+                filled = [r for r in rows if r.get('ground_fill')]
+                self.assertEqual(len(filled), expected)
+                self.assertIn(items[fill_count - 1]['plan_id'], [r['plan_id'] for r in filled])
+                self.assertEqual(self.reasons(unplaced), ['ground fill cell cap'])
+                summary = dl.furniture_fill_summary(rows, unplaced)
+                self.assertEqual(summary['items_placed'], flat_count + expected)
+                self.assertEqual(summary[f'filled_by_{depth}'], expected)
+                self.assertEqual(summary['refused_for_cap'], 1)
+                rejected = unplaced[0]
+                self.assertFalse(any(abs(p[0] - rejected['x']) <= 1 and abs(p[2] - rejected['z']) <= 1 for p in found))
+
+    def test_small_cell_allows_one_fill_of_each_depth(self):
+        items = [self.table(x=10), self.table(x=20)]
+        self.raise_ground(10, 20, 1)
+        self.raise_ground(20, 20, 2)
+        _found, rows, unplaced = self.place(items)
+        self.assertEqual(unplaced, [])
+        summary = dl.furniture_fill_summary(rows, unplaced)
+        self.assertEqual((summary['filled_by_1'], summary['filled_by_2']), (1, 1))
+
+    def test_removing_two_block_fill_rechecks_the_one_block_cap(self):
+        items = [self.table(x=10 + 5 * i) for i in range(7)]
+        for i, item in enumerate(items[:5]):
+            self.raise_ground(item['x'], item['z'], 1 if i < 3 else 2)
+        _found, rows, unplaced = self.place(items)
+        summary = dl.furniture_fill_summary(rows, unplaced)
+        self.assertEqual(summary['items_placed'], 5)
+        self.assertEqual((summary['filled_by_1'], summary['filled_by_2']), (2, 1))
+        self.assertEqual(summary['refused_for_cap'], 2)
+
+    def test_fence_on_a_slope_keeps_following_ground(self):
+        self.raise_ground(10, 20, 1)
+        item = {'role': 'barrier', 'kind': 'spruce_fence', 'block': 'spruce_fence',
+                'cells': [[10, 20], [11, 20]], 'height': 1,
+                'provenance': {'source': 'aerial', 'confidence': 'high'}}
+        with mock.patch('decor_layer.on_carriageway', return_value=False):
+            found, _rows, unplaced = dl.place_barriers_from_plan(
+                (0, 0), [item], self.world, lidar_hm=self.hm, **self.options)
+        self.assertEqual(unplaced, [])
+        self.assertEqual({p[1] for p in found}, {self.GROUND + 1, self.GROUND + 2})
 
     def test_missing_ground_under_one_column_names_its_reason(self):
         self.live[(9, self.GROUND, 19)] = 'minecraft:air'
