@@ -246,6 +246,26 @@ class DesignerSpec(unittest.TestCase):
         self.assertNotIn('rotation_error', items[0])
         self.assertEqual(obs[0]['rotation'], 90)
 
+    def test_loads_rejected_items_for_the_cell_and_skips_bad_rows(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / 'decor-furniture.json'
+            path.write_text(json.dumps({
+                '48,-44': {'rejected_items': [
+                    {'cell': [6168, -5584], 'note': 'misread shed'},
+                    {'cell': [1, 2]},
+                    {'note': 'no column'},
+                    {'cell': ['x', 1]},
+                    'skip',
+                ]},
+            }))
+            rows = sf.rejected_items((48, -44), path)
+            self.assertEqual(sf.rejected_items((0, 0), path), [])
+            self.assertEqual(sf.rejected_items((48, -44), Path(td) / 'missing.json'), [])
+        self.assertEqual(rows, [
+            {'cell': [6168, -5584], 'note': 'misread shed'},
+            {'cell': [1, 2]},
+        ])
+
 
 TABLE = {'residential': 30, 'primary': 38, 'footway': 40, 'service': None}
 ROAD = [(0.0, 0.0), (300.0, 0.0)]          # a straight 300-block strip along +x, centreline z=0

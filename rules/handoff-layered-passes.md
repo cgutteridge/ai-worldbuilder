@@ -141,6 +141,12 @@ LIDAR OBJECTS IN DECOR (#173)
     permanent furniture. Unknown kinds never authorize a build. Keep uncertain
     observations unresolved with unresolved_reason; do not guess a label from
     lidar shape or colour samples alone.
+  - The owner can mark a decor item as not real in the cell's
+    `reference/decor-furniture.json`. `rejected_items` is a list of
+    `{"cell": [x, z], "note": "..."}`. Each entry names one column inside the
+    false item (a shed, garage, table, bin, bench, or any later furniture or
+    outbuilding kind). The match is that column. The item is listed unresolved
+    with reason `owner: not real` and builds nothing.
   - One classified object places its kind's recipe at the observed column (the
     anchor) on the actual ground, subject to the usual paving, ownership, mask
     and clearance guards. A multi-block kind (`picnic_table`, `picnic_table_round`;

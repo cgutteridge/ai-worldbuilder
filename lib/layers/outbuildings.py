@@ -15,6 +15,8 @@ colour alone:
                ``garage``, ``cells``, an evidence id) -> medium.
 
 No default scatter: nothing here invents an outbuilding without one of those three.
+An owner veto (``rejected_items`` in the decor file) names one column inside a false
+shed or garage; that item is listed unresolved (``owner: not real``) and is not built.
 
 Massing is a squared rectangle from the evidence cells, walls 2 high (shed) or 3 (garage) under
 a one-block roof layer, planks or brick by kind, pitched (gable) roof, a door facing the house
@@ -31,6 +33,7 @@ from typing import Any
 
 import cellmath
 import provenance as prov
+import street_furniture as sf
 from roof_material import family_variants
 
 KIND = 'outbuilding'
@@ -235,30 +238,39 @@ def _item(kind: str, evidence: Sequence[tuple[int, int]], source: str, confidenc
 
 
 def mapped_items(footprints: Sequence[Mapping[str, Any]], *, rise=None, targets=(), plot_owner=None,
-                 evidence_ids=(), root=None) -> list[dict[str, Any]]:
-    """High-confidence items for mapped outbuilding footprints (``mapped_outbuilding_footprints`` rows)."""
+                 evidence_ids=(), root=None, rejected=()) -> list[dict[str, Any]]:
+    """High-confidence items for mapped outbuilding footprints (``mapped_outbuilding_footprints`` rows).
+
+    @param rejected: owner veto entries; a column inside the footprint lists the item unresolved
+    """
     out = []
     for fp in footprints:
         cells = [tuple(c) for c in fp['cells']]
         kind = mapped_type(fp['building'])
+        reason = sf.owner_veto_reason({'cells': cells}, rejected)
         out.append(_item(
             kind, cells, 'vector_map', 'high', item_id=_item_id('map', fp['ref']),
             ndsm=ndsm_height(rise, cells), targets=targets, plot_owner=plot_owner,
-            evidence_ids=evidence_ids, note=f"mapped building={fp['building']}", root=root))
+            evidence_ids=evidence_ids, note=f"mapped building={fp['building']}", root=root,
+            unresolved_reason=reason))
     return out
 
 
 def lidar_items(rise: Mapping[str, Any] | None, *, exclude: set[tuple[int, int]],
                 canopy: set[tuple[int, int]], rgb: Mapping[tuple[int, int], Any],
                 cell_box: tuple[int, int, int, int], targets=(), plot_owner=None,
-                evidence_ids=(), root=None) -> list[dict[str, Any]]:
+                evidence_ids=(), root=None, rejected=()) -> list[dict[str, Any]]:
     """Medium-confidence items for raw nDSM blobs; blobs that fail a test come back unresolved.
 
     A blob is 1.6-4.5 m above bare ground on at least ``MIN_BLOB_COLUMNS`` connected columns, off
     ``exclude`` (building footprints dilated by one column, labelled lidar objects)
     and off ``canopy``. A blob that reads green on the aerial (lawn + shade share at least
     ``GREEN_SHARE_MAX``), is a thin line, or is too large is listed with the reason rather than built.
-    Only blobs with a column inside ``cell_box`` count here.
+    A blob that contains an owner veto column is listed ``owner: not real`` instead, including
+    when another check would also have refused it. Only blobs with a column inside ``cell_box``
+    count here.
+
+    @param rejected: owner veto entries (:func:`street_furniture.rejected_items`)
 
     @param rise: ``lidar_rise`` result; ``None`` gives no items
     @param exclude: columns that cannot be part of a blob
@@ -296,6 +308,8 @@ def lidar_items(rise: Mapping[str, Any] | None, *, exclude: set[tuple[int, int]]
         cells = square_rectangle(group)
         kind = 'garage' if len(cells) >= GARAGE_MIN_COLUMNS else 'shed'
         lo = min(group)
+        if sf.owner_veto_reason({'cells': [*group, *cells]}, rejected):
+            reason = sf.OWNER_NOT_REAL
         out.append(_item(
             kind, group, 'lidar', 'medium', item_id=_item_id('lidar', lo[0], lo[1]),
             ndsm=ndsm_height(rise, group), targets=targets, plot_owner=plot_owner,
@@ -305,11 +319,14 @@ def lidar_items(rise: Mapping[str, Any] | None, *, exclude: set[tuple[int, int]]
 
 
 def designer_items(rows: Sequence[Mapping[str, Any]], *, rise=None, targets=(), plot_owner=None,
-                   default_evidence=(), root=None) -> list[dict[str, Any]]:
+                   default_evidence=(), root=None, rejected=()) -> list[dict[str, Any]]:
     """Medium-confidence items for designer traces (``kind`` shed / garage with ``cells``).
 
     A trace needs its own evidence id (``evidence_ids`` on the row, else the entry's); without one
     it is listed unresolved. The designer's cells are the evidence; the same squaring applies.
+    An owner veto column inside the trace lists it ``owner: not real`` instead.
+
+    @param rejected: owner veto entries (:func:`street_furniture.rejected_items`)
     """
     out = []
     for raw in rows:
@@ -320,11 +337,14 @@ def designer_items(rows: Sequence[Mapping[str, Any]], *, rise=None, targets=(), 
         ids = list(raw.get('evidence_ids') or default_evidence or ())
         lo = min(cells)
         source = 'photo_read' if 'photo' in str(raw.get('evidence') or '').lower() else 'aerial'
+        reason = '' if ids else 'designer outbuilding trace names no evidence id'
+        if sf.owner_veto_reason({'cells': cells}, rejected):
+            reason = sf.OWNER_NOT_REAL
         out.append(_item(
             kind, cells, source, 'medium', item_id=_item_id('designer', lo[0], lo[1]),
             ndsm=ndsm_height(rise, cells), targets=targets, plot_owner=plot_owner,
             evidence_ids=ids, root=root, note=str(raw.get('note') or 'designer trace'),
-            unresolved_reason='' if ids else 'designer outbuilding trace names no evidence id'))
+            unresolved_reason=reason))
     return out
 
 
