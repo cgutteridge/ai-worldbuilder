@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 import hashlib
+import math
 import statistics
 import textwrap
 
@@ -64,14 +65,116 @@ def contrasting_sign_colour(fascia: str = '', *, wood: str = 'oak') -> str:
 MAX_SHOP_STEP = 2
 
 
-def fit_straight_runs(fronts: dict) -> list[dict]:
-    """Square shop-front columns into straight runs and name the cells that fill the steps.
+# Square a shop row only when it lies this close to a cardinal axis.
+# Measured 2026-11-23 from the Portswood Road parade (trial #257, cell 51,-37),
+# British National Grid to the world frame (easting 436248, northing 109608):
+# shop long edges sit 36.7°–44.9° off the nearest axis (median 42.5°); the long
+# road run through the cell is 42.7°. 15° is under half that shallowest front.
+# A 1-in-5 drift measures about 11° and still squares; a 1-in-3 stair measures
+# about 18° and keeps its steps. A one-block notch on a straight row is about 0.4°.
+SHOP_SQUARE_MAX_ANGLE = 15
 
-    One run per stretch of a connected front whose recess is at most
-    :data:`MAX_SHOP_STEP` blocks. An already straight front is unchanged. Each
-    stretch snaps to its own streetward edge, and every block between a recessed
-    column and that edge is fill, so a later awning or sign meets wall rather
-    than a gap. The owner would rather have that extra thickness than a hover.
+
+# Cells in a contiguous cardinal run of this length form a wall arm.
+_CORNER_ARM = 3
+
+
+def front_row_angle(cells) -> float:
+    """Degrees of these columns from the nearest cardinal axis.
+
+    One column, or none, is 0. Otherwise this is the major axis of the column
+    centres, folded into 0–45 (0 along the grid, 45 on a diagonal).
+
+    @param cells: ``(x, z)`` columns
+    @returns: angle in degrees
+    """
+    pts = list(cells)
+    if len(pts) < 2:
+        return 0.0
+    mx = sum(p[0] for p in pts) / len(pts)
+    mz = sum(p[1] for p in pts) / len(pts)
+    sxx = sum((p[0] - mx) ** 2 for p in pts)
+    szz = sum((p[1] - mz) ** 2 for p in pts)
+    sxz = sum((p[0] - mx) * (p[1] - mz) for p in pts)
+    angle = abs(math.degrees(0.5 * math.atan2(2 * sxz, sxx - szz))) % 180
+    angle = min(angle, 180 - angle)
+    return min(angle, 90 - angle)
+
+
+def _contiguous_runs(values: list[int]) -> list[list[int]]:
+    """Split sorted unique coordinates into adjacent runs.
+
+    @param values: coordinates along one axis
+    @returns: runs of values that differ by 1
+    """
+    ordered = sorted(set(values))
+    if not ordered:
+        return []
+    runs = [[ordered[0]]]
+    for value in ordered[1:]:
+        if value == runs[-1][-1] + 1:
+            runs[-1].append(value)
+        else:
+            runs.append([value])
+    return runs
+
+
+def _axis_aligned_corner(cells: set) -> bool:
+    """True when the columns are exactly two straight arms, one east-west and one north-south.
+
+    An L of two grid-aligned arms measures about 45° on its principal axis.
+    Those arms are squared. A diagonal stair is missing one of the two arms,
+    so its angle decides.
+
+    @param cells: one connected component of front columns
+    @returns: whether the component is a grid-aligned corner
+    """
+    by_z: dict[int, list[int]] = {}
+    by_x: dict[int, list[int]] = {}
+    for x, z in cells:
+        by_z.setdefault(z, []).append(x)
+        by_x.setdefault(x, []).append(z)
+    horizontal = {
+        (x, z)
+        for z, xs in by_z.items()
+        for run in _contiguous_runs(xs)
+        if len(run) >= _CORNER_ARM
+        for x in run
+    }
+    vertical = {
+        (x, z)
+        for x, zs in by_x.items()
+        for run in _contiguous_runs(zs)
+        if len(run) >= _CORNER_ARM
+        for z in run
+    }
+    return bool(horizontal) and bool(vertical) and cells <= horizontal | vertical
+
+
+def _square_shop_row(cells: set) -> bool:
+    """True when this connected front should snap onto straight runs.
+
+    @param cells: one connected component of front columns
+    @returns: whether the row is near a cardinal axis, or is a grid-aligned corner
+    """
+    if _axis_aligned_corner(cells):
+        return True
+    return front_row_angle(cells) <= SHOP_SQUARE_MAX_ANGLE
+
+
+def fit_straight_runs(fronts: dict) -> list[dict]:
+    """Square near-axis shop fronts and leave a steep row as wall steps.
+
+    A connected front within :data:`SHOP_SQUARE_MAX_ANGLE` of a cardinal axis,
+    and a grid-aligned corner, become straight runs. One run per stretch whose
+    recess is at most :data:`MAX_SHOP_STEP` blocks. An already straight front is
+    unchanged. Each stretch snaps to its own streetward edge, and every block
+    between a recessed column and that edge is fill, so a later awning or sign
+    meets wall rather than a gap.
+
+    A steeper row is not squared. Each column stays a step with its own face
+    and no fill. The awning, the sign and the door then sit on that step, one
+    block outward along its face, so they still touch the wall.
 
     @param fronts: ``{(x, z): 'N'|'S'|'E'|'W'}``
     @returns: list of ``{'face', 'line', 'fill', 'sources'}``; ``line`` is ordered
@@ -98,7 +201,10 @@ def fit_straight_runs(fronts: dict) -> list[dict]:
                         remaining.remove(nxt)
                         comp.add(nxt)
                         todo.append(nxt)
-        runs.extend(_runs_within_step(comp, fronts))
+        if _square_shop_row(comp):
+            runs.extend(_runs_within_step(comp, fronts))
+        else:
+            runs.extend(_stepped_shop_runs(comp, fronts))
     return runs
 
 
@@ -163,6 +269,41 @@ def _straight_run(cells: set, fronts: dict) -> dict:
             fill.add((along, cursor) if horizontal else (cursor, along))
     fill -= set(cells)
     return {'face': face, 'line': line, 'fill': fill, 'sources': set(cells)}
+
+
+def _stepped_shop_runs(cells: set, fronts: dict) -> list[dict]:
+    """Leave a steep shop row as one run per wall step.
+
+    Nothing is filled and nothing is snapped to a streetward line. Each column
+    keeps the face it was given. An awning and a sign go one block outward
+    along that face, and a door stays on the step.
+
+    @param cells: front columns in one component
+    @param fronts: face of every front column
+    @returns: runs shaped like :func:`_straight_run`, with empty fill
+    """
+    return [
+        {'face': fronts[cell], 'line': [cell], 'fill': set(), 'sources': {cell}}
+        for cell in sorted(cells)
+    ]
+
+
+def _shop_door_cell(runs: list) -> tuple[int, int]:
+    """Column for a shop door when the plan did not register one.
+
+    A squared run uses its middle cell. A stepped front has no straight run,
+    so the door sits on the wall step nearest the middle of the row.
+
+    @param runs: dressed runs with at least one line cell
+    @returns: ``(x, z)``
+    """
+    longest = max(runs, key=lambda run: (len(run['line']), run['line']))
+    if len(longest['line']) > 1:
+        return longest['line'][len(longest['line']) // 2]
+    lines = [cell for run in runs for cell in run['line']]
+    cx = statistics.mean(cell[0] for cell in lines)
+    cz = statistics.mean(cell[1] for cell in lines)
+    return min(lines, key=lambda cell: (abs(cell[0] - cx) + abs(cell[1] - cz), cell))
 
 
 class FacadePlanning:
@@ -463,12 +604,14 @@ class FacadePlanning:
     def _dress_shop_front(self, f: Feature, fronts: dict, rule: dict, name: str) -> None:
         """Glass, a pavement-level door, fascia, a contrasting sign, and a continuous awning.
 
-        Stepped fronts are squared onto straight runs first (:func:`fit_straight_runs`).
-        Glass, the door, the fascia, the sign and the awning sit on that line. The
-        stair-step between a recessed column and the line is filled solid, so the
-        awning and the sign touch the wall. Side, alley and party walls are not in
-        ``fronts`` and stay shell. The door stands on the column floor, and its jambs
-        are the line's neighbours, which a straight run always has.
+        A near-axis row is squared onto straight runs first (:func:`fit_straight_runs`).
+        Glass, the door, the fascia, the sign and the awning sit on that line, and
+        the stair-step between a recessed column and the line is filled solid. A
+        steeper row keeps each wall step: the same pieces sit on the step, one
+        block outward along its face. Either way the awning, the sign and the door
+        touch the wall. Side, alley and party walls are not in ``fronts`` and stay
+        shell. The door stands on the column floor. On a straight run its jambs are
+        the line's neighbours; on a step they are that step's neighbours.
 
         @param f: feature mass
         @param fronts: ``{(x, z): 'N'|'S'|'E'|'W'}`` from :func:`facade_plan.front_columns`
@@ -490,7 +633,6 @@ class FacadePlanning:
             return
         face_of = {cell: run['face'] for run in runs for cell in run['line']}
         line_cells = set(face_of)
-        longest = max(runs, key=lambda run: (len(run['line']), run['line']))
         door_line = []
         for door in list(getattr(f, 'door_cells', ()) or ()):
             hit = self._shop_line_for_door(runs, door)
@@ -510,7 +652,7 @@ class FacadePlanning:
                 f.door_cells.add(line_cell)
             door_line.append(line_cell)
         place_centre = not door_line
-        door_cell = longest['line'][len(longest['line']) // 2] if place_centre else None
+        door_cell = _shop_door_cell(runs) if place_centre else None
         if door_cell is not None:
             door_line.append(door_cell)
         jambs = set()
