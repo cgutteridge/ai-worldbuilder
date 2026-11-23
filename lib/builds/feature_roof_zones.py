@@ -272,8 +272,9 @@ def assign_roof_zones(
     axis_deg: float | str = 'auto',
     ground_y: np.ndarray | None = None,
     mass_m: float = ZONE_LIDAR_MASS_M,
+    regions: list | None = None,
 ) -> tuple[np.ndarray, np.ndarray, list, float, list[dict]]:
-    """Full zone pipeline: square → lidar-mass → drop small islands → median → snap → mode → bucket.
+    """Full zone pipeline: square → lidar-mass → drop small islands → median → snap → mode → bucket → regions.
 
     Arrays share the same 2-D indexing (row/col). ``xs``/``zs`` hold world block
     coordinates for each cell (needed for rotated bucketing). When ``ground_y`` is
@@ -291,6 +292,9 @@ def assign_roof_zones(
     @param axis_deg: degrees or ``\"auto\"`` (PCA of readable cells)
     @param ground_y: optional block-Y DTM grid (same shape as ``dsm``)
     @param mass_m: nDSM threshold in metres (default ``ZONE_LIDAR_MASS_M``)
+    @param regions: optional ``[[(x, z), ...], ...]`` polygons from the aerial. Each polygon's
+        readable cells become one zone whose level is read from lidar (see ``apply_regions``);
+        cells outside every polygon keep the lidar zone. Overlapping polygons are refused.
     @returns: ``(readable, zone, levels_used, axis_deg_used, dropped)`` where
         ``dropped`` lists small islands removed (see ``drop_small_footprint_pieces``)
     """
@@ -317,7 +321,61 @@ def assign_roof_zones(
     else:
         axis_used = float(axis_deg)
     zone = bucket_zones(zone, readable, xs, zs, bucket=bucket, axis_deg=axis_used)
+    if regions:
+        zone, levels_used = apply_regions(zone, readable, med, xs, zs, regions, levels_used)
     return readable, zone, levels_used, axis_used, dropped
+
+
+REGION_EAVE_PERCENTILE = 20   # a region's level is its low lidar edge, so a hip rises from the eave
+
+
+def apply_regions(
+    zone: np.ndarray,
+    readable: np.ndarray,
+    med: np.ndarray,
+    xs: np.ndarray,
+    zs: np.ndarray,
+    regions: list,
+    levels: list,
+) -> tuple[np.ndarray, list]:
+    """Let aerial polygons say where the roof zones are; lidar still says how high each is.
+
+    The image identifies a zone (a hipped front, a flat rear extension). Its level is the
+    low ``REGION_EAVE_PERCENTILE`` of the median DSM inside it, rounded to whole metres
+    (downstream keys zones on the integer level), so the existing ridge logic
+    can rise from that eave where lidar shows a ridge and leave a flat plateau flat.
+
+    @param zone: lidar zone grid (levels, metres AOD)
+    @param readable: readable footprint mask
+    @param med: median-filtered DSM, metres AOD (same shape)
+    @param xs: world x per cell
+    @param zs: world z per cell
+    @param regions: polygons ``[(x, z), ...]`` in MC block coordinates
+    @param levels: plateau levels already in use
+    @returns: ``(zone, levels)`` with each region's level added to ``levels``
+    @raises SystemExit: on a polygon with no readable cells, or overlapping polygons
+    """
+    from coverage import scan_polygon
+    out = zone.copy()
+    used = list(levels)
+    taken = np.zeros(readable.shape, dtype=bool)
+    bbox = (int(xs.min()), int(zs.min()), int(xs.max()), int(zs.max()))
+    for i, polygon in enumerate(regions):
+        inside = set(scan_polygon([[tuple(p) for p in polygon]], bbox))
+        mask = readable & np.fromiter(
+            ((int(x), int(z)) in inside for x, z in zip(xs.ravel(), zs.ravel())),
+            dtype=bool, count=xs.size,
+        ).reshape(xs.shape)
+        if not mask.any():
+            raise SystemExit(f'zones regions[{i}]: no roof columns inside polygon')
+        if (mask & taken).any():
+            raise SystemExit(f'zones regions[{i}]: overlaps an earlier region')
+        level = float(round(np.percentile(med[mask], REGION_EAVE_PERCENTILE)))   # whole metres, like every plateau level
+        out[mask] = level
+        taken |= mask
+        if level not in used:
+            used.append(level)
+    return out, sorted(used)
 
 
 def _cap_lone_cells(rise_m: np.ndarray, sel: np.ndarray, readable: np.ndarray) -> np.ndarray:
@@ -866,6 +924,7 @@ class RoofZonePlanning:
                 bucket=int(cfg.get('bucket', 4)),
                 axis_deg=cfg.get('axis_deg', 'auto'),
                 ground_y=ground,
+                regions=cfg.get('regions'),
             )
             self._zone_pad_lines.append(footprint_pad_line(outline, readable))
             for piece in dropped:

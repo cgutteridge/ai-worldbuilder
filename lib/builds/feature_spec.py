@@ -327,12 +327,42 @@ def _validate_zones(path, spec: dict, labels: set) -> None:
         if axis != 'auto' and not isinstance(axis, (int, float)):
             raise SystemExit(f'{path}: zones[{lab}].axis_deg must be \"auto\" or a number')
         row.setdefault('axis_deg', 'auto')
+        _validate_zone_regions(path, lab, row.get('regions'))
         roof = spec['roofs'].get(lab) or {}
         if roof.get('kind') not in ROOF_KINDS:
             raise SystemExit(
                 f'{path}: zones[{lab}] needs roofs[{lab}].kind flat|pitched '
                 f'(got {roof.get("kind")!r})'
             )
+
+
+def _validate_zone_regions(path, lab: str, regions) -> None:
+    """Validate optional aerial-drawn zone polygons: ``zones[label].regions``.
+
+    Each region is a polygon ``[[x, z], ...]`` in MC block coordinates. The image says
+    where a roof zone is; lidar still sets its level.
+
+    @param path: spec path (for error text)
+    @param lab: way label
+    @param regions: the ``regions`` value, or None when absent
+    @raises SystemExit: on a malformed polygon
+    """
+    if regions is None:
+        return
+    context = f'{path}: zones[{lab}].regions'
+    if not isinstance(regions, list) or not regions:
+        raise SystemExit(f'{context} must be a non-empty list of polygons')
+    for i, polygon in enumerate(regions):
+        if not isinstance(polygon, list) or len(polygon) < 3:
+            raise SystemExit(f'{context}[{i}] needs at least three vertices')
+        for point in polygon:
+            ok = (isinstance(point, list) and len(point) == 2
+                  and all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                          and math.isfinite(v) for v in point))
+            if not ok:
+                raise SystemExit(f'{context}[{i}] vertices must be finite [x, z] numbers')
+        if len({tuple(p) for p in polygon}) < 3:
+            raise SystemExit(f'{context}[{i}] needs three distinct vertices')
 
 
 def _validate_exclude(path, spec: dict, labels: set) -> None:
