@@ -202,16 +202,7 @@
       "builderTask": false,
       "notes": "From trial #257 (docs/plans/typology-buildings.md, \"Roof layer\"). The owner says the roof material appears to be applied one layer below the roof on the rule-built Begonia Road and Northcote Road houses. Likely cause, to confirm first: house_build.roof() adds a two-layer skin, setting a full block of the roof material at y - 1 under every non-eave pitched cell (self.set(x, y - 1, z, family_variants(rm)['full'])); cells beside the eave sit at the wall-top level, so that block lands in the wall's top course. A live scan of the west semi at x 6347, z -6134..-6123 found full deepslate_tiles at y 63 and y 64 where the top wall course should be brick. First step is a diagnosis against a dry-run plan (compare the planned top course with the wall material); then keep the wall's top course in wall material and seal the stair cutouts without it, or move the underlay below the wall top. Affects house_build pitched roofs (roof_pitch above 0.5) in both the rule-built and hand-spec path; check whether feature_build pitched roofs have the same extra layer. Tests with a synthetic rectangular footprint asserting the wall-top row and the roof rows. Stretch (a diagnosis that touches the roof planner); do not raise model or effort without the owner.\n\n\nReview corrections (2026-11-22): cite #414. Today's code is `if not eave: self.set(x, y-1, z, full)` in lib/builds/house_build.py (about line 492), so the eave ring already has no underlay; the leftover is the first row below the eave, which at pitch 0.6 sits at the wall top plus 6, so its underlay lands at plus 5, the wall's top course. The live column scan (x 6347, full tiles at y 63 and 64) was taken before #414 was checked and is NOT re-checked; it is also not verified that this is the exact spot the owner means (\"one layer below the roof\"). Constraint: legacy flat output must stay byte-identical (test_legacy_flatish_plans_match_pre_change_output). This is a stretch because it starts as a diagnosis, even though complexity is m. Also check whether feature_build roofs have the same extra layer (cheap)."
     },
-    {
-      "id": 430,
-      "title": "house_build: domestic chimney option (stack per house, pair or party wall) instead of one per roof unit",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "From trial #257 (docs/plans/typology-buildings.md, \"Chimneys\"). house_build.roof() plans one chimney per roof unit (chim.append((best, b)): the deepest column nearest the unit's centre) and the spec has no chimney option; a terrace spec in mode group is one roof unit, so 20 houses got one chimney in the middle (owner: wrong for a terrace). feature_build's details kind chimney is only an industrial hollow stack (base_diameter at least 3), so the hand path has no domestic stack either. Add an optional per-label spec key, for example chimneys: {\"<label>\": \"per_house\" | \"per_pair\" | \"party_walls\" | [{at}] | \"none\"}, default per roof unit so existing specs are unchanged, placing a one-by-one brick stack on the ridge at each chosen position (party walls: where two adjacent footprints in a group share a wall line). Reuse the existing stack-through-the-roof code (WALL column to ridge + 2, flower_pot cap). Tests with synthetic fixtures: a three-house terrace and a semi. Non-builder.\n\n\nReview corrections (2026-11-22): the existing per-roof-unit default chimney behaviour must stay unchanged unless the new option is set (add a test). Party walls come from footprint adjacency in lib/builds/house_build.py; name that as the detection source."
-    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/430-house-chimney-option"},
+    
     {
       "id": 431,
       "title": "Typology generator: glazing and facade detail as a class recipe (shopfront table into facade_plan)",
@@ -231,8 +222,7 @@
       "blockedBy": [
         427,
         428,
-        429,
-        430
+        429
       ],
       "builderTask": true,
       "notes": "Builder task. After the footprint-gates, tag-defaults, roof-layer and chimney-option tasks land, rebuild the Northcote Road west terrace (cell 54,-41, 20 houses; trial #257, docs/plans/typology-buildings.md) from a terrace recipe: one roof per house or per pair rather than mode group across the whole row, one stack per party wall or pair, and alternating roof colour per pair where the aerial shows it (54_-41.png: red tile and grey slate in pairs). The owner judged the trial terrace good except the central chimney and (pending comment) the single continuous roof. Method as trial #257: rule-built spec through the existing builders under the site lock, state minutes and session tokens with the measurement method, owner verdict in game recorded in the findings. Builder task, stretch: do not raise model or effort without asking.\n\n\nReview corrections (2026-11-22): blocked by 427 (rotated footprints, rows by adjacency), 428 (default storeys), 429 (roof underlay), 430 (domestic chimney) and 441 (terrace recipe: separate roofs per house or pair, alternating roof colour, the generator code this trial needs). The tracker cannot record 428, 429 and 441 as blockedBy here, so do not dispatch this task until all five have landed. Settle the owner's open comment on the terrace's single continuous roof before dispatch: it has the same cause as the chimney finding (one roof unit per group)."
@@ -305,8 +295,7 @@
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [
-        427,
-        430
+        427
       ],
       "builderTask": false,
       "notes": "From trial #257 (docs/plans/typology-buildings.md: terrace verdict, chimney finding, Recommendation on terrace recipes). The Northcote Road terrace was built with spec mode `group`: one roof over all 20 houses, hence one continuous roof and a single central chimney (house_build.roof() plans one chimney per roof unit). The aerial shows roofs per house or pair, alternating red tile and grey slate. Deliverable: in the typology generator (lib/builds/typology_spec.py) add a terrace recipe: emit mode `each` or per-pair roof units for a terrace row, one chimney stack per party wall (using the domestic chimney option from task 430), and alternating roof material per house or pair taken from a small class palette. Defaults for other classes unchanged. Non-builder: fixtures on a synthetic terrace footprint (20 houses in a row, plus a rotated row) show per-house roof units, stacks on the party walls, and alternating materials; the emitted spec validates in house_build; no live apply. Blocked by 427 (rotated footprints, rows by adjacency) and 430 (domestic chimney option); task 432 (terrace recipe trial on Northcote Road) follows it and runs the live build and the owner's verdict.\n"
