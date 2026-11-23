@@ -140,7 +140,7 @@ class RoofGeometryTest(unittest.TestCase):
                 for lo, hi in ((0, 6), (6, 12))]
 
     def plan(self, kind='square', pitch=None, material='brick', mode='group', parts=None,
-             fit=None, chimneys=None):
+             fit=None, chimneys=None, shell=False):
         from site_kit import Plan
         parts = parts or self.footprints(kind)
         labels = [str(i) for i in range(len(parts))]
@@ -164,6 +164,9 @@ class RoofGeometryTest(unittest.TestCase):
             else:
                 b.spec['chimneys'] = chimneys
         b.p = Plan('synthetic_roof')
+        if shell:
+            for k, h in enumerate(b.houses):
+                b.shell(k, h)
         b.roof()
         return b.p
 
@@ -354,6 +357,47 @@ class RoofGeometryTest(unittest.TestCase):
                         self.assertTrue(all('_stairs[' in p.cells[x, 36, z] for x, z in ring))
                     if pitch <= 0.75:
                         self.assertTrue(any('brick_slab' in p.cells[x, 36, z] for x, z in ring))
+
+    def test_pitched_underlay_keeps_the_wall_top_course(self):
+        """#429: a membrane at eave level must not replace the wall's top course with roof material.
+
+        The course above that stays the roof skin, and a stair or slab there still sits on a solid
+        block (the wall, or the roof underlay once the membrane has risen clear of it).
+        """
+        own = self.footprints('square')[0]
+        walls = {c for c in own if any((c[0] + dx, c[1] + dz) not in own for dx, dz in H.N8)}
+        floor = 30
+        wall_top = floor + H.STOREY * 2 - 1
+        self.assertEqual(wall_top, 35)
+        cases = [(0.6, None), (0.75, None), (1, None), (0.6, 'octant')]
+        for pitch, fit in cases:
+            with self.subTest(pitch=pitch, fit=fit):
+                with redirect_stdout(io.StringIO()):
+                    p = self.plan('square', pitch, material='deepslate_tile', mode='each',
+                                  chimneys='none', fit=fit, shell=True)
+                for x, z in walls:
+                    self.assertEqual(p.cells.get((x, wall_top, z)), 'minecraft:bricks')
+                self.assertFalse(any(y == wall_top and 'deepslate' in state
+                                      for (x, y, z), state in p.cells.items()))
+                tops = {}
+                for (x, y, z), state in p.cells.items():
+                    if (x, z) in own and 'deepslate' in state:
+                        tops[x, z] = max(tops.get((x, z), 0), y)
+                self.assertEqual(set(tops), own)
+                for (x, z), y in tops.items():
+                    self.assertGreater(y, wall_top)
+                    if fit == 'octant':
+                        continue
+                    below = p.cells[(x, y - 1, z)]
+                    if y - 1 == wall_top:
+                        self.assertEqual(below, 'minecraft:bricks', (x, z))
+                    else:
+                        self.assertEqual(below, 'minecraft:deepslate_tiles', (x, y, z))
+                ring = {(x, z) for (x, y, z), state in p.cells.items()
+                        if (x, z) not in own and 'deepslate' in state}
+                self.assertTrue(ring)
+                for x, z in ring:
+                    self.assertNotIn((x, wall_top, z), p.cells)
 
     def test_pitched_shapes_lint_and_full_underlay(self):
         from roof_lint import ridge_jogs, stair_shape_mismatches
