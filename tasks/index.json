@@ -272,13 +272,13 @@
     {
       "id": 440,
       "title": "Shop fronts: stop squaring rows that aren't near axis-aligned",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
       "builderTask": false,
       "notes": "From trial #257 parade snag S-110 (issue I-060, \"Shop rows that aren't axis-aligned get squared into steps\"). The owner's decision: squaring shop fronts does not work unless the row is close to square anyway, so give up that directive for rows that are not near axis-aligned. Cause (checked 2026-11-22): the shop street-face squaring in lib/builds/feature_facade.py, fit_straight_runs (#332, limited by MAX_SHOP_STEP), turns a diagonal row into steps. It was added so awnings and signs touch the wall, so reversing it brings that problem back. rules/craftsmanship.md also says to axis-align long wall runs and square corners. Not verified: the row angle at which squaring starts to look wrong.\n\nDeliverable: skip the squaring when the row's angle is beyond a named threshold (measure the Portswood parade's angle first and state the threshold in the notes); say how awnings, signs and doors attach to an angled front instead (for example per wall step); change the squaring wording in rules/craftsmanship.md to match. Non-builder: fixtures only, no live apply. Acceptance: a fixture with an angled row shows an unsquared front with awnings and signs still touching the wall; a near-axis-aligned row is squared as today; the owner confirms in game that the parade fronts are no longer stepped (S-110) after a rebuild (a separate world step). Related: #257 findings (docs/plans/typology-buildings.md, Parade verdict) and task 427 (rotated footprints in the generator).\n"
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/440-shop-front-squaring"},
     {
       "id": 441,
       "title": "Typology generator: terrace recipe (separate roofs per house or pair, alternating roof colour)",
