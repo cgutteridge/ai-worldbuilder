@@ -325,7 +325,7 @@ def view_from_heading(x: float, y: float, z: float, heading: float, distance: fl
     @param z: eye Z
     @param heading: degrees
     @param distance: horizontal look distance in blocks
-    @returns: pos/look lists for site_handoff --view
+    @returns: pos/look lists for a player camera view
     """
     rad = math.radians(heading)
     lx = x + math.sin(rad) * distance

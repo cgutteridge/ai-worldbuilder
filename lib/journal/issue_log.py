@@ -206,7 +206,7 @@ def save(root: Path | str, store: dict[str, Any]) -> None:
 def archive(root: Path | str) -> int:
     """Move confirmed/wontfix issues and pictures to the registry archive.
 
-    Unlike site_archive.py, this archives structured issues, not legacy site/ISSUES.txt.
+    Structured issues and pictures stay together in the registry archive.
 
     @param root: world root
     @returns: number of issues newly archived

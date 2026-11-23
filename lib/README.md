@@ -8,11 +8,11 @@ ahead of `scripts/` (where CLI wrappers with the same names live).
 | --- | --- |
 | `geo/` | World frame, cell maths and segment distances (`cellmath.segment_distance`), OSGB / WGS84 helpers |
 | `blocks/` | BlockStore; block IDs and state properties (`block_store.block_id`, `state_props`, `state_prop`); surface and plant recognition (`surface_probe`); MCP / player helpers, atomic JSON |
-| `journal/` | Cell journal, registry helpers, registry coverage rollup |
+| `journal/` | Cell journal, registry helpers, completion gaps (`cell_gaps`), registry coverage rollup |
 | `sources/` | Place sources, lidar, vector map, OSM footprints |
 | `layers/` | Ground / trees / decor passes; shared ownership, mask and probe helpers (`layer_common`); seeded ground dressing (`ground_dressing`); tree voxels, masks |
 | `builds/` | House builder; feature orchestration (`feature_build.py`), spec validation (`feature_spec.py`), roof zones (`feature_roof_zones.py`), doors (`feature_doors.py`), facades (`feature_facade.py`), details and PV (`feature_details.py`); shared roof geometry, door-stoop helpers (`stoop.py`), half-block-cell roof fit (`roof_octant.py`), pure railway corridor plans (`railway_plan.py`) |
-| `site/` | site_kit (canonical `AIR_IDS`; callers name their own air extras/exclusions), lock, handoff, recover, status, cleanup |
+| `site/` | site_kit (canonical `AIR_IDS`; callers name their own air extras/exclusions), lock, review archiving, recover, status, cleanup |
 | `evidence/` | Evidence / contact sheets, registered aerials |
 | `audit/` | Floaters, roof lint, name / stale-term / documentation-path audits |
 

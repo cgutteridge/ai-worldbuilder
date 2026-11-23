@@ -43,8 +43,8 @@ class TrackerOwnershipTest(unittest.TestCase):
 
     def test_worker_branch_allows_non_tracker_paths(self) -> None:
         forbidden = pcc.forbidden_tracker_paths(
-            ['task/15-greeblies-gate'],
-            ['scripts/site_handoff.py', 'scripts/test_site_handoff.py'],
+            ['task/15-cell-gaps'],
+            ['lib/journal/cell_gaps.py', 'lib/journal/test_cell_gaps.py'],
         )
         self.assertEqual(forbidden, [])
 

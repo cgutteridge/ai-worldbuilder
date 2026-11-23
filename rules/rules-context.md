@@ -1,89 +1,41 @@
-RULES CONTEXT — WHAT TO READ WHEN (token index)
-Tool-repo index (ai-worldbuilder/rules/rules-context.md). Start with
-`python3 scripts/cell_registry.py next` (or site_handoff.py next, which
-prints the same picker). Rule files in rules/ are not auto-loaded: read
-only what the brief / task needs.
+# Rules to read for registry work
 
-------------------------------------------------------------------------
-0. ANTI-REREAD (every session)
-------------------------------------------------------------------------
- - Run `python3 scripts/cell_registry.py next` once at start.
- - Read each listed file once per chat unless the work clearly crosses into
-   another context (e.g. you start planning a whole house after a ground-only
-   item — then read PROPERTY rules before plan).
- - Do not read whole rules/process.md. Grep the § slices below.
- - Coverage is a registry view: `coverage.py write` / `status`; use
-   `python3 scripts/coverage.py --world <world> --help` for its command reference.
- - Imagery: read site/cells/*-SOURCES.txt (or manifest grep) before fetch/Read;
-   do not re-Read assets marked useful=no; one contact sheet before full-size.
- - After a rule file is read, grep/sed targeted sections later — do not re-Read
-   the whole rule file for a reminder.
+Start place work with `python3 scripts/cell_registry.py --world <world> next`.
+Use the returned task and the work below to choose the relevant rules. This is a
+manual reading index; progress and dispatch belong to the registry and the
+[cell orchestrator](../.agents/skills/cell-orchestrator/SKILL.md).
 
-------------------------------------------------------------------------
-1. CONTEXTS (pick one primary per registry task)
-------------------------------------------------------------------------
- SESSION       Boot only: lock, cadence. No live edits.
- TOOLING       Scripts/tests/docs; no Minecraft apply.
- SOURCES       cell_sources.py --write; manifest + one imagery judge pass.
- GROUND        Layered passes: ground_layer, trees_layer, decor_layer; no new house shells.
- FOLIAGE       Trees pass (trees_layer.py); rules/foliage.md + cross_zone.
- PROPERTY      House on its footprint map (all sides, roof, floors); gardens = ground/trees/decor.
- TERRACE       Terraced row; house_build specs (rules/house-builds.md).
- ISSUE         Snag / issue work (`snag` skill; scripts/issues.py). Never blocks a cell.
+Read a rule once per chat, then use targeted sections when checking a detail.
+For the tool's branch, tracker, model and execution rules, follow the pointers
+in [AGENTS.md](../AGENTS.md).
 
-------------------------------------------------------------------------
-2. rules/process.md SLICES (grep / sed -n; not the full file)
-------------------------------------------------------------------------
- All live edits     §2 (cadence), §2a (undo, no region backups), §6 (cell-orchestrator)
- GROUND / FOLIAGE   + §2c §2e (step 5 = layered passes)
- PROPERTY           + §2b (refs), §2c §2d-i §3 (checklist as needed)
- SOURCES            §2b, §2e step 1b, reference/LOGGING.txt §8
- TOOLING            §2c only if touching coverage data
+## Evidence
 
-------------------------------------------------------------------------
-3. RULES + SITE DOCS BY CONTEXT
-------------------------------------------------------------------------
- Always (any live world edit):
-   rules/radial-good-enough.md
+Before opening or fetching imagery, read [reference-token-budget.md](reference-token-budget.md)
+and [evidence-order.md](evidence-order.md). Consult `reference/TYPES.txt` when
+choosing a provider, and the active world's committed cell SOURCES file and
+reference manifest before fetching another asset.
 
- AERIAL COVERAGE: never assume the z19 tiles cover the whole cell (one side of a cell can be black).
-   Check, and for any gap use the zoomed-out z18 mosaic that covers that cell (ref_manifest.py find --xz, else geo.py tiles).
-   Not tied to any one place or folder.
+Check aerial coverage for the whole cell. Use the wider mosaic when the detailed
+image leaves a gap; the provider and available files come from the cell's evidence.
 
- Before fetch / Read of reference imagery (any context that opens photos/aerial):
-   rules/reference-token-budget.md
-   rules/evidence-order.md (which type answers which question; lidar composites; aerial PNG every cell)
-   reference/TYPES.txt (when choosing or adding a provider)
-   + committed site/cells/<tx>_<tz>-SOURCES.txt when CELL is set
+## Build work
 
- GROUND:
-   rules/handoff-layered-passes.md §1 (who clears volume) and docs/adr/010-layered-pass-decisions.md (ground step)
-   rules/craftsmanship.md §3a (palette) + good-enough only
-   rules/foliage.md — skim; full read only for FOLIAGE context
-   site/cells/*-SOURCES.txt — GROUND FINISH block when present for active cell
+| Work | Read |
+| --- | --- |
+| Any live edit | [radial-good-enough.md](radial-good-enough.md), [process.md](process.md) cadence and undo sections |
+| Ground | [handoff-layered-passes.md](handoff-layered-passes.md), [layered-pass decisions](../docs/adr/010-layered-pass-decisions.md), [craftsmanship.md](craftsmanship.md) ground palette; the cell's ground-finish evidence |
+| Trees | Ground references above, then [foliage.md](foliage.md) |
+| Decor | [process.md](process.md) per-cell pass flow, [frontage-and-evidence.md](frontage-and-evidence.md) for frontage work |
+| House | [house-builds.md](house-builds.md), [frontage-and-evidence.md](frontage-and-evidence.md), [craftsmanship.md](craftsmanship.md) |
+| Other feature | [feature-builds.md](feature-builds.md), [craftsmanship.md](craftsmanship.md); water features also use [water-body-builds.md](water-body-builds.md) |
+| Issue or snag | The `snag` or `sherlock` skill and `scripts/issues.py` |
 
- FOLIAGE (includes GROUND list):
-   rules/foliage.md — full
+Designer and builder model choices are in [build-roles.md](build-roles.md).
+Read the configured entrance and building evidence on the footprint when planning
+facades; the provider catalogue roles determine their source. Ground, trees and
+decor remain separate from a house feature's volume and follow the pass rules.
 
- PROPERTY (includes Always + imagery when surveying):
-   rules/frontage-and-evidence.md
-   rules/craftsmanship.md — full
-   configured entrance_register / building_register catalogue roles on the footprint
-     (shims/portals.py --world <world> building N, shims/buildings.py --world <world> building N) — inputs to
-     ``facade_plan`` entrances, not a separate door stage
-   Non-house building feature: rules/feature-builds.md + scripts/feature_build.py
-   Water-body (pond) feature: rules/water-body-builds.md
-   Designer/builder models (feature/trees/decor): rules/build-roles.md +
-     `python3 scripts/build_roles.py --world <world> show` (ghosts ignore this)
-
- TERRACE (includes PROPERTY list):
-   rules/house-builds.md
-
- TOOLING / SESSION:
-   (no rules file unless you touch imagery or apply)
-
-------------------------------------------------------------------------
-4. OUT OF SCOPE HERE
-------------------------------------------------------------------------
- Provider catalogue / fetch how → place SOURCES + evaluate-data-source / add-data-source.
- System tracker → tasks/index.json (not the world registry).
+Tool-only changes need build rules only when their scope touches that behavior.
+Provider catalogues and fetching are covered by `evaluate-data-source` and
+`add-data-source`; a new world starts with `new-world-build`.

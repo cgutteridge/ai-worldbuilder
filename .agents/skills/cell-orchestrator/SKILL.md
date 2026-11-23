@@ -15,7 +15,7 @@ python3 scripts/cell_registry.py --world <world> next
 
 That command is read-only and deterministic: the next undone item (marker cell if not DONE, else nearest undone non-held cell). Prepared-cell order: features (on the ghost ground) → ground once → ground-redo (only for an older stale ground) → trees → decor → marker-clear; a cell with no planned features gets ground first (task 286). Unprepared cells return `needs-prep` before a build. `next` does **not** raise the marker; the build task does.
 
-Do **not** use retired queue / aerial-review / focus files, coverage sign-offs, `site/ISSUES.txt` I-nnn lines, or `site_handoff.py` queue writing as progress sources. A handoff is just a fresh session that runs `next` again. Mess in a cell → `python3 scripts/cell_registry.py --world <world> reconcile [--fix]`.
+Use the cell registry journal for progress; retired queue / aerial-review / focus files, coverage sign-offs and `site/ISSUES.txt` lines are not progress sources. A handoff is just a fresh session that runs `next` again. Mess in a cell → `python3 scripts/cell_registry.py --world <world> reconcile [--fix]`.
 
 ## Stop point
 
@@ -129,7 +129,7 @@ ground stale (task 285) until the ground is redone.
 
    Paste that output into every agent prompt so both models are named. Same designer and builder → **one** blocking agent that still does evidence table then apply. Different models → **two** blocking agents in order: (1) designer only — evidence table + hand-off artefact, no apply; (2) builder only — claim lock, apply from the hand-off, readback, release. Hand-off: non-house feature → `site/builds/<name>.json` (`feature_build`); trees/decor → evidence table then layer script. Ground ghost apply stays mechanical (`lidar_ghost`) — no designer/builder.
 3. Build: blocking general-purpose Agent(s) per the roles above, foreground, one at a time. Prompt names the task JSON, points at `rules/` (+ `rules/build-roles.md` for feature/trees/decor), and says: claim the lock with a unique owner (builder only), SITE_OWNER, readback 0 mismatches, patrol, clean apply lands the journal entry, release the lock, report in under 200 words.
-4. When the agent(s) return: verify. Check the lock is released, `site_handoff.cell_gaps` for that cell is empty, and registry status moved. Do not read the agent's transcript.
+4. When the agent(s) return: verify. Check the lock is released, `cell_gaps.cell_gaps` for that cell is empty, and registry status moved. Do not read the agent's transcript.
 5. Report to the user in a few lines. Then stop at the stop point.
 
 Snags go to issues via the `snag` skill (`scripts/issues.py add`); they never block a cell. A rebuild does not close an issue: the owner confirms it in review. End a run with `python3 scripts/issues.py --world <world> digest`.

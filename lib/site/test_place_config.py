@@ -11,7 +11,6 @@ import coverage
 import layer_common
 import house_build
 import place_config
-import rules_context
 import script_env
 import site_kit
 
@@ -42,10 +41,6 @@ _PLACE = {
     'fetch_probe': {
         'url': 'https://tiles.maps.southampton.ac.uk/aer/18/130063/87836.png',
         'referer': 'https://maps.southampton.ac.uk/',
-    },
-    'work_context_keywords': {
-        'terrace': ['BROADLANDS_RD', ' BROADLANDS '],
-        'ground': ['HIGHFIELD_Q'],
     },
 }
 
@@ -106,9 +101,6 @@ class TestConfiguredPlace(unittest.TestCase):
             self.assertIn('tiles.maps.southampton.ac.uk', place_config.extra_fetch_hosts())
             probe = place_config.fetch_probe()
             self.assertEqual(probe['referer'], 'https://maps.southampton.ac.uk/')
-            item = {'id': 'Q-1', 'text': 'BROADLANDS_RD houses'}
-            ctx, _reason = rules_context.detect_context(item)
-            self.assertEqual(ctx, rules_context.WorkContext.TERRACE)
 
     def test_base_y_override_is_the_stone_fill_floor(self):
         """Builders fill stone from ``base_y``, not a hard-coded 37."""

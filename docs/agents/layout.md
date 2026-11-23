@@ -26,7 +26,7 @@ Read this when you need to find where a tool, config or record is kept. `AGENTS.
 | Accepted decisions | `docs/adr/` (ADR 006 land-use classes; ADR 010 layered-pass decisions) |
 | Archived plans, specs and audits | `docs/archive/` — history, not current guidance ([README](../archive/README.md)) |
 | Decision record | `scripts/decision_record.py` (`evidence add`, `phase add`): per-phase references available / consulted → `registry/decisions/`, `registry/evidence/`; `site_pages.py` renders element, evidence and cell pages on every write |
-| Cell registry | active world `registry/` + `scripts/cell_registry.py` (next / verify / reconcile; mess in a cell → `reconcile [--fix]`; interrupted apply → `site_recover.py`; ADR 004) |
+| Cell registry | active world `registry/` + `scripts/cell_registry.py` (next / verify / reconcile; completion checks in `lib/journal/cell_gaps.py`; mess in a cell → `reconcile [--fix]`; interrupted apply → `site_recover.py`; ADR 004) |
 | Dry-run reset | `scripts/dryrun_reset.py` (wipes regions + place memory; erases the registry so the journal starts fresh; also clears leftover retired progress files) |
 | New world bootstrap | skill `new-world-build`, `templates/empty-world/`, `templates/new-world-site/` (no registry scaffold: `registry/` is created by the first journal write) |
 
