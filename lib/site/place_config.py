@@ -2,8 +2,8 @@
 
 Plan names, retired ground passes, reverted builds, the stone-fill floor,
 extra ledger aliases, fetch hosts and queue keywords are place data. A world
-that omits a key gets a neutral default, so one place's names are not baked
-into the tool.
+that omits one of those keys gets a neutral default, so one place's names are
+not baked into the tool. ``structure_namespace`` has no default.
 """
 from __future__ import annotations
 
@@ -14,7 +14,6 @@ from pathlib import Path
 # before the key existed keep this floor until they set it.
 DEFAULT_BASE_Y = 37
 DEFAULT_PLAN_PREFIX = 'cell'
-DEFAULT_STRUCTURE_NAMESPACE = 'worldbuilder'
 
 # Legacy ledger keys for system providers. Place providers belong in world config.
 _SYSTEM_LEDGER_ALIASES: dict[str, tuple[str, ...]] = {
@@ -145,9 +144,16 @@ def base_y() -> int:
 def structure_namespace() -> str:
     """Structure template namespace from world config.
 
-    @returns: ``structure_namespace``, or :data:`DEFAULT_STRUCTURE_NAMESPACE`
+    There is no default. A missing key must be named before any live write.
+
+    @returns: ``structure_namespace``
+    @raises ValueError: when the key is missing or blank
     """
-    return _text('structure_namespace', DEFAULT_STRUCTURE_NAMESPACE)
+    raw = world_config().get('structure_namespace')
+    text = raw.strip() if isinstance(raw, str) else ''
+    if not text:
+        raise ValueError('world.json is missing structure_namespace')
+    return text
 
 
 def ledger_aliases() -> dict[str, tuple[str, ...]]:

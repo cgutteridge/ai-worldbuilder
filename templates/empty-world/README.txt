@@ -5,7 +5,8 @@ Structures off (generate_structures=0), weather off (advance_weather=false, clea
 Chunks, player data and session files are deliberately not stored; the game
 generates chunks on first open.
 
-Use: set config/world.json (gameworld_id, save_path) to a new folder inside your
+Use: set config/world.json (gameworld_id, save_path, structure_namespace, and
+player_uuid once you are in the world) so save_path is a new folder inside your
 Minecraft instance's saves/, then run scripts/new_blank_world.py --world <name>
 (it copies this template and sets the in-game name, LevelName, to the folder name; see
 docs/minecraft-instance-setup.md).

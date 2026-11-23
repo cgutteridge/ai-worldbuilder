@@ -40,12 +40,27 @@ In the world's `config/world.json` set `save_path` to the save folder inside the
 instance (absolute, or relative to the world root):
 
 ```json
-{"gameworld_id": "MyWorld", "save_path": "/home/me/minecraft-mcp/saves/MyWorld"}
+{"gameworld_id": "MyWorld", "save_path": "/home/me/minecraft-mcp/saves/MyWorld",
+ "structure_namespace": "MyWorld"}
 ```
 
 The region folder (`<save>/dimensions/minecraft/overworld/region`) is derived. Create a
 new blank save with `python3 scripts/new_blank_world.py --world <name>` (refuses if the
 folder exists), or make one in the game.
+
+`structure_namespace` is required. It is the prefix on structure-template backups
+for this place. There is no default, and another place's namespace must not be reused.
+
+`player_uuid` is required too. It is the player live builds may move. With the world
+open and that player in it:
+
+```bash
+python3 scripts/new_blank_world.py --world <name> --fill-player
+```
+
+That calls `player_list_online` and writes `player_uuid` when exactly one player is
+online. A live apply or undo stops before any journal begin when either key is
+missing, or when that player is not online.
 
 Check everything (read-only): `python3 scripts/check_instance.py --world <name>`.
 

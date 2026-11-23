@@ -21,7 +21,7 @@ from pathlib import Path
 
 import script_env  # noqa: E402
 from block_store import block_id as bid, state_props
-from place_config import DEFAULT_STRUCTURE_NAMESPACE, clear_place_config
+from place_config import clear_place_config, structure_namespace
 
 _CFG = None
 REGION = None
@@ -55,7 +55,9 @@ def reload_world_config() -> None:
     import active_world
     save = active_world.resolve_save(_CFG.get('save_path'), False)
     REGION = (save / 'dimensions' / 'minecraft' / 'overworld' / 'region') if save else (root / 'save' / 'region')
-    STRUCTURE_NS = _CFG.get('structure_namespace') or DEFAULT_STRUCTURE_NAMESPACE
+    raw_ns = _CFG.get('structure_namespace')
+    ns = raw_ns.strip() if isinstance(raw_ns, str) else ''
+    STRUCTURE_NS = ns or None
     OUT = root / 'verification/site'
 
 
@@ -1169,6 +1171,37 @@ def guard_roof_jogs(plan):
         print(f'roof jog guard overridden ({len(jogs)} seams): {why}')
 
 
+def ensure_live_identity(m) -> str:
+    """Require world identity and an online player before a journal begin.
+
+    A missing ``player_uuid`` or ``structure_namespace`` stops the command and
+    names that key. An offline player stops it too, so the failure cannot leave
+    a begun entry.
+
+    @param m: paced MCP client
+    @returns: configured player UUID
+    @raises SystemExit: missing key, or that player is not online
+    """
+    global STRUCTURE_NS
+    from mc_paced import require_player_uuid
+    try:
+        uuid = require_player_uuid()
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from exc
+    try:
+        ns = structure_namespace()
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    STRUCTURE_NS = ns
+    try:
+        m.call('player_get_info', {'uuid': uuid})
+    except Exception as exc:
+        raise SystemExit(
+            f'player_uuid {uuid} is not online ({exc}); nothing journalled'
+        ) from exc
+    return uuid
+
+
 def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, meta=None, strict=False, mask=None, readback_retries=0):
     """protect: optional callable(pos, existing_state) -> bool; True = refuse to overwrite.
     Cells owned by earlier builds are always protected unless that build is in `modifies`.
@@ -1184,7 +1217,8 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     mismatches raises and leaves the entry 'begun'. ``mask``: optional pass mask, durably staged
     before writes and published only after a clean readback; publication failure leaves the
     entry 'begun' for recovery. A feature apply fails closed on unplanned ghost feature blocks
-    left in its columns."""
+    left in its columns. Before the journal begin, :func:`ensure_live_identity` requires
+    ``player_uuid`` and ``structure_namespace`` and checks that player is online."""
     from mc_paced import Paced
     import cell_registry
     from cell_journal import Build, CellJournalError, Clash, InFlight, Refused
@@ -1325,6 +1359,7 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     with timed_stage('site_lock.check', timings):
         site_lock.check()                       # single-builder rule: refuse without the world lock
     m = Paced()
+    ensure_live_identity(m)
     blocks = live_blocks()
     with timed_stage('open_registry', timings):
         registry = cell_registry.open_registry(blocks=blocks)
@@ -1606,6 +1641,7 @@ def undo(target, *, strict=True, meta=None):
     import site_lock
     site_lock.check()
     m = Paced()
+    ensure_live_identity(m)
     blocks = live_blocks()
     registry = cell_registry.open_registry(blocks=blocks)
     label = target if isinstance(target, str) else f'{target[0][0]},{target[0][1]} {target[1]}'

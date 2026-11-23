@@ -77,6 +77,7 @@ def unit_test_world() -> Iterator[Path]:
             'gameworld_id': 'unit-test',
             'save_path': str(root / 'save'),
             'structure_namespace': 'worldbuilder',
+            'player_uuid': '00000000-0000-4000-8000-000000000419',
         }))
         (config / 'world-frame.json').write_text(json.dumps({
             'place': 'Unit test fixture',

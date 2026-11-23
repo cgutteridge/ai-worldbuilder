@@ -56,7 +56,14 @@ Record the **home cell**: the cell containing the home point (`world_frame.py to
 
 1. Write `config/world-frame.json`: `crs`, `grid`, `offsets`, `cell`, `y_offset` (placeholder 0 until section 2), `elevation_plugin`.
 2. Confirm conversions: `python3 scripts/world_frame.py --world <name> info` and `to-mc` / `to-wgs84` for the home point. For XYZ tile codes and pixel offsets use `to-wm` / `from-wm` (or `batch-wm`); do not add a second mercator path.
-3. Set `gameworld_id` and `save_path` in `config/world.json`: `save_path` is a new folder inside your standalone Minecraft instance's `saves/` (see `docs/minecraft-instance-setup.md`; the region folder is derived). Then create the blank save (refuses if it exists; the only write this tool makes under `saves/`):
+3. Write `config/world.json`. These keys are required and have no silent default:
+
+   - `gameworld_id`
+   - `save_path`: a new folder inside the standalone Minecraft instance's `saves/` (see `docs/minecraft-instance-setup.md`; the region folder is derived)
+   - `structure_namespace`: a short name for this place's structure templates. The world directory name is a good choice. Do not reuse another place's namespace.
+   - `player_uuid`: the player this build may move. Leave it out until that player is in the open world, then fill it from `player_list_online` (below).
+
+   Create the blank save (refuses if it exists; the only write this tool makes under `saves/`):
 
 ```bash
 python3 scripts/new_blank_world.py --world <name>
@@ -64,6 +71,14 @@ python3 scripts/check_instance.py --world <name>
 ```
 
    The template has no chunks; the game generates them on first open. The in-game name (`LevelName` in `level.dat`) is set to the folder name; the folder name is what the tools use.
+
+   Once the world is open and the player is in it (here, or in section 2b before the first ghost), write `player_uuid`:
+
+```bash
+python3 scripts/new_blank_world.py --world <name> --fill-player
+```
+
+   That reads `player_list_online` and, when exactly one player is online, writes their UUID. It does not guess when nobody is online or several people are. A live apply or undo with `player_uuid` or `structure_namespace` missing stops before the journal begin and names the missing key. An offline player stops there too, so a failed move cannot leave a begun entry.
 4. **Move spawn to home** (needs the game open on the world; if it is not open yet, say so and do it in section 2b once the user has opened it). The template's spawn is a leftover from another world, and with 0, 0 offsets (0, 0) is nowhere useful. With the world open, set the world spawn and put the player at the home point (MCP `level_set_spawn_point`, then teleport), so the first time the game opens it is at the right place.
 5. Start from the blank template; use an existing populated save only for an explicitly requested legacy migration.
 6. If a newer Minecraft version is in use than the template's (`Version.Name` in `level.dat`): open the world once in the game to upgrade it, log out, then refresh `templates/empty-world/` (copy without `session.lock`, `players/`, `*.dat_old`, `*.mca`; keep the single bedrock layer at Y −64 in `world_gen_settings.dat`) and commit.
@@ -100,7 +115,7 @@ python3 shims/lidar_extremes.py --world <name> --bbox-mc x0,z0,x1,z1 --fetch
 
 Once `y_offset` is locked, give the world its first ground: lidar ghost around the home cell, so the user has real terrain to look at (the Y fit, jitter, and where home is) instead of bare bedrock.
 
-1. Run it with checked execution (timings: `rules/slow-commands.md`; relay progress):
+1. `structure_namespace` must already be in `config/world.json`, and `player_uuid` must be filled (`new_blank_world.py --world <name> --fill-player`) with that player online. If either key is missing, the apply stops before the journal begin and names the key. Then run the ghost with checked execution (timings: `rules/slow-commands.md`; relay progress):
 
 ```bash
 python3 scripts/site_lock.py --world <name> run <owner> "first ghost" -- python3 shims/lidar_ghost.py --world <name> apply --cell <home cell> --ring 1 --include-focus
