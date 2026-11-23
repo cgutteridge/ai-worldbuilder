@@ -377,6 +377,61 @@ class Table(unittest.TestCase):
         with self.assertRaisesRegex(L.TableError, 'unknown'):
             L.validate_table(self.doc)
 
+    def test_shopfront_recipe_ships_on_commercial_only_and_hands_out_copies(self):
+        facade = L.facade_recipe('commercial')
+        self.assertEqual(facade['front'], {'ground': {'glazed_h': 3, 'pier': 1},
+                                           'upper': {'glazed_h': 2, 'pier': 3}})
+        self.assertEqual(facade['entrance']['awning'], {'kind': 'awning', 'depth': 1})
+        self.assertEqual(L.sign_palette('commercial'), {'wood': 'dark_oak', 'text_colour': 'white'})
+        for cid in ('residential', 'industrial', 'civic', 'unknown', 'not-a-class'):
+            self.assertIsNone(L.facade_recipe(cid), cid)
+            self.assertIsNone(L.sign_palette(cid), cid)
+        facade['front']['ground']['pier'] = 9
+        L.sign_palette('commercial')['wood'] = 'oak'
+        self.assertEqual(L.facade_recipe('commercial')['front']['ground']['pier'], 1)
+        self.assertEqual(L.sign_palette('commercial')['wood'], 'dark_oak')
+
+    def test_facade_recipe_is_checked_like_the_builders_own_rows(self):
+        good = {'front': {'ground': {'glazed_h': 3, 'pier': 0}, 'upper': {'glazed_h': 1, 'pier': 2}}}
+        for ok in (good, {'side': {'glazed_h': 2, 'pier': 3}}, {'entrance': {'block': 'spruce_door', 'leaves': 2}},
+                   {'entrance': {'block': 'oak_door', 'leaves': 1, 'awning': {'kind': 'porch_roof', 'depth': 2}}}):
+            self.row('civic')['facade'] = ok
+            L.validate_table(self.doc)
+        bad = (
+            {}, [], 'wide', {'banana': 1},
+            {'front': {'ground': {'glazed_h': 3, 'pier': 1}}},
+            {'front': {'ground': {'glazed_h': 4, 'pier': 1}, 'upper': {'glazed_h': 2, 'pier': 3}}},
+            {'front': {'ground': {'glazed_h': 3, 'pier': -1}, 'upper': {'glazed_h': 2, 'pier': 3}}},
+            {'side': {'glazed_h': 2}},
+            {'side': {'glazed_h': 2, 'pier': 3, 'rhythm': 'W'}},
+            {'entrance': {'block': 'oak_trapdoor', 'leaves': 1}},
+            {'entrance': {'block': 'oak_door', 'leaves': 3}},
+            {'entrance': {'block': 'oak_door'}},
+            {'entrance': {'block': 'oak_door', 'leaves': 1, 'awning': {'kind': 'canopy'}}},
+        )
+        for item in bad:
+            self.row('civic')['facade'] = item
+            with self.subTest(item=item), self.assertRaisesRegex(L.TableError, 'facade'):
+                L.validate_table(self.doc)
+        self.row('civic').pop('facade')
+        self.row('unknown')['facade'] = good
+        with self.assertRaisesRegex(L.TableError, 'unknown'):
+            L.validate_table(self.doc)
+
+    def test_sign_palette_must_clear_the_sign_contrast_floor(self):
+        for ok in ({'wood': 'spruce', 'text_colour': 'white'}, {'wood': 'birch'}, {'text_colour': 'black'}):
+            self.row('civic')['sign'] = ok
+            L.validate_table(self.doc)
+        for item in ({}, [], {'wood': 'granite'}, {'text_colour': 'beige'}, {'fascia_colour': 'black'},
+                     {'wood': 'oak', 'text_colour': 'gray'}):      # grey on pale oak is the refused pair
+            self.row('civic')['sign'] = item
+            with self.subTest(item=item), self.assertRaises(L.TableError):
+                L.validate_table(self.doc)
+        self.row('civic').pop('sign')
+        self.row('unknown')['sign'] = {'wood': 'oak'}
+        with self.assertRaisesRegex(L.TableError, 'unknown'):
+            L.validate_table(self.doc)
+
     def test_unknown_row_column_refused(self):
         self.row('park')['banana'] = None
         with self.assertRaisesRegex(L.TableError, 'unknown column'):

@@ -67,6 +67,9 @@ REAR_HIGHWAYS = frozenset({'service', 'track'})
 REAR_NEARER = 0.5
 # a row is spread along one axis when that spread is at least this many times the other
 ROW_AXIS_CLEAR = 2.0
+# The builder rhythm puts a pier on both ends of every straight wall run, so a run shorter than this
+# gets no windows from glazing rows. A stair-stepped front is all runs of one column.
+FACADE_MIN_RUN = 5
 PITCHED_RISE = 0.6
 FLAT_RISE = 0.0
 HOUSE_TAGS = frozenset({'house', 'residential', 'terrace', 'semidetached_house', 'detached'})
@@ -783,7 +786,100 @@ def _emit(group: list[dict], axis: str | None, streets) -> dict:
         'groups': [{'nos': labels, 'mode': 'each', 'front': front}],
         'wall': ordered[0]['wall'],
     }
+    spec.update(_class_facade(ordered, front))
     return {'builder': 'feature_build', 'spec': spec}
+
+
+def _class_facade(ordered: list[dict], front: str | None) -> dict:
+    """``signs`` and ``facade_plan`` from each class's shopfront recipe (#431), or ``{}``.
+
+    A class's ``sign`` palette (wood, text colour) goes into ``signs`` for every label. Its ``facade``
+    recipe becomes ``facade_plan`` only for a building the class ``street_face`` recipe does not
+    already dress (the builder drops that dressing, glass, door, fascia, sign and awning, and the storey
+    window grid, for any label with an evidenced facade face) and whose front has a straight run long
+    enough for the glazing rhythm (a stepped diagonal front would lose its grid windows and gain none).
+    A class with neither key adds nothing.
+    Both are defaults; a hand spec replaces a label's row.
+
+    @param ordered: the row's decided buildings with ``label``
+    @param front: the row's front, ``N``/``S``/``E``/``W``
+    @returns: a mapping with ``signs`` and/or ``facade_plan``
+    """
+    signs, plan = {}, {}
+    for row in ordered:
+        palette = land_use.sign_palette(row['cls'])
+        if palette:
+            signs[row['label']] = palette
+        recipe = land_use.facade_recipe(row['cls'])
+        if not recipe or front not in tuple('NSEW'):
+            continue
+        dressed = land_use.street_face_defaults(
+            row['cls'], row['tags'], columns=len(row['cells']), height=row['levels'] * STOREY_M)
+        if not dressed and _straight_front_run(row['cells'], front) >= FACADE_MIN_RUN:
+            plan[row['label']] = _facade_plan(recipe, row['levels'], front)
+    extra = {}
+    if signs:
+        extra['signs'] = signs
+    if plan:
+        extra['facade_plan'] = plan
+    return extra
+
+
+def _straight_front_run(cells: set[tuple[int, int]], front: str) -> int:
+    """Length of the longest straight stretch of wall facing ``front``, in columns.
+
+    @param cells: footprint columns
+    @param front: ``N``/``S``/``E``/``W``
+    @returns: most columns sharing one edge line with open ground beyond them in that direction
+    """
+    dx, dz = {'N': (0, -1), 'S': (0, 1), 'E': (1, 0), 'W': (-1, 0)}[front]
+    edge = [(x, z) for x, z in cells if (x + dx, z + dz) not in cells]
+    along = 0 if front in 'NS' else 1
+    lines = defaultdict(list)
+    for cell in edge:
+        lines[cell[1 - along]].append(cell[along])
+    best = 0
+    for values in lines.values():
+        values.sort()
+        run = 1
+        for prev, nxt in zip(values, values[1:]):
+            run = run + 1 if nxt == prev + 1 else 1
+            best = max(best, run)
+        best = max(best, 1 if values else 0)
+    return best
+
+
+def _facade_plan(recipe: dict, storeys: int, front: str) -> dict:
+    """One label's ``facade_plan``: glazing rows on every face and one entrance on the front.
+
+    The front takes the ground row on storey 1 and the upper row above it; the other three faces take
+    the side row (or the upper row when the recipe has no side row) on every storey. A face with no
+    row would get no windows, so a recipe with no glazing at all gives no faces.
+    """
+    front_rows = recipe.get('front')
+    side = recipe.get('side') or (front_rows or {}).get('upper')
+    faces = {}
+    for face in 'NSEW':
+        if face == front and front_rows:
+            rows = [{'storey': 1, **front_rows['ground']}] + [
+                {'storey': n, **front_rows['upper']} for n in range(2, storeys + 1)]
+        elif side:
+            rows = [{'storey': n, **side} for n in range(1, storeys + 1)]
+        else:
+            continue
+        faces[face] = {'glazing': rows}
+    body = {'faces': faces} if faces else {}
+    entrance = recipe.get('entrance')
+    if entrance:
+        door = {
+            'id': 'front', 'face': front, 'leaves': entrance['leaves'], 'block': entrance['block'],
+            'provenance': {'source': 'inference', 'confidence': 'low', 'evidence_ids': [],
+                           'unresolved_reason': ''},
+        }
+        if entrance.get('awning'):
+            door['awning_like'] = dict(entrance['awning'])
+        body['entrances'] = [door]
+    return body
 
 
 def _terrace_spec(
