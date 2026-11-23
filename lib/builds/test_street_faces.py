@@ -118,6 +118,39 @@ class StraightRunTest(unittest.TestCase):
         self.assertTrue(any(run['face'] == 'N' for run in runs))
         self.assertTrue(any(run['face'] == 'W' for run in runs))
 
+    def test_a_notched_l_corner_still_squares_and_fills(self):
+        # An 8+8 L measures 45°. One notch drops the row to about 44°, past
+        # the threshold, but each arm is still on axis and the notch is filled.
+        fronts = {(x, 0): 'N' for x in range(8)}
+        fronts.update({(0, z): 'W' for z in range(1, 8)})
+        del fronts[(4, 0)]
+        fronts[(4, 1)] = 'N'
+        self.assertGreater(FF.front_row_angle(set(fronts)), FF.SHOP_SQUARE_MAX_ANGLE)
+        runs = FF.fit_straight_runs(fronts)
+        self.assertEqual({cell for run in runs for cell in run['fill']}, {(4, 0)})
+        self.assertTrue(any(run['face'] == 'N' and len(run['line']) > 1 for run in runs))
+        self.assertTrue(any(run['face'] == 'W' for run in runs))
+
+    def test_a_two_cell_corner_arm_still_squares(self):
+        fronts = {(0, 0): 'N', (1, 0): 'N', (0, 1): 'W'}
+        self.assertEqual(FF.front_row_angle(set(fronts)), 45)
+        runs = FF.fit_straight_runs(fronts)
+        self.assertEqual(runs, [{
+            'face': 'N', 'line': [(0, 0), (1, 0)],
+            'fill': set(), 'sources': set(fronts),
+        }])
+
+    def test_an_orthogonal_stair_keeps_each_wall_step(self):
+        # Pairs along a diagonal are steps, not two wall arms.
+        fronts = {}
+        for i in range(8):
+            fronts[(i, i)] = 'N'
+            fronts[(i + 1, i)] = 'W'
+        self.assertGreater(FF.front_row_angle(set(fronts)), FF.SHOP_SQUARE_MAX_ANGLE)
+        runs = FF.fit_straight_runs(fronts)
+        self.assertEqual(sum(len(run['fill']) for run in runs), 0)
+        self.assertEqual({cell for run in runs for cell in run['line']}, set(fronts))
+
 
 class StreetFaceDefaultsTest(unittest.TestCase):
     def build_context(self, tags, areas):

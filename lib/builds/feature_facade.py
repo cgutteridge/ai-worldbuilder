@@ -72,11 +72,15 @@ MAX_SHOP_STEP = 2
 # road run through the cell is 42.7°. 15° is under half that shallowest front.
 # A 1-in-5 drift measures about 11° and still squares; a 1-in-3 stair measures
 # about 18° and keeps its steps. A one-block notch on a straight row is about 0.4°.
+# A grid-aligned corner is not judged by that row angle: each arm is measured
+# on its own, so an L still squares when the whole front is about 45°, and a
+# one-block notch stays on the arm it steps off.
 SHOP_SQUARE_MAX_ANGLE = 15
 
 
 # Cells in a contiguous cardinal run of this length form a wall arm.
-_CORNER_ARM = 3
+# Two cells is a corner return. One cell is a step, not an arm.
+_CORNER_ARM = 2
 
 
 def front_row_angle(cells) -> float:
@@ -119,15 +123,11 @@ def _contiguous_runs(values: list[int]) -> list[list[int]]:
     return runs
 
 
-def _axis_aligned_corner(cells: set) -> bool:
-    """True when the columns are exactly two straight arms, one east-west and one north-south.
+def _corner_arms(cells: set) -> tuple[set, set]:
+    """East-west and north-south runs of at least :data:`_CORNER_ARM` cells.
 
-    An L of two grid-aligned arms measures about 45° on its principal axis.
-    Those arms are squared. A diagonal stair is missing one of the two arms,
-    so its angle decides.
-
-    @param cells: one connected component of front columns
-    @returns: whether the component is a grid-aligned corner
+    @param cells: front columns
+    @returns: ``(horizontal, vertical)`` columns on those runs
     """
     by_z: dict[int, list[int]] = {}
     by_x: dict[int, list[int]] = {}
@@ -148,7 +148,52 @@ def _axis_aligned_corner(cells: set) -> bool:
         if len(run) >= _CORNER_ARM
         for z in run
     }
-    return bool(horizontal) and bool(vertical) and cells <= horizontal | vertical
+    return horizontal, vertical
+
+
+def _cells_touching(arm: set, spare: set) -> set:
+    """Spare columns that share a side or a corner with ``arm``.
+
+    A one-block notch on a straight arm touches that arm only at the
+    corners beside the gap. The front component is 8-connected, so the
+    notch is still part of the arm.
+
+    @param arm: columns already on a wall arm
+    @param spare: columns on neither arm
+    @returns: spare columns one block off the arm
+    """
+    if not arm or not spare:
+        return set()
+    return {
+        (x + dx, z + dz)
+        for x, z in arm
+        for dx, dz in N8
+        if (x + dx, z + dz) in spare
+    }
+
+
+def _axis_aligned_corner(cells: set) -> bool:
+    """True when the columns are two grid-aligned arms, one east-west and one north-south.
+
+    An L measures about 45° on its principal axis, so the row angle cannot
+    see the arms. Each arm is measured on its own. A one-block notch stays
+    with the arm it steps off, and an arm may be only two cells. A diagonal
+    stair has no second arm, or that arm is itself steep, so the row angle
+    decides.
+
+    @param cells: one connected component of front columns
+    @returns: whether the component is a grid-aligned corner
+    """
+    horizontal, vertical = _corner_arms(cells)
+    if not horizontal or not vertical:
+        return False
+    spare = cells - horizontal - vertical
+    horizontal = horizontal | _cells_touching(horizontal, spare)
+    vertical = vertical | _cells_touching(vertical, spare)
+    if not cells <= horizontal | vertical:
+        return False
+    limit = SHOP_SQUARE_MAX_ANGLE
+    return front_row_angle(horizontal) <= limit and front_row_angle(vertical) <= limit
 
 
 def _square_shop_row(cells: set) -> bool:
