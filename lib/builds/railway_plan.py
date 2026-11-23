@@ -27,6 +27,11 @@ from ``at``; the track may turn immediately at next. Pass the selected
 outgoing join back as ``incoming``. Profiles retain ``before`` and ``after``
 neighbours so boundary corners keep their actual shape. Gap ``ends`` describe
 the two abutting rail cells, with rail Y, direction and track index.
+
+Where several lines of one feature share rail columns, :func:`junction_gaps`
+keeps the main line's rails and names the side tracks' overlapping (and
+orphaned) rail runs as ``junction`` gaps, which :func:`plan_line` then plans
+through its ``junction_gaps`` argument; a person finishes the junction.
 """
 from __future__ import annotations
 
@@ -45,6 +50,8 @@ BED_RADIUS = 2.3
 SLOPE_RATIO = 2.0
 SLOPE_MAX = 40
 RAIL_CLEARANCE = 5
+# A rail run this short, cut off by junction gaps (or a dead end) on both sides, joins nothing.
+JUNCTION_MIN_RUN = 4
 # Deck-height policy for an overhead span whose lidar height is only inferred
 # (too few or conflicting structure columns). False: leave a gap for a human.
 # True: trust the inferred underside; if it leaves under RAIL_CLEARANCE the
@@ -246,9 +253,16 @@ def _overhead_gaps(line, paths, decks):
     return result
 
 
-def _gaps(line, paths, roads, decks=()):
+def _gaps(line, paths, roads, decks=(), junctions=None):
     """Gap intervals in snapped path indices, with source ids for integration."""
     result = _overhead_gaps(line, paths, decks)
+    for ti, intervals in (junctions or {}).items():
+        if ti >= len(paths) or not paths[ti]:
+            continue
+        for gap in intervals:
+            if not 0 <= gap['start'] <= gap['end'] < len(paths[ti]):
+                raise ValueError(f'junction gap {gap["start"]}..{gap["end"]} is outside track {ti}')
+            result[ti].append({**gap, 'kind': 'junction'})
     for crossing in line.crossings:
         ti = crossing.track_index
         if ti >= len(paths) or not paths[ti]:
@@ -427,6 +441,7 @@ def plan_line(
     min_step_run: int = RAIL_MIN_STEP_RUN, max_deviation: int = RAIL_MAX_DEVIATION,
     cell_size: int | None = None,
     structures: Mapping | None = None, inferred_deck_usable: bool | None = None,
+    junction_gaps: Mapping[int, Sequence[Mapping]] | None = None,
 ) -> dict:
     """Plan one box of a single/paired through line; report unbuildable tracks.
 
@@ -441,6 +456,7 @@ def plan_line(
     @param cell_size: explicit coverage-grid size, or cellmath's configured size
     @param structures: deck evidence by way id (see :func:`deck_evidence`); None keeps the lidar surface as ceiling
     @param inferred_deck_usable: trust an inferred deck height; defaults to :data:`INFERRED_DECK_USABLE`
+    @param junction_gaps: track index -> ``junction`` gap intervals from :func:`junction_gaps`
     @returns: JSON-able placement lists, profiles, gaps, joins and explicit failures
     """
     if (not isinstance(min_step_run, int) or isinstance(min_step_run, bool) or min_step_run < 1
@@ -487,7 +503,7 @@ def plan_line(
         previous_cells.append(before)
         next_cells.append(nxt)
     under, plan['decks'] = deck_evidence(line, structures, inferred_deck_usable)
-    gaps = _gaps(line, paths, crossing_roads or {}, plan['decks'])
+    gaps = _gaps(line, paths, crossing_roads or {}, plan['decks'], junction_gaps)
     heights = []
     for ti, path in enumerate(paths):
         samples = [_ground(ground, p) for p in path]
@@ -627,6 +643,129 @@ def plan_line(
                     deck.add(p)
     _corridor(plan, ground, deck, supports, road_surfaces or {})
     return plan
+
+
+def _line_rank(plan):
+    """Main line first: more tracks, then more rail columns, then lowest line id."""
+    return -len(plan['tracks']), -len(plan['rails']), plan['line_id']
+
+
+def junction_gaps(plans: Sequence[Mapping]) -> dict:
+    """Choose the main line where plans share rail columns; gap the side tracks.
+
+    The line with the best rank (:func:`_line_rank`) keeps every shared rail column.
+    Each other claimant's overlapping rail columns, plus any rail run that the
+    overlap leaves shorter than :data:`JUNCTION_MIN_RUN` with nothing to connect to
+    (junction gaps or a dead end on both sides, no box join and no structure gap),
+    become ``junction`` gaps whose ``source`` is the winning line id.
+
+    @param plans: first-pass :func:`plan_line` results of one feature
+    @returns: ``{plan_index: {track_index: [gap, ...]}}`` for the side plans only; pass
+        each value back to :func:`plan_line` as ``junction_gaps``
+    @raises ValueError: with coordinates, when a join end would be gapped or a line vanishes
+    """
+    ids = [p['line_id'] for p in plans]
+    if len(set(ids)) != len(ids):
+        raise ValueError('railway plans need distinct line ids to choose a main line')
+    rank = {i: _line_rank(p) for i, p in enumerate(plans)}
+    claims = {}
+    for i, p in enumerate(plans):
+        for r in p['rails']:
+            claims.setdefault((r[0], r[2]), []).append(i)
+    lost = {}
+    for q, claimants in claims.items():
+        if len(claimants) > 1:
+            winner = min(claimants, key=rank.get)
+            for i in claimants:
+                if i != winner:
+                    lost.setdefault(i, {})[q] = winner
+    result = {}
+    for i, columns in lost.items():
+        plan, by_track, kept = plans[i], {}, 0
+        for track in plan['tracks']:
+            path, g0, n = [tuple(q) for q in track['path']], track['gap'], len(track['path'])
+            mask = [q in columns for q in path]
+            for index, joined in ((0, track['before']), (n - 1, track['after'])):
+                if mask[index] and joined is not None:
+                    raise ValueError(f'junction with {ids[columns[path[index]]]} covers the box join of '
+                                     f'{ids[i]} at {list(path[index])}')
+            full = list(mask)
+            start = 0
+            while start < n:
+                if mask[start] or g0[start]:
+                    start += 1
+                    continue
+                end = start
+                while end + 1 < n and not mask[end + 1] and not g0[end + 1]:
+                    end += 1
+                anchored = ((track['before'] is not None if start == 0 else bool(g0[start - 1]))
+                            or (track['after'] is not None if end == n - 1 else bool(g0[end + 1])))
+                if any(mask) and end - start + 1 < JUNCTION_MIN_RUN and not anchored:
+                    full[start:end + 1] = [True] * (end - start + 1)
+                start = end + 1
+            kept += sum(1 for k in range(n) if not full[k] and not g0[k])
+            intervals, index = [], 0
+            while index < n:
+                if not full[index]:
+                    index += 1
+                    continue
+                end = index
+                while end + 1 < n and full[end + 1]:
+                    end += 1
+                sources = []
+                for q in path[index:end + 1]:
+                    if q in columns and ids[columns[q]] not in sources:
+                        sources.append(ids[columns[q]])
+                intervals.append({'kind': 'junction', 'source': '+'.join(sources),
+                                  'start': index, 'end': end})
+                index = end + 1
+            if intervals:
+                by_track[track['track_index']] = intervals
+        if kept <= 0:
+            first = min(columns)
+            raise ValueError(f'{ids[i]} lies entirely inside rails of other lines, e.g. at {list(first)}')
+        result[i] = by_track
+    return result
+
+
+def share_footprints(plans: Sequence[dict]) -> None:
+    """Give each column that corridors claim differently to one owner, in place.
+
+    Columns that plans write identically, with no rail among them, stay as they
+    are. For any other shared column the plan holding a rail there keeps it; otherwise the best
+    ranked (main) line wins. Every other plan drops that column's ground, surface
+    and planting, so a junction's side track neither rewrites the main line's
+    formation nor buries its own rails under it.
+    """
+    rails = [{(r[0], r[2]) for r in p['rails']} for p in plans]
+    rows = []
+    for p in plans:
+        surfaces = {(x, z): kind for x, z, kind in p['surfaces']}
+        planting = {}
+        for x, y, z, kind in p['planting']:
+            planting.setdefault((x, z), []).append((y, kind))
+        rows.append({(c[0], c[1]): (tuple(c), surfaces.get((c[0], c[1])), tuple(sorted(planting.get((c[0], c[1]), ()))))
+                     for c in p['columns']})
+    claims = {}
+    for i, mine in enumerate(rows):
+        for q in mine:
+            claims.setdefault(q, []).append(i)
+    drops = [set() for _ in plans]
+    for q, claimants in claims.items():
+        if len(claimants) < 2:
+            continue
+        holders = [i for i in claimants if q in rails[i]]
+        if not holders and len({rows[i][q] for i in claimants}) == 1:
+            continue
+        holders = holders or claimants
+        owner = min(holders, key=lambda i: _line_rank(plans[i]))
+        for i in claimants:
+            if i != owner:
+                drops[i].add(q)
+    for p, owned in zip(plans, drops):
+        if owned:
+            for key, (a, b) in (('columns', (0, 1)), ('surfaces', (0, 1)), ('planting', (0, 2))):
+                p[key] = [row for row in p[key] if (row[a], row[b]) not in owned]
 
 
 def validate_plan(plan: Mapping) -> None:

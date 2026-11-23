@@ -4,8 +4,9 @@ Spec: ``kind: railway``, ``name: railway_<tx>_<tz>``, ``cell: [tx,tz]``,
 ``plans: [railway_plan.plan_line(...) outputs]``, optional ``modifies`` and
 ``exclude_boxes`` (already-covered inclusive MC boxes). Each plan may carry
 ``clear_to: [[x,z,y],...]`` from its recorded surface evidence. Metadata keeps
-line ids, box cuts and gap end records; active journal entries are the coverage
-record, so normal feature undo also removes coverage and column reservations.
+line ids, box cuts and gap end records (``junctions`` lists the ``junction`` gaps for a
+person to finish); active journal entries are the coverage record, so normal feature
+undo also removes coverage and column reservations.
 """
 from __future__ import annotations
 
@@ -15,7 +16,8 @@ import os
 from pathlib import Path
 
 import cellmath
-from railway_plan import PLANNER_BOX, RAIL_CLEARANCE, deck_evidence, plan_line, validate_plan
+from railway_plan import (PLANNER_BOX, RAIL_CLEARANCE, deck_evidence, junction_gaps, plan_line,
+                          share_footprints, validate_plan)
 from site_kit import Plan
 
 KIND = 'railway'
@@ -255,9 +257,13 @@ def metadata(spec) -> dict:
                 ways = identities[ti] if 0 <= ti < len(identities) else []
                 tracks.append({**record, 'way_ids': list(ways)})
             joins.append({**join, 'tracks': tracks})
+    gaps = [{**g, 'line_id': p['line_id']} for p in spec['plans'] for g in p['gaps']]
+    junctions = [{'line_id': g['line_id'], 'main_line_id': g['source'], 'track_index': g['track_index'],
+                  'where': g['where'], 'last': g['columns'][-1], 'ends': g['ends']}
+                 for g in gaps if g['kind'] == 'junction']
     return {'kind': KIND, 'tiled_backup': True, 'boxes': [p['box'] for p in spec['plans']],
             'line_ids': [p['line_id'] for p in spec['plans']], 'joins': joins,
-            'gaps': [{**g, 'line_id': p['line_id']} for p in spec['plans'] for g in p['gaps']]}
+            'gaps': gaps, 'junctions': junctions}
 
 
 def _incoming_joins(line, prior, cell):
@@ -329,16 +335,28 @@ def plan_feature(lines, ground, cell, *, reg=None, crossing_roads=None, road_sur
     """Plan one feature from explicit evidence arrays and immutable through lines.
 
     ``structures`` is ``structure_evidence.by_osm_id`` for the overhead decks; unknown
-    deck heights become railway gaps (see ``railway_plan.deck_evidence``).
+    deck heights become railway gaps (see ``railway_plan.deck_evidence``). Lines that
+    share rail columns are resolved here: the main line keeps its rails and the side
+    track leaves ``junction`` gaps (``railway_plan.junction_gaps``); shared ground goes
+    to one owner (``railway_plan.share_footprints``). Anything else still refuses.
     """
     prior = list(active_railways(reg)) if reg is not None else []
     excludes = [box for e in prior for box in e.meta.get('boxes', ())]
-    plans = []
-    for line in lines:
-        joins = _incoming_joins(line, prior, cell) if prior else []
-        p = plan_line(line, ground, tuple(cell), joins, crossing_roads=crossing_roads,
-                      road_surfaces=road_surfaces, structures=structures,
-                      inferred_deck_usable=inferred_deck_usable)
+    joined = [_incoming_joins(line, prior, cell) if prior else [] for line in lines]
+
+    def plan_one(i, junctions=None):
+        return plan_line(lines[i], ground, tuple(cell), joined[i], crossing_roads=crossing_roads,
+                         road_surfaces=road_surfaces, structures=structures,
+                         inferred_deck_usable=inferred_deck_usable, junction_gaps=junctions)
+
+    plans = [plan_one(i) for i in range(len(lines))]
+    if len(plans) > 1 and not any(p['failures'] for p in plans):
+        # Lines that share rail columns: the main line keeps them, side tracks leave gaps.
+        for i, side in junction_gaps(plans).items():
+            plans[i] = plan_one(i, side)
+    if len(plans) > 1 and not any(p['failures'] for p in plans):
+        share_footprints(plans)
+    for line, joins, p in zip(lines, joined, plans):
         under, _decks = deck_evidence(line, structures, inferred_deck_usable)
         _check_continuations(p, joins, excludes)
         p['track_way_ids'] = [list(ways) for ways in line.track_way_ids]
@@ -354,7 +372,6 @@ def plan_feature(lines, ground, cell, *, reg=None, crossing_roads=None, road_sur
                     ceiling = int(ground.get('deck_y', ground['h'])[i][j])
                 top = min(top, ceiling - 1)
             p['clear_to'].append([x, z, top])
-        plans.append(p)
     spec = {'kind': KIND, 'name': feature_name(cell), 'cell': list(cell),
             'plans': plans, 'exclude_boxes': excludes, 'modifies': []}
     return load_spec_dict(spec)
