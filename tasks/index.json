@@ -175,23 +175,14 @@
     {
       "id": 427,
       "title": "Typology generator: accept rotated and irregular footprints, rows by adjacency, front from nearest street",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
       "builderTask": false,
       "notes": "From trial #257, findings in docs/plans/typology-buildings.md (sections \"Where the shipped generator stops\" and Recommendation 1). The #413 generator refused every real footprint as \"odd footprint\": 0 of 18 estate, 42 terrace and 42 parade buildings produced a spec, because _box accepts only filled axis-aligned rectangles and real streets are rotated (bounding-box fill 0.29 to 0.94). house_build already fits rotated rectangles (#415) and feature_build takes the footprint as drawn. Change lib/builds/typology_spec.py: (a) accept any footprint of a minimum area and leave the fit to the builder, still reporting a needs-designer reason for slivers and multi-part shapes; (b) form rows from footprints within one block of each other, not a full shared side (_relation, _mark_partial, _components); (c) choose a front from the nearest street when the two axes are close (_front, the shop parade sits on a diagonal road), reporting no-clear-front only when no street is within reach. Colocated tests with fixtures cut from the real Begonia Road, Northcote Road and Portswood Road footprints (record them as small JSON fixtures). Non-builder: synthetic fixtures and unit tests only. Does not touch the district profile or tag defaults (see the tag-defaults task).\n\nReview corrections (2026-11-22): thresholds the trial used and the task keeps unless changed: bounding-box fill of at least 0.45 for houses and at least 20 cells for shops. Not a stretch: three changes in one file (lib/builds/typology_spec.py) with three fixtures, one branch; task 428 edits the same file, so run them one at a time. Squaring of shop fronts is not in this file: it is feature_facade.fit_straight_runs (#332); the owner's decision to give up squaring on rows that are not near axis-aligned (snag S-110) is a separate task."
-    },
-    {
-      "id": 428,
-      "title": "Typology generator: default storeys from the profile, lidar check advisory, class-default fallback for a missing district profile",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "From trial #257 (docs/plans/typology-buildings.md, Recommendation 1 and 2). On the study streets building:levels was present on 0 of 18 estate and 0 of 42 terrace buildings and 6 of 42 parade buildings, roof:shape on 0, 0 and 1. The generator refuses on missing building:levels, then on the lidar agreement check, then on no district profile. Change lib/builds/typology_spec.py so a missing building:levels takes the profile class storeys (default from storeys.min when min and max agree, else needs-designer with a clear reason), the lidar height check is advisory (reported in the spec notes, never a refusal, and missing lidar is not a refusal), and a missing district profile falls back to the land-use class default (ADR 006) with the fallback named in the spec note. Observed tags still win. Non-builder: fixtures and unit tests. Independent of the footprint-gates task. The world itself still needs real district profile files (site/districts/*.json) before a rule route gives a district palette: that is world work (profile from the aerial), not a tool task, and the world currently has none.\n"
-    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/428-typology-storeys-fallback"},
+    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/427-typology-rotated-footprints"},
+    
     {
       "id": 429,
       "title": "house_build: roof underlay block sits in the wall's top course (roof material one layer low)",
@@ -221,7 +212,7 @@
       "complexity": "l",
       "blockedBy": [
         427,
-        428,
+        
         429
       ],
       "builderTask": true,
@@ -272,13 +263,13 @@
     {
       "id": 440,
       "title": "Shop fronts: stop squaring rows that aren't near axis-aligned",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
       "builderTask": false,
       "notes": "From trial #257 parade snag S-110 (issue I-060, \"Shop rows that aren't axis-aligned get squared into steps\"). The owner's decision: squaring shop fronts does not work unless the row is close to square anyway, so give up that directive for rows that are not near axis-aligned. Cause (checked 2026-11-22): the shop street-face squaring in lib/builds/feature_facade.py, fit_straight_runs (#332, limited by MAX_SHOP_STEP), turns a diagonal row into steps. It was added so awnings and signs touch the wall, so reversing it brings that problem back. rules/craftsmanship.md also says to axis-align long wall runs and square corners. Not verified: the row angle at which squaring starts to look wrong.\n\nDeliverable: skip the squaring when the row's angle is beyond a named threshold (measure the Portswood parade's angle first and state the threshold in the notes); say how awnings, signs and doors attach to an angled front instead (for example per wall step); change the squaring wording in rules/craftsmanship.md to match. Non-builder: fixtures only, no live apply. Acceptance: a fixture with an angled row shows an unsquared front with awnings and signs still touching the wall; a near-axis-aligned row is squared as today; the owner confirms in game that the parade fronts are no longer stepped (S-110) after a rebuild (a separate world step). Related: #257 findings (docs/plans/typology-buildings.md, Parade verdict) and task 427 (rotated footprints in the generator).\n"
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/440-shop-front-squaring"},
     {
       "id": 441,
       "title": "Typology generator: terrace recipe (separate roofs per house or pair, alternating roof colour)",

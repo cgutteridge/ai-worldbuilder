@@ -31,7 +31,10 @@ PRIVATE_SURFACES = ('grass', 'paving', 'keep')
 OPENINGS = ('door_route', 'street_gate', 'none')
 # Optional row columns beyond the required ones. Add a new per-class key here (and its checks in
 # validate_table) so an unknown key is still refused; absent or null means "infer nothing".
-OPTIONAL_COLUMNS = ('surface', 'street_face', 'trees', 'ground_texture', 'woodland_decor', 'body')
+OPTIONAL_COLUMNS = ('surface', 'street_face', 'trees', 'ground_texture', 'woodland_decor', 'body',
+                    'palette', 'roofs', 'storeys')
+# Building appearance under a district profile (ADR 006, read by typology_spec). Absent means no default.
+TYPOLOGY_ROOFS = ('flat', 'gable', 'hip', 'mansard', 'shed')
 SURFACE_KEYS = ('unmapped_paving', 'path_widen')
 # Standing height, in metres, for the lidar source and the lines source (#317, #368).
 # The gate and the hedge/belt reader share this one value.
@@ -158,6 +161,7 @@ def validate_table(doc: dict) -> dict:
         fr = row['frontage']
         _validate_street_face(cid, row.get('street_face'))
         _validate_body(cid, row.get('body'))
+        _validate_typology(cid, row)
         for col in ('inference', 'requires', 'boundary', 'private_surface', 'opening'):
             if col not in fr:
                 raise TableError(f'{cid}: frontage is missing {col!r}')
@@ -245,13 +249,58 @@ def load_table() -> dict:
 
 
 def defaults(cls: str) -> dict:
-    """Per-class defaults row (frontage, planting, furniture) for a class id.
+    """Per-class defaults row (frontage, planting, furniture, and any typology keys) for a class id.
 
     @param cls: class id; anything not in :data:`CLASSES` falls to ``unknown``
     @returns: the table row
     """
     rows = load_table()['classes']
     return rows[cls if cls in rows else 'unknown']
+
+
+def typology_defaults(cls: str) -> dict | None:
+    """Palette, roofs and storeys from the class table, for when no district profile speaks.
+
+    ADR 006 puts this table under the district profile. A row that sets none of
+    these keys has no building-appearance default. ``unknown`` is not a fallback
+    here: a class the table does not list, and ``unknown`` itself, return None.
+
+    @param cls: class id
+    @returns: the keys the row sets among palette, roofs and storeys, or None
+    """
+    if cls not in CLASSES or cls == 'unknown':
+        return None
+    row = defaults(cls)
+    section = {key: row[key] for key in ('palette', 'roofs', 'storeys') if row.get(key) is not None}
+    return section or None
+
+
+def _validate_typology(cid: str, row: dict) -> None:
+    """Refuse a bad palette, roof list or storey range on a class row.
+
+    Null or absent means the class states no building-appearance default.
+    ``unknown`` may not set one: that class does not infer a building.
+
+    @param cid: class id
+    @param row: table row
+    """
+    if cid == 'unknown' and any(row.get(key) is not None for key in ('palette', 'roofs', 'storeys')):
+        raise TableError(f'{cid}: typology defaults are inference')
+    palette = row.get('palette')
+    if palette is not None and (not isinstance(palette, list) or not palette
+                                or any(not isinstance(item, str) or not item.strip() for item in palette)):
+        raise TableError(f'{cid}: palette must be a nonempty list of block names')
+    roofs = row.get('roofs')
+    if roofs is not None and (not isinstance(roofs, list) or not roofs
+                              or any(item not in TYPOLOGY_ROOFS for item in roofs)):
+        raise TableError(f'{cid}: roofs must be a nonempty list of {TYPOLOGY_ROOFS}')
+    storeys = row.get('storeys')
+    if storeys is None:
+        return
+    if (not isinstance(storeys, dict) or set(storeys) != {'min', 'max'}
+            or any(type(storeys.get(key)) is not int or not 1 <= storeys[key] <= 100 for key in ('min', 'max'))
+            or storeys['min'] > storeys['max']):
+        raise TableError(f'{cid}: storeys must be {{min, max}} integers from 1 to 100 in order')
 
 
 def planting_rule(cls: str, kind: str) -> dict | None:

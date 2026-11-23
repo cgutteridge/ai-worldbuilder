@@ -28,6 +28,13 @@ PROFILE = {
         'commercial': {'palette': ['bricks'], 'roofs': ['flat'], 'storeys': {'min': 1, 'max': 4}},
     },
 }
+PINNED = {
+    'name': 'Pinned',
+    'classes': {
+        'residential': {'palette': ['bricks'], 'roofs': ['gable'], 'storeys': {'min': 2, 'max': 2}},
+        'commercial': {'palette': ['bricks'], 'roofs': ['flat'], 'storeys': {'min': 2, 'max': 2}},
+    },
+}
 
 
 def rect(x0, z0, width, depth):
@@ -35,14 +42,17 @@ def rect(x0, z0, width, depth):
     return {(x, z) for x in range(x0, x0 + width) for z in range(z0, z0 + depth)}
 
 
-def building(way, cells, tags, lidar=8.0, profile=None):
-    """One synthetic footprint with the tags and lidar the rules read."""
+def building(way, cells, tags, lidar=8.0, profile=PROFILE):
+    """One synthetic footprint with the tags and lidar the rules read.
+
+    Pass ``profile=None`` for a cell with no district profile.
+    """
     return {
         'way_id': str(way),
         'cells': cells,
         'tags': tags,
         'lidar_m': lidar,
-        'profile': PROFILE if profile is None else profile,
+        'profile': profile,
     }
 
 
@@ -156,18 +166,118 @@ class TypologySpecs(unittest.TestCase):
             f'd{i + 1}', rect(100 + i * 5, 0, 5, 8),
             {'building': 'detached', 'building:levels': '2'},
         ) for i in range(3)]
-        tall = building('tall', rect(70, 0, 5, 8), {'building': 'house', 'building:levels': '2'}, lidar=20)
-        report = T.generate([odd, missing, unknown, *disagreed, tall], STREET)
+        report = T.generate([odd, missing, unknown, *disagreed], STREET)
         self.assertEqual(report['specs'], [])
         reasons = {row['way_id']: row['reason'] for row in report['needs_designer']}
         self.assertEqual(reasons['odd'], 'odd footprint')
         self.assertEqual(reasons['missing'], 'missing tags')
         self.assertEqual(reasons['unknown'], 'unknown class')
         self.assertEqual(reasons['d1'], 'tag disagrees with the footprint')
-        self.assertEqual(reasons['tall'], 'lidar height disagrees with building:levels')
         three = building('three', rect(140, 0, 5, 8), {'building': 'house', 'building:levels': '3'}, lidar=9)
         alone = T.generate([three], STREET)
         self.assertEqual(alone['needs_designer'], [{'way_id': 'three', 'reason': 'house builder is two storeys'}])
+
+    def test_missing_levels_use_a_pinned_profile_storey_count(self):
+        house = building('h', rect(0, 0, 5, 8), {'building': 'house'}, profile=PINNED)
+        shop = building('s', rect(20, 0, 6, 7), {'building': 'retail'}, profile=PINNED)
+        report = T.generate([house, shop], STREET)
+        self.assertEqual(report['needs_designer'], [])
+        by_builder = {item['builder']: item['spec'] for item in report['specs']}
+        self.assertIn('Storeys 2 from the district profile.', by_builder['house_build']['notes'])
+        self.assertIn('district palette (Pinned)', by_builder['house_build']['notes'])
+        self.assertNotIn('class default', by_builder['house_build']['notes'])
+        self.assertEqual(by_builder['feature_build']['storeys'], {'a': 2})
+        self.assertIn('Storeys 2 from the district profile.', by_builder['feature_build']['notes'])
+        loaded = FS.load_spec(write_spec(by_builder['feature_build']))
+        footprints = {'a': rect(20, 0, 6, 7)}
+        with redirect_stdout(io.StringIO()):
+            plan = F.build(loaded, footprints=footprints, world=_StoneWorld())
+        self.assertTrue(plan.cells)
+
+    def test_a_storey_range_does_not_guess_a_missing_count(self):
+        house = building('h', rect(0, 0, 5, 8), {'building': 'house'})
+        report = T.generate([house], STREET)
+        self.assertEqual(report['specs'], [])
+        self.assertEqual(
+            report['needs_designer'],
+            [{'way_id': 'h', 'reason': 'district profile storeys min and max differ'}],
+        )
+        outside = building('s', rect(20, 0, 6, 7), {'building': 'retail', 'building:levels': '5'})
+        refused = T.generate([outside], STREET)
+        self.assertEqual(
+            refused['needs_designer'],
+            [{'way_id': 's', 'reason': 'storeys outside the district range'}],
+        )
+
+    def test_lidar_height_is_a_note_and_a_missing_height_is_not_a_refusal(self):
+        tall = building('tall', rect(0, 0, 5, 8), {'building': 'house', 'building:levels': '2'}, lidar=20)
+        report = T.generate([tall], STREET)
+        self.assertEqual(report['needs_designer'], [])
+        self.assertIn('Lidar height disagrees with building:levels.', report['specs'][0]['spec']['notes'])
+        plan = plan_house(report['specs'][0]['spec'], {'tall': rect(0, 0, 5, 8)})
+        self.assertTrue(plan.cells)
+        missing = building('h', rect(20, 0, 5, 8), {'building': 'house', 'building:levels': '2'}, lidar=None)
+        quiet = T.generate([missing], STREET)
+        self.assertEqual(quiet['needs_designer'], [])
+        self.assertIn('Lidar height missing.', quiet['specs'][0]['spec']['notes'])
+
+    def test_missing_profile_uses_the_class_default_and_names_it(self):
+        house = building('h', rect(0, 0, 5, 8), {'building': 'detached'}, profile=None, lidar=None)
+        report = T.generate([house], STREET)
+        self.assertEqual(report['needs_designer'], [])
+        spec = report['specs'][0]['spec']
+        self.assertEqual(report['specs'][0]['builder'], 'house_build')
+        notes = spec['notes']
+        self.assertIn('Roof gable from the land-use class default.', notes)
+        self.assertIn('Material brick from the land-use class default (residential).', notes)
+        self.assertIn('Storeys 2 from the land-use class default.', notes)
+        self.assertIn('Lidar height missing.', notes)
+        plan = plan_house(spec, {'h': rect(0, 0, 5, 8)})
+        self.assertTrue(plan.cells)
+        shop = building(
+            's', rect(20, 0, 6, 7),
+            {'building': 'retail', 'building:levels': '4', 'roof:shape': 'gabled'},
+            profile=None, lidar=12.0,
+        )
+        observed = T.generate([shop], STREET)
+        self.assertEqual(observed['needs_designer'], [])
+        shop_spec = observed['specs'][0]['spec']
+        self.assertEqual(shop_spec['storeys'], {'a': 4})
+        self.assertEqual(shop_spec['roofs']['a']['kind'], 'pitched')
+        self.assertIn('roof:shape', shop_spec['notes'])
+        self.assertIn('land-use class default (commercial)', shop_spec['notes'])
+        self.assertNotIn('Storeys', shop_spec['notes'])
+
+    def test_a_profile_that_omits_the_class_falls_back_and_names_it(self):
+        profile = {'name': 'Only shops', 'classes': {
+            'commercial': {'palette': ['bricks'], 'roofs': ['flat'], 'storeys': {'min': 2, 'max': 2}},
+        }}
+        house = building('h', rect(0, 0, 5, 8), {'building': 'house'}, profile=profile)
+        report = T.generate([house], STREET)
+        self.assertEqual(report['needs_designer'], [])
+        notes = report['specs'][0]['spec']['notes']
+        self.assertIn('land-use class default (residential)', notes)
+        self.assertNotIn('Only shops', notes)
+
+    def test_a_class_with_no_default_is_not_guessed(self):
+        church = building('c', rect(0, 0, 8, 6), {'building': 'church', 'building:levels': '2'}, profile=None)
+        report = T.generate([church], STREET)
+        self.assertEqual(report['specs'], [])
+        self.assertEqual(report['needs_designer'], [{'way_id': 'c', 'reason': 'no class default'}])
+
+    def test_district_roof_wins_over_the_class_default(self):
+        profile = {
+            'name': 'Hip district',
+            'classes': {
+                'residential': {'palette': ['bricks'], 'roofs': ['hip'], 'storeys': {'min': 2, 'max': 2}},
+            },
+        }
+        house = building('h', rect(0, 0, 5, 8), {'building': 'house'}, profile=profile)
+        report = T.generate([house], STREET)
+        self.assertEqual(report['needs_designer'], [])
+        notes = report['specs'][0]['spec']['notes']
+        self.assertIn('Roof hip from the district profile.', notes)
+        self.assertNotIn('class default', notes)
 
 
 class LoadAndWrite(unittest.TestCase):
