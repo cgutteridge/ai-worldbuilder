@@ -35,7 +35,7 @@
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [
-        447
+        
       ],
       "builderTask": false,
       "notes": "From trial #257 (docs/plans/typology-buildings.md, Recommendation 4 and 5). Rule-built shops came out as plain brick boxes with the builder's default entrance and awning; the hand specs that added a facade_plan (ground storey glazed_h 3 pier 1, upper storeys glazed_h 2 pier 3, entrance with awning_like) read much closer to real shopfronts. Make glazing and facade detail (I-006) a class recipe in the typology spec generator: a small per-class table (glazing rows per storey, pier width, rhythm, entrance awning, roof edge) under the district profile or the land-use class table, emitted into the generated feature_build spec's facade_plan and roofs.edge. Houses keep the house_build windows. The recipe is a default that a profile can override, and a class with no recipe stays as today. Non-builder: fixtures and tests that the generated spec validates in feature_build (dry run on a synthetic footprint). Overlaps task 333 (shop typology: shopfront ground floor, dormers, bay windows): do the class-recipe table here and leave per-side storeys, dormers and bays to 333.\n\nReview corrections (2026-11-22, parade snags S-108, S-109, S-112): this task keeps the glazing, pier and entrance-awning table and adds a default sign palette (sign wood and text colour) per land-use class. The one home for the recipe is the land-use class table (#253, #254), not a district profile: the world has no district profiles. Per-building fascia colour is NOT part of this task: it is world data from street view (real fascias on the Portswood parade are mostly black, Burga grey and Stravs teal), supplied through the per-building fascia key that task 437 adds, or a district file. It must follow task 437 (sign wood, fascia colour and contrast options): land 437 first, the tracker cannot record the blockedBy here. The shop typology (pitched building behind a flat shopfront) is task 333.\n\nReview corrections (2026-11-23): 437 and 333 have landed. Blocked by 447 (live parade fixes), which changes windows, doors, storeys and the commercial roof default for rule-built shops; re-read this task once 447 lands, since part of the plain-brick-box complaint may be fixed there, and keep only what is left (glazing, pier, entrance-awning and sign-palette table). The recipe lives in config/land-use-classes.json beside the 333 `body` recipe, as new fields on the class row. Task 441 also edits typology_spec.py and the same class table: do not run 431 and 441 in one parallel wave."
@@ -81,7 +81,7 @@
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [
-        447
+        
       ],
       "builderTask": false,
       "notes": "From trial #257 parade snag S-107 (issue I-017 doors at the wrong height; earlier fixes #145, #146, #204, #243, #407). The owner saw shop doors \"one level too low\" on the Portswood Road parade (rule-built and hand-specced shops, cell 51,-37): door bottoms sit one block below the pavement. Shop doors on the street-face path take their floor from _column_floor(f, cell) in lib/builds/feature_facade.py (about lines 358 and 498), which is not the facade-plan _outside_door_floor of #145/#146/#204; that is the first suspect, with the stoop helper from #407. Cause NOT verified.\n\nStep 1, diagnose read-only: for several parade shops compare the door floor Y, the stoop or entrance step, the outside ground (lidar terrain and the live surface) and the footprint's ground level, and say which input is one block off. Step 2: fix it in the builder and add a fixture that catches it. Stop rule: if the cause is data (the lidar or ground height at the shopfront) and not code, report it with the numbers instead of patching the builder. Stretch (diagnosis): ask before raising model or effort. Non-builder: no live apply, a read-only world check is allowed. Acceptance: a stated cause with numbers, a fix or the data report, tests, and the owner confirms S-107 in game after a rebuild (a separate world step).\n\n\nReview corrections (2026-11-23): blocked by 447, which changes doors for rule-built shops; the diagnosis here was made against the earlier 51,-37 trial build, so reproduce on current main first. Task 435 also edits lib/builds/feature_facade.py: do not run them in parallel.\n\nFrom #447 (re-scoped 2026-11-23): #447 is closed, so this task is no longer blocked by it. Its leftover item 'doors' is this task plus the shopfront door and fascia layout in #455: on Papa John's the owner placed the door one column in from the front face because the wall steps diagonally and a door sits at one edge of its block (framed by the diagonal), at floor Y 33 with the pavement at Y 32. Check the door floor and the diagonal framing together."
@@ -92,16 +92,7 @@
     
     
     
-    {
-      "id": 447,
-      "title": "Live parade fixes after #333: windows on stepped walls, roof material, storeys, doors for rule-built shops",
-      "status": "todo",
-      "priority": "high",
-      "complexity": "m",
-      "blockedBy": [],
-      "builderTask": true,
-      "notes": "Live build of #333 + #427 at cell 50,-36 (2026-11-23) read back clean but looked wrong: blank stepped brick walls, roofs of solid brick, nearly no windows (house_build.windows passes no corner_evidence, so every wall column of a 45-degree stair-step wall is a corner and is refused: 'corner pier / tread too short'), no bays, mostly 1-storey bodies, most shops without a door. Fix generally (no street- or shop-specific code): (1) windows on stepped faces in house_build.windows, (2) roof material default for the commercial class (full-block brick roofs), (3) storeys and bay from evidence, (4) doors. Check on ONE shop first, in game, then the group. Source: session notes; docs/plans/typology-buildings.md.\n\nReturned to todo: Zone regions landed. Left: stair-step windows, roof flat_tol default, storeys/bay, doors, live parade.\n\n[tasks CLI] Status update recorded; subject to human review.\n\nReturned to todo: Solid-glass windows and zone regions landed. Left: roof flat_tol default, storeys/bay, doors, live parade.\n\n[tasks CLI] Status update recorded; subject to human review."
-    },
+    
     
     {
       "id": 455,
