@@ -146,6 +146,40 @@ class ZoneMathTest(unittest.TestCase):
         self.assertEqual(FZ.ridge_clip_levels([26, 30, 34], regions, zone, readable, levels), levels)
         self.assertEqual(FZ.ridge_clip_levels('auto', None, zone, readable, levels), levels)
 
+    def test_surface_fit_cleans_noise_per_region_and_leaves_other_cells_alone(self):
+        # A noisy gable (ridge across the axis, 30 -> 34 -> 30 m) beside a noisy flat deck at 26 m.
+        rng = np.random.default_rng(11)
+        outline = np.ones((8, 24), dtype=bool)
+        zz, xx = np.mgrid[0:8, 0:24]
+        gable = xx < 12
+        dsm = np.where(gable, 34.0 - 0.7 * np.abs(xx - 6.0), 26.0) + rng.normal(0, 0.3, (8, 24))
+        regions = [[(0, 0), (12, 0), (12, 8), (0, 8)], [(12, 0), (24, 0), (24, 8), (12, 8)]]
+        readable, zone, _levels, _axis, _dropped = FZ.assign_roof_zones(
+            dsm, outline, 'auto', xx, zz, bucket=4, axis_deg=0.0, regions=regions,
+        )
+        clean, lines = FZ.fit_clean_heights(dsm, zone, readable, xx.astype(float), zz.astype(float), 0.0, regions, 'a')
+        deck = readable & ~gable
+        self.assertLess(float(np.ptp(clean[deck])), 0.01)                       # noise gone: one level
+        self.assertAlmostEqual(float(clean[deck][0]), 26.0, delta=0.3)
+        ridge = float(clean[readable & gable].max())
+        self.assertAlmostEqual(ridge, 34.0, delta=0.5)
+        self.assertEqual(len(lines), 2)
+        self.assertIn('gable ridge across the axis', lines[0])
+        self.assertIn('flat', lines[1])
+        outside = ~readable
+        self.assertTrue(np.array_equal(clean[outside], dsm[outside]))           # untouched
+
+    def test_surface_fit_without_regions_fits_each_zone_level(self):
+        outline = np.ones((6, 12), dtype=bool)
+        zz, xx = np.mgrid[0:6, 0:12]
+        dsm = np.where(xx < 6, 41.0, 50.0).astype(float)
+        readable, zone, _levels, _axis, _dropped = FZ.assign_roof_zones(
+            dsm, outline, [41, 50], xx, zz, bucket=3, axis_deg=0.0,
+        )
+        clean, lines = FZ.fit_clean_heights(dsm, zone, readable, xx.astype(float), zz.astype(float), 0.0, None, 'a')
+        self.assertEqual(len(lines), 2)
+        self.assertTrue(np.allclose(clean[readable], dsm[readable]))
+
     def test_region_levels_are_whole_metres_and_merge_when_equal(self):
         # Two regions whose lidar eaves are 30.3 and 29.8 are the same 30 m zone, not a fractional step.
         outline = np.ones((8, 16), dtype=bool)

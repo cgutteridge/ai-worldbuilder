@@ -473,6 +473,67 @@ def ridge_clip_levels(levels_cfg, regions, zone: np.ndarray, readable: np.ndarra
     return levels_used
 
 
+def fit_clean_heights(
+    fine: np.ndarray,
+    zone: np.ndarray,
+    readable: np.ndarray,
+    xs: np.ndarray,
+    zs: np.ndarray,
+    axis_deg: float,
+    regions: list | None,
+    label: str,
+) -> tuple[np.ndarray, list[str]]:
+    """Replace noisy lidar heights with a fitted flat / plane / gable surface per roof zone.
+
+    A zone is a region polygon when ``regions`` are given (the image says where each roof volume is),
+    otherwise the columns sharing one zone level. Columns outside every group keep their lidar height.
+    The fit (``roof_surface.fit_surface``) trims edge cells that read a wall or the ground, so noise,
+    chimneys and canopy stop turning into stairs and slabs. A group with too few readable columns keeps
+    its raw heights.
+
+    @param fine: float DSM, metres AOD (``[z, x]``; NaN = no data)
+    @param zone: zone level grid
+    @param readable: readable footprint mask
+    @param xs: world x per cell
+    @param zs: world z per cell
+    @param axis_deg: building long-axis degrees
+    @param regions: optional aerial polygons (see ``apply_regions``)
+    @param label: feature label for the report lines
+    @returns: ``(cleaned DSM, dry-run report lines)``
+    """
+    import roof_surface
+    out = np.array(fine, dtype=float, copy=True)
+    groups: list[tuple[str, np.ndarray]] = []
+    if regions:
+        from coverage import scan_polygon
+        bbox = (int(xs.min()), int(zs.min()), int(xs.max()), int(zs.max()))
+        for i, polygon in enumerate(regions):
+            inside = set(scan_polygon([[tuple(p) for p in polygon]], bbox))
+            member = readable & np.fromiter(
+                ((int(x), int(z)) in inside for x, z in zip(xs.ravel(), zs.ravel())),
+                dtype=bool, count=xs.size,
+            ).reshape(xs.shape)
+            groups.append((f'region {i}', member))
+    else:
+        for level in sorted({float(v) for v in zone[readable].tolist()}):
+            groups.append((f'zone {level:g}', readable & (zone == level)))
+    lines = []
+    for name, member in groups:
+        use = member & np.isfinite(out)
+        surface = roof_surface.fit_surface(xs[use], zs[use], out[use], axis_deg)
+        if surface is None:
+            lines.append(f'{label} {name}: surface fit skipped (under {roof_surface.MIN_POINTS} readable columns)')
+            continue
+        out[member] = surface.height(xs[member], zs[member])
+        shape = surface.kind
+        if surface.kind == 'gable':
+            shape += ' ridge across the axis' if surface.ridge_across else ' ridge along the axis'
+        lines.append(
+            f'{label} {name}: surface {shape}, rms {surface.rms:.2f} m, kept {surface.kept} of {int(use.sum())} columns'
+        )
+    return out, lines
+
+
 FLAT_TOL_M = 1.5  # default exclusive rise (m above the zone eave) below which a roof stays flat
 
 
@@ -962,6 +1023,11 @@ class RoofZonePlanning:
                 # pitched labels read the float DSM (when given) so a half-block rise survives
                 fine = grids.get('dsm_fine')
                 fine = dsm.astype(float) if fine is None else np.asarray(fine, dtype=float)
+                if cfg.get('surface') == 'fit':
+                    fine, fit_lines = fit_clean_heights(
+                        fine, zone, readable, xs, zs, _axis, cfg.get('regions'), f.no,
+                    )
+                    self._zone_pad_lines.extend(fit_lines)
                 half_grid = flatten_half_step_decks(
                     zone_ridge_half_steps(
                         _win_nanmedian(fine, 3), zone, readable,
