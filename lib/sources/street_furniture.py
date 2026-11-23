@@ -365,6 +365,105 @@ def designer_observations(cell: tuple[int, int], path: Path | None = None) -> li
     return out
 
 
+# One list for every furniture and outbuilding kind (#443, I-062). A column inside the
+# false item, never a plan id: the id follows the blob's lowest column and can move.
+OWNER_NOT_REAL = 'owner: not real'
+
+
+def rejected_items(cell: tuple[int, int], path: Path | None = None) -> list[dict]:
+    """Owner vetoes for one cell: each names a column inside a false decor item.
+
+    File shape under the cell key, beside ``items`` and ``observations``:
+    ``"rejected_items": [{"cell": [x, z], "note": "..."}]``. One list covers every
+    furniture and outbuilding kind (shed, garage, table, bin, bench, and any later
+    kind). Missing file, cell or list → empty list. A row without a usable column
+    is skipped.
+
+    @param cell: (tx, tz)
+    @param path: override spec path (tests)
+    @returns: ``[{'cell': [x, z], 'note'?}]``
+    """
+    entry = _load_designer_entry(cell, path)
+    out: list[dict] = []
+    for raw in entry.get('rejected_items') or []:
+        if not isinstance(raw, dict) or raw.get('cell') is None:
+            continue
+        try:
+            column = [int(raw['cell'][0]), int(raw['cell'][1])]
+        except (TypeError, ValueError, IndexError):
+            continue
+        row = {'cell': column}
+        if raw.get('note'):
+            row['note'] = str(raw['note'])
+        out.append(row)
+    return out
+
+
+def _as_column(pair) -> tuple[int, int] | None:
+    try:
+        return int(pair[0]), int(pair[1])
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
+def _rejection_columns(rejected) -> set[tuple[int, int]]:
+    cols: set[tuple[int, int]] = set()
+    for raw in rejected or ():
+        pair = raw.get('cell') if isinstance(raw, Mapping) else raw
+        column = _as_column(pair)
+        if column is not None:
+            cols.add(column)
+    return cols
+
+
+def _item_columns(item: Mapping) -> set[tuple[int, int]]:
+    """Columns inside a decor item: anchor, listed cells, and a furniture footprint.
+
+    @param item: plan item or a thin furniture row (``x`` / ``z`` / ``kind``)
+    @returns: columns a veto may name
+    """
+    cols: set[tuple[int, int]] = set()
+    if item.get('cell') is not None:
+        column = _as_column(item['cell'])
+        if column is not None:
+            cols.add(column)
+    for key in ('cells', 'evidence_cells', 'lidar_cells'):
+        for pair in item.get(key) or ():
+            column = _as_column(pair)
+            if column is not None:
+                cols.add(column)
+    kind = item.get('kind')
+    anchor = _as_column(item['cell']) if item.get('cell') is not None else None
+    if anchor is None and item.get('x') is not None and item.get('z') is not None:
+        anchor = _as_column((item.get('x'), item.get('z')))
+    if anchor is not None and kind in FURNITURE_KINDS:
+        try:
+            rotation = int(item.get('rotation') or 0)
+        except (TypeError, ValueError):
+            rotation = 0
+        for dx, dz, _dy, _block in footprint(kind, rotation):
+            cols.add((anchor[0] + dx, anchor[1] + dz))
+    elif anchor is not None and item.get('cell') is None:
+        cols.add(anchor)
+    return cols
+
+
+def owner_veto_reason(item: Mapping, rejected) -> str:
+    """``owner: not real`` when ``rejected`` names a column inside ``item``, else ``''``.
+
+    ``rejected`` is the list from :func:`rejected_items`, or bare ``(x, z)`` pairs.
+    The match uses the item's columns. The plan id is never consulted.
+
+    @param item: decor plan item, or a dict carrying ``cell``, ``cells`` or ``x`` and ``z``
+    @param rejected: owner veto entries; empty means no veto
+    @returns: :data:`OWNER_NOT_REAL` or ``''``
+    """
+    veto = _rejection_columns(rejected)
+    if not veto or not (_item_columns(item) & veto):
+        return ''
+    return OWNER_NOT_REAL
+
+
 # --- inferred furniture (#260, I-008) ----------------------------------------------------
 # Where the map has no points, lamps and benches are inferred from the ways themselves. Every
 # item is labelled ``source='inference'``, ``confidence='low'``: a guess from road class or land

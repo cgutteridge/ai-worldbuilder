@@ -31,14 +31,17 @@ def rise_grid(blobs, size=140):
 
 
 def plan_for(cell=(0, 0), *, footprints=(), rise=None, rgb=None, footprint=None, canopy=None,
-             plot_owner=None, designer=(), openings=None, water=None):
+             plot_owner=None, designer=(), openings=None, water=None, map_furniture=(),
+             rejected=(), map_barriers=None):
     """Decor plan with every source injected (no map, aerial or lidar read)."""
+    barriers = map_barriers if map_barriers is not None else {
+        'hedge': set(), 'wall': set(), 'fence': set()}
     return dp.build_decor_plan(
-        cell, map_barriers={'hedge': set(), 'wall': set(), 'fence': set()}, map_furniture=[],
+        cell, map_barriers=barriers, map_furniture=map_furniture,
         designer_items=designer, photo_observations=[], garden={}, rgb=rgb or {},
         canopy=canopy or set(), footprint=footprint or set(),
         outbuilding_footprints=footprints, lidar_rise=rise, plot_owner=plot_owner,
-        openings=openings, water=water)
+        openings=openings, water=water, rejected_items=rejected)
 
 
 def only(plan, role='outbuilding'):
@@ -582,3 +585,127 @@ class TestNonHouseStrip(unittest.TestCase):
         mapped = plan_for(footprints=[{'ref': '9', 'building': 'garage', 'cells': sorted(rect(20, 20, 3, 4))}],
                           plot_owner={q: 'yard' for q in rect(18, 18, 8, 8)})
         self.assertTrue(place(only(mapped))[0])
+
+
+class TestOwnerRejection(unittest.TestCase):
+    """#443: one column list vetoes any false decor item. Match the column, never the plan id."""
+
+    def test_lidar_shed_with_and_without_the_entry(self):
+        cells = rect(30, 30, 3, 3)
+        other = rect(50, 50, 3, 3)
+        clear = blob_plan(cells)
+        (built,) = only(clear)
+        self.assertEqual(built['type'], 'shed')
+        self.assertFalse(prov.is_unresolved(built['provenance']))
+        found, report, unplaced = place(only(clear))
+        self.assertTrue(found)
+        self.assertEqual((len(report), unplaced), (1, []))
+
+        # (32, 31) sits in the blob. The plan id is the lowest column, (30, 30).
+        veto = [{'cell': [32, 31], 'note': 'misread, not in the real world'}]
+        plan = blob_plan(cells | other, rejected=veto)
+        items = only(plan)
+        self.assertEqual(len(items), 2)
+        vetoed = [i for i in items if (32, 31) in {tuple(c) for c in i['evidence_cells']}]
+        kept = [i for i in items if i not in vetoed]
+        self.assertEqual(len(vetoed), 1)
+        self.assertEqual(vetoed[0]['id'], 'outbuilding-lidar-30-30')
+        self.assertEqual(vetoed[0]['provenance']['unresolved_reason'], sf.OWNER_NOT_REAL)
+        self.assertFalse(prov.is_unresolved(kept[0]['provenance']))
+        found, report, unplaced = place(items)
+        self.assertEqual(len(report), 1)
+        self.assertEqual(report[0]['plan_id'], kept[0]['id'])
+        self.assertEqual(unplaced, [])
+        self.assertEqual(
+            [i['provenance']['unresolved_reason'] for i in dp.unresolved_items(plan)],
+            [sf.OWNER_NOT_REAL])
+
+    def test_lidar_garage_with_and_without_the_entry(self):
+        cells = rect(40, 40, 4, 4)
+        clear = blob_plan(cells)
+        (built,) = only(clear)
+        self.assertEqual(built['type'], 'garage')
+        self.assertFalse(prov.is_unresolved(built['provenance']))
+        self.assertTrue(place(only(clear))[0])
+
+        plan = blob_plan(cells, rejected=[{'cell': [43, 42], 'note': 'not a garage'}])
+        (item,) = only(plan)
+        self.assertEqual(item['type'], 'garage')
+        self.assertNotEqual(item['id'], 'outbuilding-lidar-43-42')
+        self.assertEqual(item['provenance']['unresolved_reason'], sf.OWNER_NOT_REAL)
+        found, report, unplaced = place(only(plan))
+        self.assertEqual((found, report, unplaced), ({}, [], []))
+
+    def test_owner_reason_wins_when_the_blob_would_already_be_unresolved(self):
+        cells = rect(30, 30, 3, 3)
+        plan = blob_plan(cells, rgb={q: GREEN for q in cells},
+                         rejected=[{'cell': [31, 31], 'note': 'not real'}])
+        (item,) = only(plan)
+        self.assertEqual(item['provenance']['unresolved_reason'], sf.OWNER_NOT_REAL)
+
+    def test_designer_shed_and_mapped_garage_with_and_without_the_entry(self):
+        shed = sorted(rect(10, 10, 3, 2))
+        garage = sorted(rect(50, 50, 4, 4))
+        designer = [{'kind': 'shed', 'cells': [list(c) for c in shed], 'evidence_ids': ['e1']}]
+        footprints = [{'ref': 'g', 'building': 'garage', 'cells': garage}]
+        clear = plan_for(footprints=footprints, designer=designer)
+        self.assertEqual({i['type'] for i in only(clear)}, {'shed', 'garage'})
+        self.assertFalse(any(prov.is_unresolved(i['provenance']) for i in only(clear)))
+        self.assertEqual(len(place(only(clear))[1]), 2)
+
+        plan = plan_for(
+            footprints=footprints, designer=designer,
+            rejected=[{'cell': [11, 10], 'note': 'shed'}, {'cell': [52, 52], 'note': 'garage'}])
+        items = only(plan)
+        self.assertEqual({i['type'] for i in items}, {'shed', 'garage'})
+        for item in items:
+            self.assertEqual(item['provenance']['unresolved_reason'], sf.OWNER_NOT_REAL, item['type'])
+        found, report, unplaced = place(items)
+        self.assertEqual((found, report, unplaced), ({}, [], []))
+
+    def test_each_furniture_kind_with_and_without_the_entry(self):
+        furniture = [(10 + i * 4, 20, kind) for i, kind in enumerate(sf.KINDS)]
+        clear = plan_for(map_furniture=furniture)
+        resolved = dp.resolved_furniture(clear)
+        self.assertEqual({i['kind'] for i in resolved}, set(sf.KINDS))
+        self.assertFalse(any(
+            prov.is_unresolved(i.get('provenance'))
+            for i in clear['items'] if i.get('role') == 'furniture'))
+
+        rejected = []
+        for x, z, kind in furniture:
+            column = [x + 1, z] if kind in sf.FOOTPRINTS else [x, z]
+            rejected.append({'cell': column, 'note': kind})
+        plan = plan_for(map_furniture=furniture, rejected=rejected)
+        by_kind = {i['kind']: i for i in plan['items'] if i.get('role') == 'furniture'}
+        self.assertEqual(set(by_kind), set(sf.KINDS))
+        for x, z, kind in furniture:
+            item = by_kind[kind]
+            self.assertEqual(item['cell'], [x, z], kind)
+            self.assertEqual(item['provenance']['unresolved_reason'], sf.OWNER_NOT_REAL, kind)
+            if kind in sf.FOOTPRINTS:
+                self.assertNotEqual(item['cell'], [x + 1, z])
+        self.assertEqual(dp.resolved_furniture(plan), [])
+
+        outside = [{'cell': [10, 21], 'note': 'beside the bench'}]
+        spared = plan_for(map_furniture=furniture, rejected=outside)
+        self.assertEqual({i['kind'] for i in dp.resolved_furniture(spared)}, set(sf.KINDS))
+
+    def test_a_veto_column_leaves_a_barrier_in_place(self):
+        plan = plan_for(
+            map_barriers={'hedge': {(15, 15), (16, 15), (17, 15)}, 'wall': set(), 'fence': set()},
+            rejected=[{'cell': [16, 15], 'note': 'not a shed'}])
+        hedges = [i for i in plan['items'] if i.get('role') == 'barrier' and i.get('kind') == 'hedge']
+        self.assertTrue(hedges)
+        self.assertFalse(any(prov.is_unresolved(i.get('provenance')) for i in hedges))
+
+    def test_a_lidar_lump_column_vetoes_the_furniture_item_not_its_anchor(self):
+        item = {
+            'role': 'furniture', 'kind': 'waste_basket', 'cell': [4, 5],
+            'id': 'lidar-object-1-2', 'lidar_cells': [[1, 2], [4, 5]],
+            'provenance': {'source': 'photo_read', 'confidence': 'medium',
+                           'evidence_ids': [], 'unresolved_reason': ''},
+        }
+        dp._apply_owner_rejections([item], [{'cell': [1, 2], 'note': 'not a bin'}])
+        self.assertEqual(item['provenance']['unresolved_reason'], sf.OWNER_NOT_REAL)
+        self.assertEqual(item['id'], 'lidar-object-1-2')

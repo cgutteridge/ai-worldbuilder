@@ -17,6 +17,8 @@ remain; supported spots first, air/flowers only. Writes a decor mask (§3) only 
 clean readback. An empty plan (nothing to place) still lands so the cell can finish (#127).
 Garden outbuildings (sheds, garages) are decor plan items too (``outbuildings.py``, #251): mapped
 footprint, raw lidar blob or designer trace; each is placed whole or listed unplaced with a reason.
+An owner veto (``rejected_items``: one column inside the item) lists that furniture or outbuilding
+item unresolved with reason ``owner: not real``; the placer builds nothing for it.
 
   python3 scripts/decor_layer.py --cell 48,-44            # dry run
   SITE_OWNER=<owner> python3 scripts/decor_layer.py --cell 48,-44 --apply
@@ -340,6 +342,7 @@ def place_furniture(
     lidar_hm: Mapping[str, Any] | None = None,
     keep_clear: set | frozenset = frozenset(),
     barrier_voxels: Mapping[tuple[int, int, int], str] | None = None,
+    rejected_items: Sequence = (),
 ) -> tuple[dict[tuple[int, int, int], str], list[dict], list[dict]]:
     """Place street-furniture recipes on any non-carriageway surface column.
 
@@ -357,6 +360,8 @@ def place_furniture(
     owned or masked, not already taken by another furniture item (``overlaps another furniture
     item``) and, for a multi-block kind, not a planned barrier block (``overlaps a planned barrier``).
     Failed rows are returned as unplaced plan-shaped dicts, with ``blocked_column`` on a multi-block one.
+    An owner veto column inside the item (anchor or footprint) is unplaced with reason
+    ``owner: not real`` and builds nothing.
 
     Road-edge kinds (#334): ``traffic_signals`` and ``crossing`` come from OSM nodes on the carriageway, so
     each stands at the nearest column (within :data:`street_furniture.ROADSIDE_REACH` blocks) that passes
@@ -375,6 +380,8 @@ def place_furniture(
                      not on a roof over it; the live surface is used only where terrain is missing
     @param keep_clear: columns no furniture may use (entrance openings, door routes, clearance)
     @param barrier_voxels: blocks already planned by the barrier pass; a multi-block item refuses to replace them
+    @param rejected_items: owner vetoes (:func:`street_furniture.rejected_items`); a column inside
+        the item is unplaced with reason ``owner: not real`` and builds nothing
     @returns: (placements, report rows that were placed, unplaced rows with reasons)
     """
     from surface_probe import ground_at, ground_missing_reason, raised_over_terrain, terrain_y
@@ -509,6 +516,9 @@ def place_furniture(
         accepted.append((item, row, voxels))
 
     for item in items:
+        if sf.owner_veto_reason(item, rejected_items):
+            unplaced.append(dplan.mark_unplaced(item, sf.OWNER_NOT_REAL))
+            continue
         place(item)
     for item, _fill in sorted(deferred, key=lambda entry: (entry[1]['max_depth'], entry[1]['blocks_added'])):
         place(item, allow_fill=True)
@@ -1087,6 +1097,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict |
         land_classes = dplan.land_class_columns(idx, cellmath.bounds(cell, 12))
         wood_columns = woodland_decor_columns(cell, idx, land_classes)
         wood_columns = {q: cls for q, cls in wood_columns.items() if q not in railway}
+        rejected = sf.rejected_items(cell)
         decor = dplan.build_decor_plan(
             cell,
             map_barriers={'hedge': set(vmap.hedge), 'wall': set(vmap.wall), 'fence': set(vmap.fence)},
@@ -1104,6 +1115,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict |
             carriageway=set(vmap.road) | set(vmap.marks),
             furniture_avoid=way | near1,
             water=set(vmap.water) | set(vmap.water_line),
+            rejected_items=rejected,
         )
     unresolved = list(dplan.unresolved_items(decor))
     with timed_stage('decor surface warm-up'):
@@ -1147,7 +1159,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict |
 
     furniture, furniture_report, furniture_unplaced = place_furniture(
         cell, dplan.resolved_furniture(decor), world, way=way, near1=near1, owned=owned, masked=masked,
-        lidar_hm=lidar_hm, keep_clear=reserved_gap, barrier_voxels=found,
+        lidar_hm=lidar_hm, keep_clear=reserved_gap, barrier_voxels=found, rejected_items=rejected,
     )
     # Furniture wins over a barrier block at the same position (rare overlap).
     barrier_positions = len(found)
