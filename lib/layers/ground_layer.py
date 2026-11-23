@@ -67,12 +67,8 @@ import ground_dressing as gd
 RAISE_FILL = 'dirt'
 
 # Palette (CRAFTSMANSHIP §3a). One block per kind; markings and kerbs are tarmac extras.
-MATERIAL = {
-    'grass': 'grass_block', 'tarmac': 'gray_concrete', 'paving': 'light_gray_concrete',
-    'brick': 'polished_granite', 'gravel': 'gravel', 'dirt': 'coarse_dirt',
-    'mark': 'white_concrete', 'kerb': 'smooth_stone',
-    'forecourt': 'andesite',                          # private forecourt, apart from public pavement (#254)
-}
+from ground_palette import MATERIAL
+
 STITCH_DEPTH = 2        # columns from a seam that copy the finished neighbour's surface
 HARD = ('tarmac', 'paving', 'brick', 'gravel', 'dirt', 'mark', 'kerb', 'forecourt')
 FILL_REACH = 12         # how far shade/canopy columns look for ground around them
@@ -806,12 +802,14 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     x0, z0, x1, z1 = cellmath.bounds(cell, 2)
     idx = OSMIndex()
     fp = {q for q in idx.cells() if x0 <= q[0] <= x1 and z0 <= q[1] <= z1}
+    railway = (set(ev['railway_columns']) if 'railway_columns' in ev
+               else lc.railway_reserved_columns(cell))
     owned_cols, ceilings = lc.owned_air_ceilings(neighbour_owned, owned_air)
     floors = lc.owned_floors(owned_states, owned_cols) if owned_states else {}
     floors = {q: y for q, y in floors.items() if lc.cell_contains(cell, *q)}
     floor_heights = lc.lidar_base_map(floors, ev.get('lidar_maps')) if floors else {}
     excluded = []
-    live, skipped = free_columns(cell, world, vmap, fp - set(settled_fp), owned_cols, excluded,
+    live, skipped = free_columns(cell, world, vmap, (fp - set(settled_fp)) | railway, owned_cols, excluded,
                                  floors=floors, heights=floor_heights)
     buried = {q: floors[q] for q in live if q in owned_cols and q in floors}
     if 'private_frontage' in ev or 'frontage_route' in ev:
@@ -996,6 +994,8 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
     stats['woodland_floor'] = gd.plan_woodland_floor(
         plan, world, cell, ys, kind, floor_columns, floor_mask,
         masked=masked, owned=neighbour_owned, clear=clear_cols | set(fp), barriers=barriers)
+    if railway:
+        stats['railway_reserved_columns'] = len(railway)
     stats['floating_columns'] = floating_tops(plan.cells, world.block, {q: ys[q] for q in live},  # #296 guard
                                               floors=buried)
     return stats, conflicts, kind, skipped

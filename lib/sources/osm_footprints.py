@@ -130,7 +130,7 @@ def cached_geojson_paths(clips_root: Path | None = None) -> list[Path]:
     return sorted(CACHE.glob('*.geojson'))
 
 
-def _query_bbox(src: Path, layer: str = 'buildings') -> tuple[int, int, int, int] | None:
+def query_bbox(src: Path, layer: str = 'buildings') -> tuple[int, int, int, int] | None:
     """Read inclusive query bounds for one layer preset from filenames or legacy folder names.
 
     Custom GDAL-layer queries (e.g. multipolygons filtered to campus boundaries)
@@ -159,6 +159,8 @@ def _query_bbox(src: Path, layer: str = 'buildings') -> tuple[int, int, int, int
     return None  # Unknown provenance is blind, never inferred from returned buildings.
 
 
+_query_bbox = query_bbox  # historical name; new consumers use the public evidence API
+
 def clip_coverage(cell: tuple[int, int], *, root: Path | None = None,
                   extents: list | None = None) -> float:
     """Fraction of cell columns queried; read bounds without projecting feature data.
@@ -172,7 +174,7 @@ def clip_coverage(cell: tuple[int, int], *, root: Path | None = None,
     if extents is None:
         root = root if root is not None else _resolve_vector_map_clips()
         extents = [bbox for src in root.glob('*/*.geojson')
-                   if (bbox := _query_bbox(src)) is not None]
+                   if (bbox := query_bbox(src)) is not None]
     x0, z0, x1, z1 = cell_bbox(*cell, *cell)
     columns = set()
     for bx0, bz0, bx1, bz1 in extents:
@@ -201,11 +203,11 @@ class OSMIndex:
         self.layer_extents = {'landuse': []}  # per-layer checked extents from clip names (#253)
         seen = set()
         for src in sorted(root.glob('*/*.geojson')):
-            bbox = _query_bbox(src)
+            bbox = query_bbox(src)
             if bbox is not None and bbox not in self.extents:
                 self.extents.append(bbox)
             for layer, ext in self.layer_extents.items():
-                lb = _query_bbox(src, layer)
+                lb = query_bbox(src, layer)
                 if lb is not None and lb not in ext:
                     ext.append(lb)
             d = json.loads((src if read_only else _projected(src)).read_text())

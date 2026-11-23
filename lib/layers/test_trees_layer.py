@@ -564,6 +564,15 @@ class TestPlanCellKeepsRules(unittest.TestCase):
         m = tl.CROWN_MARGIN
         self.assertEqual(warmed, [(x0 - m, z0 - m, x0 + 127 + m, z0 + 127 + m)])
 
+    def test_railway_reservation_blocks_tree_roots_even_on_clear_grass(self):
+        import layer_common
+        x0, z0 = CELL[0] * 128, CELL[1] * 128
+        reserved = {(x0 + x, z0 + z) for x in range(128) for z in range(128)}
+        with mock.patch.object(layer_common, 'railway_reserved_columns', return_value=reserved):
+            rep = self.run_plan((0, 0), (0, 0))
+        self.assertEqual(rep['trees'], [])
+        self.assertTrue(any(why == 'railway feature footprint' for *_p, why in rep['skipped']))
+
     def test_footprint_and_hard_surface_columns_are_not_rooted(self):
         x0 = CELL[0] * 128
         rep = self.run_plan((10, 30), (60, 80))

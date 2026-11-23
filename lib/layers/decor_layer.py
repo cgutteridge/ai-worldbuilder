@@ -942,14 +942,16 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict |
 
     with timed_stage('decor source preparation'):
         owned = neighbour_owned(cell, ignored_builds(cell))
-        owned_cols = {(x, z) for x, _y, z in owned}
+        from layer_common import railway_reserved_columns
+        railway = railway_reserved_columns(cell)
+        owned_cols = {(x, z) for x, _y, z in owned} | railway
         masked = load_masked_positions() if masked is None else masked
         idx = OSMIndex()
         fp = set(idx.cells())
         near = fp | owned_cols
         near1 = {(x + a, z + b) for x, z in near for a in (-1, 0, 1) for b in (-1, 0, 1)}
         vmap = OSMGround(cell)
-        way = set(vmap.road) | set(vmap.feat) | set(vmap.water) | set(vmap.water_line)  # road/path/water
+        way = railway | set(vmap.road) | set(vmap.feat) | set(vmap.water) | set(vmap.water_line)  # road/path/water
 
         from lidar_heightmap import reference_world
 
@@ -958,6 +960,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict |
 
         land_classes = dplan.land_class_columns(idx, cellmath.bounds(cell, 12))
         wood_columns = woodland_decor_columns(cell, idx, land_classes)
+        wood_columns = {q: cls for q, cls in wood_columns.items() if q not in railway}
         decor = dplan.build_decor_plan(
             cell,
             map_barriers={'hedge': set(vmap.hedge), 'wall': set(vmap.wall), 'fence': set(vmap.fence)},

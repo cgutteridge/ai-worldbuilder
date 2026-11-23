@@ -378,6 +378,9 @@ def candidate_plan_id(item: dict[str, Any]) -> str:
     @raises RegistryError: when the candidate has no refs to key on
     """
     import re
+    if item.get('kind') == 'railway':
+        from railway_feature import feature_name
+        return feature_name(item['cell'])
     refs = [str(r) for r in (item.get('refs') or []) if r]
     if not refs:
         raise RegistryError(f'candidate {item.get("label")!r} has no refs for a plan id')
@@ -531,7 +534,8 @@ def propose_feature_candidates(cid: str) -> list[dict[str, Any]]:
     """
     import cell_features as cf  # noqa: WPS433
     tx, tz = cellmath.parse_cell(cid)
-    return list(cf.missing_features(tx, tz))
+    from railway_feature import proposal
+    return list(cf.missing_features(tx, tz)) + proposal((tx, tz), view_registry())
 
 
 def drop_covered_candidates(reg: CellRegistry, cell: tuple[int, int],
