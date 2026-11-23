@@ -138,18 +138,7 @@
     
     
     
-    {
-      "id": 406,
-      "title": "Retire the handoff queue: keep cell gaps, delete the rest of site_handoff and rules_context",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "l",
-      "blockedBy": [
-        
-      ],
-      "builderTask": false,
-      "notes": "Housekeeping review ticket T17. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T17' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: medium; complexity: l\n- Scope:\n  - 1.4. Move the cell-gaps block to `lib/journal/cell_gaps.py`.\n  - Delete the rest of `site_handoff.py` and `scripts/site_handoff.py`, `rules_context.py` and its test, and the QUEUE and ISSUES parts of `site_archive` (`test_site_archive.py:80-155`).\n  - Decided: drop the greeblies and contact-sheet gate (`:757-873`) with the queue code; reword `rules/feature-builds.md:251` so it promises no enforcement.\n  - Repoint: `site_status.py:14,139,171-173,246`, `site_pages.py:329,353-354`, `test_site_recover.py:282-292`, `test_cell_features.py:15,121-123`, `test_mc_player.py:66`, `cell-orchestrator/SKILL.md:18,120`, `rules/handoff-layered-passes.md:30`.\n  - Rewrite: `rules/process.md:351,361`, `rules/feature-builds.md:251`, `rules/rules-context.md` (the whole file), `rules/cleanup.md:39`, `scripts/issues.py:5`, `issue_log.py:209`, `coverage.py:30`, `geo.py:325`.\n- Check: the cell-gaps tests pass from their new home, and no doc names a removed subcommand.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process.\nBlocked by: T3 (#393) because it site_handoff provider imports change in the shims ticket."
-    , "claimedBy": "codex", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/task-406-handoff-retire"},
+    
     
     
     
@@ -175,13 +164,13 @@
     {
       "id": 427,
       "title": "Typology generator: accept rotated and irregular footprints, rows by adjacency, front from nearest street",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
       "builderTask": false,
       "notes": "From trial #257, findings in docs/plans/typology-buildings.md (sections \"Where the shipped generator stops\" and Recommendation 1). The #413 generator refused every real footprint as \"odd footprint\": 0 of 18 estate, 42 terrace and 42 parade buildings produced a spec, because _box accepts only filled axis-aligned rectangles and real streets are rotated (bounding-box fill 0.29 to 0.94). house_build already fits rotated rectangles (#415) and feature_build takes the footprint as drawn. Change lib/builds/typology_spec.py: (a) accept any footprint of a minimum area and leave the fit to the builder, still reporting a needs-designer reason for slivers and multi-part shapes; (b) form rows from footprints within one block of each other, not a full shared side (_relation, _mark_partial, _components); (c) choose a front from the nearest street when the two axes are close (_front, the shop parade sits on a diagonal road), reporting no-clear-front only when no street is within reach. Colocated tests with fixtures cut from the real Begonia Road, Northcote Road and Portswood Road footprints (record them as small JSON fixtures). Non-builder: synthetic fixtures and unit tests only. Does not touch the district profile or tag defaults (see the tag-defaults task).\n\nReview corrections (2026-11-22): thresholds the trial used and the task keeps unless changed: bounding-box fill of at least 0.45 for houses and at least 20 cells for shops. Not a stretch: three changes in one file (lib/builds/typology_spec.py) with three fixtures, one branch; task 428 edits the same file, so run them one at a time. Squaring of shop fronts is not in this file: it is feature_facade.fit_straight_runs (#332); the owner's decision to give up squaring on rows that are not near axis-aligned (snag S-110) is a separate task."
-    },
+    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/427-typology-rotated-footprints"},
     
     {
       "id": 429,
