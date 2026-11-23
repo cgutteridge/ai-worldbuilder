@@ -248,3 +248,37 @@ class RunTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class HoldTest(unittest.TestCase):
+    """site_lock.hold: keep or take again a lock across the steps of one sequence (#458)."""
+
+    def setUp(self):
+        t = tempfile.TemporaryDirectory()
+        self.addCleanup(t.cleanup)
+        self.lock = Path(t.name) / 'LOCK.json'
+        p = mock.patch.object(site_lock, 'LOCK', self.lock)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_own_fresh_lock_is_kept_and_its_heartbeat_refreshed(self):
+        site_lock.claim('me', 'task')
+        before = site_lock.read()['heartbeat']
+        with mock.patch('site_lock.time.time', return_value=before + 60):
+            self.assertEqual(site_lock.hold('me', 'task'), 'held')
+        self.assertEqual(site_lock.read()['heartbeat'], before + 60)
+
+    def test_missing_lock_is_claimed_again(self):
+        self.assertEqual(site_lock.hold('me', 'task'), 'reclaimed')
+        self.assertEqual(site_lock.read()['owner'], 'me')
+
+    def test_stale_lock_of_the_same_owner_is_claimed_again(self):
+        site_lock.claim('me', 'task')
+        with mock.patch('site_lock.time.time', return_value=site_lock.read()['heartbeat'] + site_lock.STALE_MIN * 60 + 1):
+            self.assertEqual(site_lock.hold('me', 'task'), 'reclaimed')
+
+    def test_fresh_lock_of_another_owner_is_never_taken(self):
+        site_lock.claim('other', 'their task')
+        with self.assertRaisesRegex(SystemExit, 'Held by other'):
+            site_lock.hold('me', 'task')
+        self.assertEqual(site_lock.read()['owner'], 'other')

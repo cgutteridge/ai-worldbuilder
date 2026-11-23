@@ -267,6 +267,8 @@ class TestReapplyOutcome(unittest.TestCase):
                             mock.patch('site_lock.check'), \
                             mock.patch('world_discovery.require_running_world'), \
                             mock.patch('readiness_evidence.require_feature_ready'), \
+                            mock.patch('element_undo.require_rebuild_ready'), \
+                            mock.patch('site_lock.hold', return_value='held'), \
                             mock.patch.object(reapply_feature.subprocess, 'run', side_effect=process), \
                             redirect_stderr(err):
                         code = reapply_feature.main(['--world', 'unit-test', 'outcome', '--apply', '--locked'])
@@ -321,10 +323,11 @@ class TestRefusalAdvice(unittest.TestCase):
             code = reapply_feature.main(['--world', 'unit-test', 'demo', '--apply', '--owner', 'owner'])
         self.assertEqual(code, 17)
         owner, task, cmd = run.call_args.args
-        self.assertEqual(owner, 'owner')
+        # A unique lock name: another session using the plain name must not release or replace it.
+        self.assertEqual(owner, f'owner-{reapply_feature.os.getpid()}')
         self.assertIn('--locked', cmd)
         self.assertEqual(cmd[cmd.index('--world') + 1], 'unit-test')
-        self.assertEqual(cmd[cmd.index('--owner') + 1], 'owner')
+        self.assertEqual(cmd[cmd.index('--owner') + 1], owner)
         process.assert_not_called()
 
     def test_undo_failure_stops_rebuild_and_reports_uncertain_undo(self):
@@ -334,6 +337,8 @@ class TestRefusalAdvice(unittest.TestCase):
                 mock.patch('site_lock.check'), \
                 mock.patch('world_discovery.require_running_world'), \
                 mock.patch('readiness_evidence.require_feature_ready'), \
+                mock.patch('element_undo.require_rebuild_ready'), \
+                mock.patch('site_lock.hold', return_value='held'), \
                 mock.patch.object(reapply_feature.subprocess, 'run', side_effect=[
                     None, reapply_feature.subprocess.CalledProcessError(1, ['undo'])]) as process, \
                 redirect_stderr(err):
@@ -342,3 +347,126 @@ class TestRefusalAdvice(unittest.TestCase):
         self.assertEqual(process.call_count, 2)
         self.assertIn('Undo did not complete cleanly', err.getvalue())
         self.assertIn('No rebuild attempted', err.getvalue())
+
+
+class TestLockLapseBetweenUndoAndRebuild(unittest.TestCase):
+    """#458: another session using the same owner name released the lock between the two steps."""
+
+    OWNER = 'claude-1'
+
+    def _run(self, after_undo, rebuild_checks_lock=True):
+        """Drive the locked worker with a real lock file; ``after_undo`` runs once the undo lands."""
+        import tempfile
+        from pathlib import Path
+        import site_lock
+        from cell_journal import Build, Undo
+        with JournalWorld() as jw, tempfile.TemporaryDirectory() as tmp:
+            lock = Path(tmp) / 'LOCK.json'
+            path = world_root() / 'site/builds/lapse.json'
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({
+                'name': 'lapse', 'ways': {'1': 'A'}, 'storeys': {'A': 1},
+                'roofs': {'A': {'kind': 'flat', 'material': 'smooth_stone'}}, 'groups': [{'nos': ['A'], 'front': 'N'}]}))
+            cells = {(1, 60, 1): 'minecraft:stone'}
+            jw.build('lapse', 'feature', cells, meta={'builder': {'kind': 'spec', 'path': str(path)}})
+            calls = []
+
+            def process(cmd, **kwargs):
+                if '--apply' not in cmd:
+                    return
+                if cmd[1].endswith('element_undo.py'):
+                    calls.append('undo')
+                    jw.reg.change(Undo('lapse'), jw.apply)
+                    after_undo(site_lock)
+                else:
+                    calls.append('rebuild')
+                    if rebuild_checks_lock:
+                        site_lock.check()   # what every real builder does before it writes
+                    ticket = jw.reg.begin(Build('lapse', 'feature', cells))
+                    jw.apply(ticket.writes)
+                    ticket.finish(jw.blocks.read_many(cells))
+
+            err = io.StringIO()
+            with mock.patch.object(site_lock, 'LOCK', lock), \
+                    mock.patch.dict(reapply_feature.os.environ, {'SITE_OWNER': self.OWNER}), \
+                    mock.patch.object(reapply_feature, 'activate_world_from_args'), \
+                    mock.patch('world_discovery.require_running_world'), \
+                    mock.patch('readiness_evidence.require_feature_ready'), \
+                    mock.patch('element_undo.require_rebuild_ready'), \
+                    mock.patch.object(reapply_feature.subprocess, 'run', side_effect=process), \
+                    redirect_stderr(err):
+                site_lock.claim(self.OWNER, 'reapply lapse')
+                code = reapply_feature.main(['--world', 'unit-test', 'lapse', '--apply', '--locked',
+                                             '--owner', self.OWNER])
+                final = site_lock.read()
+            return code, calls, err.getvalue(), final
+
+    def test_lapse_is_reproduced_without_the_fix(self):
+        """The old wrapper's sequence: same-name release between the steps, then the builder's check."""
+        import tempfile
+        from pathlib import Path
+        import site_lock
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(site_lock, 'LOCK', Path(tmp) / 'LOCK.json'):
+            site_lock.claim('claude', 'reapply w149814013')
+            site_lock.claim('claude', 'another session')     # same name: accepted, replaces the lock
+            site_lock.release('claude')                       # that session finishes
+            with self.assertRaisesRegex(SystemExit, 'World lock not held by claude: None'):
+                site_lock.check('claude')
+
+    def test_lock_released_after_undo_is_taken_again_and_rebuild_lands(self):
+        code, calls, err, _lock = self._run(lambda site_lock: site_lock.release(self.OWNER))
+        self.assertEqual(code, 0, err)
+        self.assertEqual(calls, ['undo', 'rebuild'])
+        self.assertIn('world lock had lapsed; claimed it again', err)
+
+    def test_lock_taken_by_another_owner_stops_before_rebuild_with_the_relay_command(self):
+        def thief(site_lock):
+            site_lock.release(self.OWNER)
+            site_lock.claim('someone-else', 'their task')
+        code, calls, err, lock = self._run(thief)
+        self.assertEqual(code, 1)
+        self.assertEqual(calls, ['undo'])
+        self.assertEqual(lock['owner'], 'someone-else')       # never taken from a fresh holder
+        self.assertIn('Undo completed', err)
+        self.assertIn('Held by someone-else', err)
+        self.assertIn('the plot is left undone until you do', err)
+        self.assertIn('python3 scripts/site_lock.py --world unit-test run claude-1 \'re-lay lapse\' -- ', err)
+        self.assertTrue(err.rstrip().endswith('--world unit-test --apply'), err)
+
+    def test_unique_lock_owner_survives_a_same_name_session(self):
+        import tempfile
+        from pathlib import Path
+        import site_lock
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(site_lock, 'LOCK', Path(tmp) / 'LOCK.json'):
+            site_lock.claim('claude-4242', 'reapply w149814013')
+            with self.assertRaisesRegex(SystemExit, 'Held by claude-4242'):
+                site_lock.claim('claude', 'another session')
+            with self.assertRaisesRegex(SystemExit, 'Not yours'):
+                site_lock.release('claude')
+            site_lock.check('claude-4242')
+
+    def test_registry_gate_on_a_touched_cell_names_the_gate_and_undoes_nothing(self):
+        gate = SystemExit('undo refused before writes: needs-prep\n51,-36: feature plans: 2 eligible groups '
+                          'unaccounted for [clear: cell_registry.py prepare --cell 51,-36]')
+        err = io.StringIO()
+        with JournalWorld() as jw:
+            path = world_root() / 'site/builds/gated.json'
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({
+                'name': 'gated', 'ways': {'1': 'A'}, 'storeys': {'A': 1},
+                'roofs': {'A': {'kind': 'flat', 'material': 'smooth_stone'}}, 'groups': [{'nos': ['A'], 'front': 'N'}]}))
+            jw.build('gated', 'feature', {(1, 60, 1): 'minecraft:stone'},
+                     meta={'builder': {'kind': 'spec', 'path': str(path)}})
+            with mock.patch.object(reapply_feature, 'activate_world_from_args'), \
+                    mock.patch('site_lock.check'), \
+                    mock.patch('world_discovery.require_running_world'), \
+                    mock.patch('readiness_evidence.require_feature_ready'), \
+                    mock.patch('element_undo.require_rebuild_ready', side_effect=gate), \
+                    mock.patch.object(reapply_feature.subprocess, 'run') as process, \
+                    redirect_stderr(err):
+                code = reapply_feature.main(['--world', 'unit-test', 'gated', '--apply', '--locked'])
+        self.assertEqual(code, 1)
+        self.assertEqual(process.call_count, 1)            # the dry run only; no undo
+        self.assertIn('registry readiness gate (every touched cell', err.getvalue())
+        self.assertIn('51,-36: feature plans: 2 eligible groups unaccounted', err.getvalue())
+        self.assertIn('No undo attempted', err.getvalue())

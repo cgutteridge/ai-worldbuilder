@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 import ast
 import os
+import shlex
 import subprocess
 import sys
+from pathlib import Path
 
 from script_env import TOOL_ROOT, add_world_arg, activate_world_from_args
 from builder_provenance import BUILDER_NAMES, FEATURE_BUILDER, HOUSE_BUILDER, describe_builder, resolve_builder_path
@@ -76,23 +78,62 @@ def builder_command(name: str, builder: dict) -> list[str]:
     return [sys.executable, str(path)]
 
 
+def relay_command(world: str, owner: str, feature: str, cmd: list[str]) -> str:
+    """The exact shell line that re-lays ``feature`` under a fresh world lock.
+
+    @param world: world directory name
+    @param owner: lock owner to suggest
+    @param feature: feature plan name
+    @param cmd: builder argv without ``--apply`` (as returned by :func:`prepare` plus ``--world``)
+    @returns: one copy-pasteable command
+    """
+    def short(part):
+        if part == sys.executable:
+            return 'python3'
+        try:
+            return str(Path(part).relative_to(TOOL_ROOT))
+        except ValueError:
+            return part
+    builder = shlex.join([short(part) for part in cmd] + ['--apply'])
+    return (f'python3 scripts/site_lock.py --world {shlex.quote(world)} run {shlex.quote(owner)} '
+            f'{shlex.quote("re-lay " + feature)} -- {builder}')
+
+
+def _hold_lock(owner, feature):
+    """Keep the sequence's world lock: refresh it, or take it again if it lapsed.
+
+    @param owner: lock owner given to the locked worker (``--owner``, or SITE_OWNER)
+    @param feature: feature plan name, for the claim text
+    @raises SystemExit: another owner holds a fresh lock
+    """
+    import site_lock
+    owner = os.environ.get('SITE_OWNER') or owner
+    if site_lock.hold(owner, f'reapply {feature}') == 'reclaimed':
+        print(f'reapply {feature}: the world lock had lapsed; claimed it again for {owner}', file=sys.stderr)
+
+
 def main(argv=None) -> int:
     """Preflight and run the builder, optionally undoing first under one world lock."""
     ap = argparse.ArgumentParser(description=__doc__)
     add_world_arg(ap)
     ap.add_argument('feature')
     ap.add_argument('--apply', action='store_true')
-    ap.add_argument('--owner', default=f'reapply-{os.getpid()}')
+    ap.add_argument('--owner', default=None,
+                    help='lock owner name; the lock itself is taken as <owner>-<pid> so another session '
+                         'using the same name cannot release or replace it mid-sequence')
     ap.add_argument('--locked', action='store_true', help=argparse.SUPPRESS)
     args = ap.parse_args(argv)
     activate_world_from_args(args)
+    base_owner = args.owner or 'reapply'
     if args.apply and not args.locked:
         import site_lock
-        return site_lock.run(args.owner, f'reapply {args.feature}', [
+        lock_owner = f'{base_owner}-{os.getpid()}'
+        return site_lock.run(lock_owner, f'reapply {args.feature}', [
             sys.executable, str(TOOL_ROOT / 'scripts/reapply_feature.py'), '--world', args.world,
-            args.feature, '--apply', '--locked', '--owner', args.owner])
+            args.feature, '--apply', '--locked', '--owner', lock_owner])
     stage = 'preflight'
     undone = False
+    cmd = None
     try:
         if args.apply:
             import site_lock
@@ -106,12 +147,22 @@ def main(argv=None) -> int:
         subprocess.run(cmd, cwd=TOOL_ROOT, check=True)
         if args.apply:
             from readiness_evidence import require_feature_ready
+            stage = 'registry readiness gate (the feature cell)'
             require_feature_ready(args.feature)
+            # The same gate element_undo applies to every touched cell, run now so that a blocked
+            # neighbouring cell (needs-prep, feature plans unaccounted) refuses before anything is undone.
+            from element_undo import require_rebuild_ready
+            stage = 'registry readiness gate (every touched cell, as undo requires)'
+            require_rebuild_ready(args.feature)
             stage = 'undo'
+            _hold_lock(args.owner, args.feature)
             subprocess.run([sys.executable, str(TOOL_ROOT / 'scripts/element_undo.py'),
                             '--world', args.world, args.feature, '--apply'], cwd=TOOL_ROOT, check=True)
             undone = True
             stage = 'rebuild'
+            # The world lock can lapse during the undo; take it again before the rebuild runs, or
+            # stop with the recovery command rather than let the builder fail on it.
+            _hold_lock(args.owner, args.feature)
             from cell_registry import view_registry
             registry = view_registry()
             before_seq = max((e.seq for e in registry.entries()), default=0)
@@ -127,7 +178,9 @@ def main(argv=None) -> int:
     except (OSError, RuntimeError, subprocess.CalledProcessError, SystemExit, KeyboardInterrupt) as exc:
         if undone:
             advice = ('Undo completed; rebuild did not complete cleanly. The feature may remain undone or partly rebuilt. '
-                      'Inspect site_recover status for an interrupted write, or reconcile for drift; no rollback attempted.')
+                      'Inspect site_recover status for an interrupted write, or reconcile for drift; no rollback attempted. '
+                      f'To re-lay it (the plot is left undone until you do), run: '
+                      f'{relay_command(args.world, base_owner, args.feature, cmd)}')
         elif stage == 'undo':
             advice = ('Undo did not complete cleanly; inspect site_recover status and the journal before retrying. '
                       'No rebuild attempted.')
