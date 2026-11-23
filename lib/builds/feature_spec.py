@@ -328,7 +328,12 @@ def _validate_zones(path, spec: dict, labels: set) -> None:
             raise SystemExit(f'{path}: zones[{lab}].axis_deg must be \"auto\" or a number')
         row.setdefault('axis_deg', 'auto')
         _validate_zone_regions(path, lab, row.get('regions'))
+        surface = row.get('surface')
+        if surface not in (None, 'fit'):
+            raise SystemExit(f'{path}: zones[{lab}].surface must be "fit" when given')
         roof = spec['roofs'].get(lab) or {}
+        if surface == 'fit' and roof.get('kind') != 'pitched':
+            raise SystemExit(f'{path}: zones[{lab}].surface "fit" needs roofs[{lab}].kind pitched')
         if roof.get('kind') not in ROOF_KINDS:
             raise SystemExit(
                 f'{path}: zones[{lab}] needs roofs[{lab}].kind flat|pitched '

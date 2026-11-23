@@ -228,6 +228,17 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   ridge clip (the rise is limited to the gap to the next used level) so they cannot flatten a ridge; `material_regions`
   may still name them.
 
+  Optional `zones[label].surface: "fit"` (pitched roofs only): replace the noisy lidar heights of each roof
+  zone with a fitted clean surface before the ridge logic, so noise, edge cells and canopy stop turning into
+  stairs and slabs. Each zone is fitted by the simplest of three shapes that explains its heights (RMS up to
+  0.4 m) without discarding more than 30% of its columns: `flat`, `plane` (one slope) or `gable` (two slopes
+  at a ridge across or along the axis). Edge columns more than 1 m off the fit are trimmed from the fit but
+  still take the fitted height. A zone is a `regions` polygon when regions are given (recommended: one region
+  per roof volume), otherwise the columns of one zone level, which can cut one roof into strips. A zone no
+  shape explains (a hip, a stepped roof) or with under 6 readable columns keeps its raw lidar heights and the
+  dry run says so. Shallow, noisy gables (about 0.2 m/m) can come out `flat`. Off by default. Dry run prints
+  one line per zone: `<label> region <i>: surface <shape>, rms <m> m, kept <n> of <m> columns`.
+
   Pipeline: 1-block-stair squaring (close then open, no fixed halo) → 5×5
   median DSM → snap to `levels` (or `"auto"` plateaus) → mode-filter →
   bucket on the building's rotated grid so zone edges are straight runs.
