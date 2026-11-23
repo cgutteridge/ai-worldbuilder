@@ -11,7 +11,7 @@ journal (ADR 004): every journal entry is shown as a stage record of its primary
   .venv/bin/python scripts/site_status.py morning [--since "2026-10-15 17:00"]   # run log + stage activity + eye list + builds of 8 minutes or more
 
 `status` shows whether ground, trees and decor are applied (layers only). `status --gaps` adds the real done-bar,
-`site_handoff.cell_gaps`, per cell (about 20 s).
+`cell_gaps.cell_gaps`, per cell (about 20 s).
 """
 from __future__ import annotations
 
@@ -136,7 +136,7 @@ def layers_applied(sts: dict) -> bool:
 def cell_footprint(cell) -> dict:
     """Built vs unbuilt vector-map footprint area for a cell (#142).
 
-    Swallows map / world errors the same way ``site_handoff.residual_features`` does,
+    Swallows map / world errors the same way ``cell_gaps.residual_features`` does,
     so status and morning stay readable when the clip is missing.
 
     @param cell: (tx, tz)
@@ -168,9 +168,9 @@ def format_footprint(fp: dict | None) -> str:
 
 
 def gap_summary(cell) -> str:
-    """Authoritative: site_handoff.cell_gaps (slow). '' when the cell is truly done."""
-    import site_handoff
-    g = site_handoff.cell_gaps(cell)
+    """Authoritative: cell_gaps.cell_gaps (slow). '' when the cell is truly done."""
+    import cell_gaps
+    g = cell_gaps.cell_gaps(cell)
     parts = [k.replace('_', ' ') if v is True else f"{k} {len(v) if isinstance(v, (list, tuple, set, dict)) else v}"
              for k, v in g.items() if v and k not in ('in_flight', 'footprint', 'unbuilt_footprint')]
     if g.get('in_flight'):
@@ -243,7 +243,7 @@ def cmd_status(stages: dict, gaps: bool = False) -> str:
             lines.append(row)
     lines += ['', f'{n_layers}/{len(stages)} cells have all three layers applied (layers only; says nothing about houses, lumps, canopies).']
     lines.append(f'{n_done}/{len(stages)} pass cell_gaps (the real done-bar).' if gaps else
-                 'Add --gaps for the real done-bar (site_handoff.cell_gaps per cell, about 20 s). Cells the journal never mentions are not listed.')
+                 'Add --gaps for the real done-bar (cell_gaps.cell_gaps per cell, about 20 s). Cells the journal never mentions are not listed.')
     return '\n'.join(lines)
 
 

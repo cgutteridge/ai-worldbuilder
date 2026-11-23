@@ -326,7 +326,7 @@ def index_page(infos: dict, not_started: list, here, lock: str) -> str:
     body = (f'<h1>Cells: completed and in progress</h1>'
             f'<p class="muted">{counts}{f" · not started: {len(not_started)}" if not_started else ""}<br>Marker (where work is): '
             f'{f"{here[0]},{here[1]}" if here else "none"} · Lock: {e(lock)}</p>'
-            f'<p class="muted"><strong>Completed</strong> means <code>site_handoff.cell_gaps</code> is empty (including no unbuilt '
+            f'<p class="muted"><strong>Completed</strong> means <code>cell_gaps.cell_gaps</code> is empty (including no unbuilt '
             f'vector-map footprint). <strong>In progress</strong> means the marker is on it, '
             f'a stage is in flight, or the lock names it. <strong>Built, items remaining</strong> means ground, trees and decor are applied but cell_gaps still lists work '
             f'(houses, unbuilt footprint, lumps, stale trees). Thumbnails are the cell\'s existing ground preview.</p>{secs}')
@@ -350,8 +350,8 @@ def regenerate(no_gaps: bool = False, cached_gaps: bool = False) -> int:
     for cell, sts in sorted(stages.items()):
         gaps = cache.get(f'{cell[0]},{cell[1]}')
         if not no_gaps and not cached_gaps:
-            import site_handoff
-            gaps = site_handoff.cell_gaps(cell)
+            import cell_gaps
+            gaps = cell_gaps.cell_gaps(cell)
             fresh[f'{cell[0]},{cell[1]}'] = gaps
         media = find_media(cell, sts, extra=extra)
         status = classify(cell, sts, gaps, here, lock_task)

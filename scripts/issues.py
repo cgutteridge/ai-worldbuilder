@@ -2,7 +2,7 @@
 """Issues and snags CLI for the active world (``registry/issues.json`` and ``issues-closed.json``).
 
 A snag is evidence inside an issue; there are no loose snags. Issues never block a cell.
-Archive moves structured closed issues and pictures; site_archive.py instead archives legacy site/ISSUES.txt.
+Archive moves structured closed issues and pictures; site_archive.py archives dated review text.
 
   python3 scripts/issues.py --world W match  --words TEXT --element ground:48,-44 [--element ...]
   python3 scripts/issues.py --world W add    (--issue I-004 | --new TITLE) --words TEXT --element E ...
