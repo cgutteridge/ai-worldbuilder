@@ -293,6 +293,24 @@ class TypologySpecs(unittest.TestCase):
         names = sorted(tuple(sorted(item['spec']['ways'])) for item in report['specs'])
         self.assertEqual(names, [('a0',), ('a1',), ('r0', 'r1', 'r2')])
 
+    def test_a_row_on_a_rotated_street_takes_the_side_its_street_is_on(self):
+        shop = {'building': 'retail', 'building:levels': '2'}
+        # six footprints stepping 5 columns east for every 6 south: spread nearly even in x and z
+        row = [building(f'r{i}', rect(5 * i, 6 * i, 5, 7), shop, profile=PINNED) for i in range(6)]
+        for shift, side in ((-22.0, 'W'), (35.0, 'E')):
+            street = [[(shift + 5 * t, 6.0 * t - 12.0) for t in range(-2, 10)]]
+            report = T.generate(row, street)
+            self.assertEqual(report['needs_designer'], [])
+            self.assertEqual([item['spec']['groups'][0]['front'] for item in report['specs']], [side])
+
+    def test_a_back_lane_gives_way_to_an_ordinary_street_in_reach(self):
+        points = [(0, 0), (0, 10)]
+        streets = [('Lane', 'service', points), ('Main Road', 'tertiary', [(20, 0), (20, 10)])]
+        near = T._nearby_streets(streets, [{'cells': {(5, 5)}}])
+        self.assertEqual(near, [[(20.0, 0.0), (20.0, 10.0)]])
+        only = T._nearby_streets(streets[:1], [{'cells': {(5, 5)}}])
+        self.assertEqual(only, [[(0.0, 0.0), (0.0, 10.0)]])
+
     def test_front_follows_a_diagonal_street_and_only_a_missing_street_has_none(self):
         shop = {'building': 'retail', 'building:levels': '2'}
         diagonal = [[(0.0, 0.0), (60.0, 60.0)]]

@@ -36,7 +36,7 @@ import json
 import math
 import re
 import statistics
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 import land_use
@@ -61,6 +61,10 @@ ROW_GAP = 1
 THIN_STEPS = 1
 # A street whose offset across the facing axis is under this many blocks is beside the end of a row, not in front.
 FRONT_MIN_OFFSET = 1.0
+# access lanes behind a row; they give a front only when no ordinary street is near
+REAR_HIGHWAYS = frozenset({'service', 'track'})
+# a row is spread along one axis when that spread is at least this many times the other
+ROW_AXIS_CLEAR = 2.0
 PITCHED_RISE = 0.6
 FLAT_RISE = 0.0
 HOUSE_TAGS = frozenset({'house', 'residential', 'terrace', 'semidetached_house', 'detached'})
@@ -624,7 +628,7 @@ def _row_reason(group: list[dict], streets) -> tuple[str | None, str | None]:
             return 'storeys differ', axis
         if len({row['form'] for row in group}) > 1:
             return 'roof forms differ', axis
-    front, front_reason = _front(_cells_of(group), streets, axis)
+    front, front_reason = _row_front(group, streets, axis)
     if front_reason:
         return front_reason, axis
     return None, axis
@@ -639,6 +643,31 @@ def _house_kind(group: list[dict]) -> str | None:
     if specific and specific != {kind}:
         return None
     return kind
+
+
+def _row_front(group: list[dict], streets, axis: str | None) -> tuple[str | None, str | None]:
+    """The front a row shares: the one most of its footprints give for the street each faces.
+
+    A row spread clearly along one axis keeps the perpendicular rule for every footprint. A row
+    spread about evenly in x and z (a street running at an angle to the grid) is rotated, so each
+    footprint takes whichever cardinal its own street direction leans on, and the row follows the
+    majority. One building, or no footprint with a front of its own, falls back to the whole row's
+    centroid and its reason.
+    """
+    whole = _front(_cells_of(group), streets, axis)
+    if len(group) < 2:
+        return whole
+    centres = [_centroid(row['cells']) for row in group]
+    spread_x = max(c[0] for c in centres) - min(c[0] for c in centres)
+    spread_z = max(c[1] for c in centres) - min(c[1] for c in centres)
+    clear = max(spread_x, spread_z) >= ROW_AXIS_CLEAR * min(spread_x, spread_z)
+    votes = Counter(_front(row['cells'], streets, axis if clear else None)[0] for row in group)
+    votes.pop(None, None)
+    if not votes:
+        return whole
+    best = max(votes.values())
+    leaders = [side for side, count in votes.items() if count == best]
+    return (whole[0] if whole[0] in leaders else sorted(leaders)[0]), None
 
 
 def _front(cells: set[tuple[int, int]], streets, axis: str | None) -> tuple[str | None, str | None]:
@@ -692,7 +721,7 @@ def _closest(origin: tuple[float, float], streets) -> tuple[float, float, float]
 def _emit(group: list[dict], axis: str | None, streets) -> dict:
     """One house_build or feature_build spec for a decided row."""
     ordered = _order(group, axis)
-    front, _reason = _front(_cells_of(group), streets, axis)
+    front, _reason = _row_front(group, streets, axis)
     labels = []
     ways = {}
     for index, row in enumerate(ordered):
@@ -961,7 +990,8 @@ def _nearby_streets(streets, chosen: list[dict]) -> list[list[tuple[float, float
     zs = [z for _x, z in cells]
     x0, x1, z0, z1 = min(xs), max(xs), min(zs), max(zs)
     kept = []
-    for _name, _highway, points in streets:
+    rear = []
+    for _name, highway, points in streets:
         if len(points) < 2:
             continue
         near = False
@@ -973,8 +1003,10 @@ def _nearby_streets(streets, chosen: list[dict]) -> list[list[tuple[float, float
                 near = True
                 break
         if near:
-            kept.append([(float(x), float(z)) for x, z in points])
-    return kept
+            line = [(float(x), float(z)) for x, z in points]
+            (rear if highway in REAR_HIGHWAYS else kept).append(line)
+    # a back lane only fronts a building when no ordinary street is in reach
+    return kept or rear
 
 
 def _lidar_median(cells: set[tuple[int, int]]) -> float | None:
