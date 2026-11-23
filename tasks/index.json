@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the worldbuilder-tasks skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 447,
+  "nextTaskId": 448,
   "tasks": [
     {
       "id": 352,
@@ -186,6 +186,16 @@
       ],
       "builderTask": false,
       "notes": "Issue I-008 family, from owner direction 2026-11-23 on snag S-115 (tables on a slope): sheds and garages should stand on one level too, shifted up to a block sideways if needed. Hedges, fences and walls are excluded. Follows the furniture task #444, which writes the shared level-and-shift helper and the field names.\n\nChecked 2026-11-23 (code read, not run): place_outbuildings in lib/layers/decor_layer.py (about line 540 on) has no flatness test; outbuildings.py line about 397 takes base = max(ground of the footprint cells), so the roof level is flat from the highest ground and the walls run from each column's own ground+1 up to it (taller on the downhill side), with the door at the door cell's ground+1. It never moves an item. Not verified: how many placed sheds in built cells stand on a slope (the 48,-44 ones at 6199,-5518; 6204,-5532; 6226,-5547 are candidates to measure).\n\nDeliverable:\n1. Step 1, measurement: report ground_spread per placed outbuilding (highest minus lowest footprint ground) for 48,-44 and one more built cell; use the level limit chosen in #444 unless the data say otherwise.\n2. Rule: refuse a shed or garage whose footprint spread is over the limit, after trying to shift it up to 1 block (nearest first, unmoved first) to a spot that passes every other check, using the #444 helper. A shift changes cells, door cell, plot_ids and plot_share, evidence_cells and wall/roof positions, so recompute them from the moved footprint.\n3. Owner decision needed first: may a shed from a mapped building outline (evidence that is a polygon) move by one block, or only lidar and designer items? Record the answer in the spec.\n4. Files: lib/layers/decor_layer.py (place_outbuildings), lib/layers/outbuildings.py (item cells, door, plot share, evidence cells), lib/layers/test_outbuildings.py, lib/layers/test_decor_layer.py, docs/specs (the decor outbuilding spec, with a short note) and rules/handoff-layered-passes.md if it states the ground rule.\n\nCheck: `python3 scripts/decor_layer.py --world southampton-build --cell 48,-44` (dry run) and outbuilding_report in verification/site/highfield_48_m44_decor-dry-report.json: no placed shed or garage has ground_spread above the limit; a shifted one carries its new cells and door; new tests cover a shed that shifts one block to level and one with no level spot (refused). The owner's in-game look is the review.\nNot a builder task: deterministic dry run plus tests.\nOrder: after #444 (helper) and after #443 (lidar shed veto, also edits outbuildings.py and its tests); do not run in parallel with either.\n"
+    },
+    {
+      "id": 447,
+      "title": "Live parade fixes after #333: windows on stepped walls, roof material, storeys, doors for rule-built shops",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "builderTask": true,
+      "notes": "Live build of #333 + #427 at cell 50,-36 (2026-11-23) read back clean but looked wrong: blank stepped brick walls, roofs of solid brick, nearly no windows (house_build.windows passes no corner_evidence, so every wall column of a 45-degree stair-step wall is a corner and is refused: 'corner pier / tread too short'), no bays, mostly 1-storey bodies, most shops without a door. Fix generally (no street- or shop-specific code): (1) windows on stepped faces in house_build.windows, (2) roof material default for the commercial class (full-block brick roofs), (3) storeys and bay from evidence, (4) doors. Check on ONE shop first, in game, then the group. Source: session notes; docs/plans/typology-buildings.md."
     }
   ]
 }
