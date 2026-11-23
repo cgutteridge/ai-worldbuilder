@@ -3,8 +3,9 @@
 
 Decor builds from a decor plan (#150): aerial/photo/map/designer barriers and street
 furniture, each with shared provenance. Barriers sit anywhere but the carriageway; furniture
-sits on paving, never on a path-line column. Building-border hedges from the aerial may sit
-against a footprint; other barriers and furniture stay clear of builds. Items the plan
+sits on paving or lawn, never on a carriageway, water, or a real path. A footway or path
+line that crosses a plaza or other paved open area may hold a table. Building-border hedges
+from the aerial may sit against a footprint; other barriers and furniture stay clear of builds. Items the plan
 cannot resolve are listed, not silently skipped. Placed only where the live block is air
 (or a stem/flower, as in ADR 010) and not owned by a neighbour or by another mask, clipped to
 the cell. Items stand on the true ground: the block at lidar terrain Y (``surface_probe.ground_at``), never
@@ -321,6 +322,85 @@ def level_and_shift(attempt, x: int, z: int) -> dict:
     return result
 
 
+# Narrow mapped lines. A sidewalk is a real footpath. Cycleway, bridleway and a
+# pedestrian street stay blocked even where they cross a plaza.
+_PLAZA_FOOTPATH_CLASSES = frozenset({'footway', 'path'})
+
+
+def way_columns(
+    *,
+    railway=(),
+    road=(),
+    feat: Mapping | None = None,
+    water=(),
+    water_line=(),
+    path_lines: Sequence | None = None,
+    open_paved=(),
+) -> set[tuple[int, int]]:
+    """Columns decor must not stand on: carriageway, water, and path lines.
+
+    ``feat`` maps a column to the 1-based id of the path line in ``path_lines``
+    (the same id ``OSMGround`` stores). Every such column is blocked, except a
+    ``footway`` or ``path`` line (not a sidewalk) whose column also lies in
+    ``open_paved`` — a pedestrian area or ``area:highway`` polygon. That is the
+    one-block footpath line drawn across a plaza or paved open area; a table may
+    stand on it. A footway anywhere else is a real footpath and stays blocked, as
+    do a cycleway, a carriageway and water.
+
+    Pass an empty ``open_paved`` to keep every path line. Outbuildings, barriers
+    and woodland do that. Furniture passes the plaza columns.
+
+    @param railway: reserved railway columns
+    @param road: carriageway columns
+    @param feat: ``{(x, z): path-line id}``; a column absent from this map has no line id
+    @param water: water-polygon columns
+    @param water_line: waterway-line columns
+    @param path_lines: path lines in feat-id order (``OSMGround.path_lines``)
+    @param open_paved: pedestrian-area and area:highway columns
+    @returns: columns to refuse
+    """
+    blocked = set(railway) | set(road) | set(water) | set(water_line)
+    paved = set(open_paved)
+    lines = list(path_lines or ())
+    for column, fid in _feat_pairs(feat):
+        if column in blocked or _plaza_footpath(column, fid, lines, paved):
+            continue
+        blocked.add(column)
+    return blocked
+
+
+def _feat_pairs(feat):
+    """Yield ``(column, line id)`` from a feat map, or from a bare column set.
+
+    A set has no line id, so every column stays blocked. An empty set yields nothing.
+
+    @param feat: ``OSMGround.feat`` or a set of columns
+    @returns: ``(column, fid or None)`` pairs
+    """
+    if isinstance(feat, Mapping):
+        return feat.items()
+    return ((column, None) for column in feat or ())
+
+
+def _plaza_footpath(column, fid, lines: Sequence, paved: set) -> bool:
+    """True when this path-line column is a footpath crossing a paved open area.
+
+    @param column: ``(x, z)``
+    @param fid: 1-based index into ``lines``
+    @param lines: path-line records with ``highway`` and ``footway``
+    @param paved: plaza and other paved-open columns
+    @returns: whether furniture may stand on the column
+    """
+    if column not in paved or isinstance(fid, bool) or not isinstance(fid, int):
+        return False
+    if not 1 <= fid <= len(lines):
+        return False
+    line = lines[fid - 1]
+    if line.get('footway') == 'sidewalk':
+        return False
+    return line.get('highway') in _PLAZA_FOOTPATH_CLASSES
+
+
 def ground_fill_cap(placed: int, depth: int) -> int:
     """How many items placed in one pass may use a fill of ``depth`` blocks.
 
@@ -366,7 +446,9 @@ def place_furniture(
     A kind is a footprint of columns about the item's anchor (:func:`street_furniture.footprint`; a
     single-column kind is one column, a picnic table nine), placed whole or refused whole
     (``docs/specs/decor-furniture-footprints.md``, #305). Every footprint column must pass: inside the
-    cell (``crosses the cell edge`` when only the anchor is), off path-line columns (``way``), off
+    cell (``crosses the cell edge`` when only the anchor is), off columns in ``way`` (a real
+    path, carriageway or water; :func:`way_columns` has already let a footway or path line
+    across a plaza through), off
     columns against a build (``near1``; ``allow_against_build`` lifts it), off ``keep_clear``
     (route, clearance and entrance-opening columns), off the carriageway (road, marking, kerb) and on
     level lidar ground (spread 0). On uneven ground try all eight neighbouring anchors, then
@@ -389,7 +471,7 @@ def place_furniture(
     @param cell: (tx, tz)
     @param items: ``{x,z,kind,source}`` from the decor plan; ``rotation`` (degrees clockwise) for a multi-block kind
     @param world: live or planning world
-    @param way: mapped road / path / water columns
+    @param way: carriageway, water and real path columns (:func:`way_columns`)
     @param near1: footprint and structure columns dilated by 1
     @param owned: neighbour-owned block positions
     @param masked: positions owned by another pass mask
@@ -1201,7 +1283,11 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict |
         near = fp | owned_cols
         near1 = {(x + a, z + b) for x, z in near for a in (-1, 0, 1) for b in (-1, 0, 1)}
         vmap = OSMGround(cell)
-        way = railway | set(vmap.road) | set(vmap.feat) | set(vmap.water) | set(vmap.water_line)  # road/path/water
+        way_args = dict(
+            railway=railway, road=vmap.road, feat=vmap.feat,
+            water=vmap.water, water_line=vmap.water_line, path_lines=vmap.path_lines,
+        )
+        way = way_columns(**way_args)   # carriageway, water, and every path line
 
         from lidar_heightmap import reference_world
 
@@ -1244,7 +1330,11 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict |
         cell, decor['items'], world, way=way, houses=houses, keep_clear=reserved_gap,
         owned=owned, masked=masked, lidar_hm=lidar_hm,
         plot_owner=shift.get('plot_owner'), door_targets=shift.get('targets'))
-    way = way | {tuple(c) for r in outbuilding_report for c in r['footprint']}   # interior too: nothing else goes under a roof
+    roofs = {tuple(c) for r in outbuilding_report for c in r['footprint']}
+    way = way | roofs   # interior too: nothing else goes under a roof
+    # A footway or path line across a plaza is not a path column for furniture.
+    # Sheds, barriers and woodland keep the strict set above.
+    furniture_way = way_columns(**way_args, open_paved=getattr(vmap, 'open_paved', ())) | roofs
     masked = {**masked, **dict.fromkeys(outbuilding_found, 'outbuilding')}   # barriers and furniture fill only what is left
     barrier_items = [
         i for i in decor['items']
@@ -1274,7 +1364,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict |
                         present[pos] = mat
 
     furniture, furniture_report, furniture_unplaced = place_furniture(
-        cell, dplan.resolved_furniture(decor), world, way=way, near1=near1, owned=owned, masked=masked,
+        cell, dplan.resolved_furniture(decor), world, way=furniture_way, near1=near1, owned=owned, masked=masked,
         lidar_hm=lidar_hm, keep_clear=reserved_gap, barrier_voxels=found, rejected_items=rejected,
     )
     # Furniture wins over a barrier block at the same position (rare overlap).
