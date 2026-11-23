@@ -451,6 +451,43 @@ class TestRailwayApply(LiveApplyCase):
         self.assertFalse(F.covered((0, 0), self.reg()))
         self.assertEqual(F.reserved_columns((0, 0), self.reg()), set())
 
+    def saved_spec(self, raw):
+        path = self.t / (raw['name'] + '.json')
+        path.write_text(json.dumps(raw))
+        return path
+
+    def test_saved_spec_run_dry_then_apply_then_undo_through_the_real_apply_path(self):
+        import site_lock
+        raw = spec()
+        path = self.saved_spec(raw)
+        cells = F.build(raw).cells
+        before = self.blocks.read_many(cells)
+        with mock.patch.object(site_lock, 'check', lambda owner=None: None), redirect_stdout(io.StringIO()):
+            F.run(path)  # dry: planning only, no journal entry and no world write
+        self.assertEqual(list(self.entries(raw['name'])), [])
+        self.assertEqual(self.blocks.read_many(cells), before)
+        with mock.patch.object(site_lock, 'check', lambda owner=None: None), redirect_stdout(io.StringIO()):
+            plan = F.run(path, do_apply=True)
+        self.assertEqual(plan.cells, cells)
+        entry = self.entries(raw['name'])[-1]
+        self.assertEqual((entry.plan, entry.kind, entry.pass_, entry.status), (raw['name'], 'build', 'feature', 'landed'))
+        self.assertEqual(entry.meta['kind'], F.KIND)
+        self.assertEqual(entry.meta['boxes'], [p['box'] for p in raw['plans']])
+        self.assertEqual(entry.meta['line_ids'], ['line-one'])
+        self.assertEqual(entry.meta['builder']['kind'], 'spec')
+        self.assertEqual(entry.meta['builder_name'], F.BUILDER)
+        self.assertEqual(entry.meta['builder']['path'], str(path.resolve()))
+        self.assertEqual(set(self.reg().recorded(raw['name'])), set(cells))
+        self.assertEqual([e.plan for e in F.active_railways(self.reg())], [raw['name']])
+        self.assertEqual(F.reserved_columns((0, 0), self.reg()), {(x, z) for x, _y, z in cells})
+        for tile in entry.meta['structure']['tiles']:
+            self.assertTrue(all(b-a+1 <= 128 for a, b in zip(tile['from'], tile['to'])))
+        with redirect_stdout(io.StringIO()):
+            self.run_undo(raw['name'])
+        self.assertEqual(self.blocks.read_many(cells), before)
+        self.assertEqual(list(F.active_railways(self.reg())), [])
+        self.assertEqual(F.reserved_columns((0, 0), self.reg()), set())
+
     def test_readback_retry_repairs_dropped_rail_inside_one_journal_entry(self):
         raw = spec()
         plan = F.build(raw)
