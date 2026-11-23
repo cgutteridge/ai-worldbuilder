@@ -538,15 +538,18 @@ class FacadePlanning:
             f.cells, self.streets, occupied=self.by_no_all_cells,
             street_name=tags.get('addr:street'))
 
-    def _shop_band_fits(self, f: Feature, cell: tuple[int, int], glass_height: int) -> bool:
+    def _shop_band_fits(
+        self, f: Feature, cell: tuple[int, int], glass_height: int, floor: int | None = None,
+    ) -> bool:
         """True when a column has room for glass, the awning row and the sign row under the roof.
 
         @param f: feature mass
         @param cell: ``(x, z)``
         @param glass_height: opening height in blocks from the shop recipe
+        @param floor: band floor y; defaults to the column floor
         @returns: whether the fascia band fits below the roof
         """
-        floor = self._column_floor(f, cell)
+        floor = self._column_floor(f, cell) if floor is None else floor
         roof_y = self._column_roof_y(f, cell)
         roof_y = roof_y if roof_y is not None else f.b + f.storeys * STOREY_H
         return floor + glass_height + 2 < roof_y
@@ -628,6 +631,31 @@ class FacadePlanning:
                 if '_door[' in self.p.cells.get(pos, ''):
                     self.p.cells[pos] = self.wall
 
+    def _shop_floor(self, f: Feature, cell: tuple[int, int], face: str, glass_height: int) -> int:
+        """Floor under a shopfront column: the pavement outside when it is above the column floor.
+
+        A shop's floor is the median lidar ground of its footprint, so on a site that falls
+        away from the street the front stands one block under the pavement and the door
+        opens below it (#436). The front band (glass, door, fascia) stands on the outside
+        lidar ground instead, the same reference plan doors use (``_outside_door_floor``,
+        #204), but never below the column floor and only while the band still fits under
+        the roof. A refused outside reading keeps the column floor.
+
+        @param f: feature mass
+        @param cell: front line ``(x, z)``
+        @param face: street-facing letter
+        @param glass_height: opening height in blocks from the shop recipe
+        @returns: floor block y for the band and door on this column
+        """
+        floor = self._column_floor(f, cell)
+        try:
+            outside = self._outside_door_floor(f, cell, face, 0)
+        except ValueError:
+            return floor
+        if outside > floor and self._shop_band_fits(f, cell, glass_height, outside):
+            return outside
+        return floor
+
     def _shop_line_for_door(self, runs: list, door: tuple[int, int]):
         """Line cell in front of a door that sits on a squared run.
 
@@ -655,7 +683,8 @@ class FacadePlanning:
         steeper row keeps each wall step: the same pieces sit on the step, one
         block outward along its face. Either way the awning, the sign and the door
         touch the wall. Side, alley and party walls are not in ``fronts`` and stay
-        shell. The door stands on the column floor. On a straight run its jambs are
+        shell. The band and the door stand on the pavement or the column floor, whichever
+        is higher (:meth:`_shop_floor`). On a straight run its jambs are
         the line's neighbours; on a step they are that step's neighbours.
 
         @param f: feature mass
@@ -693,7 +722,10 @@ class FacadePlanning:
                 f.door_cells.discard(door)
                 if getattr(f, 'door', None) == door:
                     f.door = line_cell
-                self._set_door_leaf(line_cell, face, block, 'left', self._column_floor(f, line_cell))
+                self._set_door_leaf(
+                    line_cell, face, block, 'left',
+                    self._shop_floor(f, line_cell, face, rule['glass_height']),
+                )
                 f.door_cells.add(line_cell)
             door_line.append(line_cell)
         place_centre = not door_line
@@ -717,7 +749,7 @@ class FacadePlanning:
         for cell in line_cells:
             if not self._shop_band_fits(f, cell, glass_h):
                 continue
-            floor = self._column_floor(f, cell)
+            floor = self._shop_floor(f, cell, face_of[cell], glass_h)
             awning_y = floor + glass_h + 1
             rows[cell] = (floor, awning_y, awning_y + 1)
         if door_cell not in rows:
