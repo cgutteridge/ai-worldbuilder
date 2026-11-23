@@ -219,16 +219,7 @@
     , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/423-home-cell-first-ghost"},
     
     
-    {
-      "id": 426,
-      "title": "Docs: cell-orchestrator prepare round trips and instance-doc ports and GDAL noise",
-      "status": "doing",
-      "priority": "low",
-      "complexity": "s",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "Two doc fixes. cell-orchestrator per-task steps: note the re-prepare after raising the marker and prepare --cell <neighbour> --apply --evidence-only for edge-crossing features (and find which evidence fact the marker raise changes if it is a real invalidation bug). Instance doc: only port 8766 listens at the title screen, and Arch GDAL plugin 'ERROR 1' lines are harmless. Two GitHub issues to close when this task closes: GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/9 and GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/12"
-    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/426-docs-prepare-ports-gdal"},
+    
     {
       "id": 427,
       "title": "Typology generator: accept rotated and irregular footprints, rows by adjacency, front from nearest street",
