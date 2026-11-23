@@ -39,7 +39,7 @@ from roof_geometry import (
     roof_block_y,
     stair_effect_lines,
 )
-from roof_material import block_id_names, family_variants, roof_material_warnings
+from roof_material import block_id_names, carpet_block, family_variants, roof_material_warnings
 from script_env import ROOT
 from site_kit import (
     AIR_IDS,
@@ -71,6 +71,8 @@ class Feature:
         self.storeys = storeys
         self.roof = roof
         self.front = group['front']
+        # carpet finish (#455): {(x, z): deck row y} whose deck is a wall top course under a carpet
+        self.carpet_cells: dict[tuple[int, int], int] = {}
 
 
 class Build(RoofZonePlanning, DoorPlanning, FacadePlanning, DetailPlanning):
@@ -322,6 +324,8 @@ class Build(RoofZonePlanning, DoorPlanning, FacadePlanning, DetailPlanning):
         stair / slab / full-block membrane (``zone_roof_half`` via
         ``pitched_roof_states``) rising from the eave toward a lidar ridge.
         Optional ``f.roof['edge']`` places a parapet (default: none).
+        Optional ``f.roof['finish']`` lays a carpet on flat deck columns
+        (:meth:`_carpet_columns`); an edge block wins over the carpet.
         Interior floor slabs follow the facade storey rhythm from ``f.b``
         (median ground), strictly below each column's eave.
 
@@ -370,6 +374,7 @@ class Build(RoofZonePlanning, DoorPlanning, FacadePlanning, DetailPlanning):
                     f.walls.add(c)
                     break
         f.inner = set(roof) - f.walls
+        carpets = self._carpet_columns(f, material_levels)
         for (x, z), ry in roof.items():
             g = gy[(x, z)]
             expose = edge_wall_expose(roof, gy, (x, z))
@@ -384,6 +389,11 @@ class Build(RoofZonePlanning, DoorPlanning, FacadePlanning, DetailPlanning):
                     self.set(x, y, z, self.floor_mat)
                 else:
                     self.set(x, y, z, 'air')
+            if (x, z) in carpets and not wants_edge(x, z, ry):
+                self._lay_carpet(f, (x, z), ry, carpets[(x, z)])
+                if pitched_states is not None:
+                    pitched_states[(x, z)] = self.wall
+                continue
             if pitched_states is not None:
                 self._set_roof(x, ry, z, pitched_states[(x, z)])
             else:
@@ -394,6 +404,81 @@ class Build(RoofZonePlanning, DoorPlanning, FacadePlanning, DetailPlanning):
                 self.set(x, ry + 1, z, 'air')
         if pitched_states is not None:
             self._back_roof_stair_edges(roof, pitched_states)
+
+    @staticmethod
+    def _carpet_columns(f: Feature, material_levels: dict) -> dict[tuple[int, int], str]:
+        """Zoned deck columns that take the ``roofs[label].finish`` carpet, with their carpet block.
+
+        Flat roofs only (#455): every column of a flat roof; on a pitched roof only the
+        columns lidar reads as flat (``zone_flat_cells``) whose fitted surface, when there is
+        one, is flat, and whose membrane is a full-block height (a slab-height column keeps
+        its slab: a full block there would raise the roof half a block). Never a slope.
+
+        @param f: zoned feature (``zone_roof`` filled)
+        @param material_levels: per-column roof material key for ``roof_material_for_zone``
+        @returns: ``{(x, z): carpet block}``; empty without a finish
+        """
+        finish = f.roof.get('finish')
+        if not finish:
+            return {}
+        halfs = getattr(f, 'zone_roof_half', None)
+        if f.roof['kind'] == 'flat' or halfs is None:
+            cols = set(f.zone_roof)
+        else:
+            surfaces = getattr(f, 'zone_surface', None) or {}
+            cols = {
+                c for c in (getattr(f, 'zone_flat_cells', None) or ())
+                if c in f.zone_roof and halfs.get(c, 1) % 2 == 0
+                and (c not in surfaces or surfaces[c].kind == 'flat')
+            }
+        return {
+            c: carpet_block(roof_material_for_zone(f.roof, material_levels.get(c)), finish)
+            for c in cols
+        }
+
+    def _lay_carpet(self, f: Feature, cell: tuple[int, int], deck_y: int, carpet: str) -> None:
+        """Turn a deck cell into a wall top course with a carpet on it (#455).
+
+        The deck row takes the wall material (a shopfront later writes its fascia there)
+        and the carpet sits one row up, so the roof changes material without gaining height.
+
+        @param f: feature that owns the column
+        @param cell: ``(x, z)``
+        @param deck_y: the deck row y
+        @param carpet: carpet block name
+        """
+        self.set(cell[0], deck_y, cell[1], self.wall)
+        self.set(cell[0], deck_y + 1, cell[1], carpet)
+        f.carpet_cells[cell] = deck_y
+
+    def _check_carpet_support(self) -> list[str]:
+        """Drop any finish carpet that no longer stands on a full solid block (#455).
+
+        Later steps (street face, prunes, real-owner cells) may change the deck row; a
+        carpet never stays over air, a slab, a stair or another carpet.
+
+        @returns: one dry-run line per feature with a carpet finish
+        """
+        lines = []
+        for f in self.features:
+            if not f.carpet_cells:
+                continue
+            kept = dropped = 0
+            for (x, z), deck_y in sorted(f.carpet_cells.items()):
+                if '_carpet' not in self.p.cells.get((x, deck_y + 1, z), ''):
+                    continue
+                below = self.p.cells.get((x, deck_y, z)) or self.live.block(x, deck_y, z) or ''
+                name = bid(below)
+                if self._is_solid(x, deck_y, z) and not name.endswith(('_slab', '_stairs', '_carpet')):
+                    kept += 1
+                    continue
+                self.set(x, deck_y + 1, z, 'air')
+                dropped += 1
+            lines.append(
+                f'{f.no} roof finish {f.roof["finish"]}: carpet {kept} cells on solid blocks; '
+                f'dropped {dropped} without a solid block below'
+            )
+        return lines
 
     @staticmethod
     def _slope_stair_rule(f: Feature) -> SlopeStairRule:
@@ -470,12 +555,20 @@ class Build(RoofZonePlanning, DoorPlanning, FacadePlanning, DetailPlanning):
         Membrane uses ``roofs[].material`` slabs on owned columns. The one-block
         N8 overhang fringe is built only when ``roofs[].edge`` is present
         (default none). Pitched overhang is unchanged in ``roof_pitched``.
+        With ``roofs[].finish`` each owned deck cell is a wall top course under a
+        carpet (:meth:`_lay_carpet`); the fringe stays roof slab.
 
         @param features: group masses sharing this roof
         @param own: owned (x, z) columns for the roof deck
         """
         rm = features[0].roof['material']
         eave = features[0].b + features[0].storeys * STOREY_H
+        finish = features[0].roof.get('finish')
+        if finish:
+            carpet = carpet_block(rm, finish)
+            for f in features:
+                for x, z in f.cells:
+                    self._lay_carpet(f, (x, z), eave, carpet)
         rs = set(own)
         if features[0].roof.get('edge'):
             for (x, z) in own:
@@ -483,6 +576,8 @@ class Build(RoofZonePlanning, DoorPlanning, FacadePlanning, DetailPlanning):
                     n = (x + dx, z + dz)
                     if n not in self.owner and n not in self.foreign and n not in self.shared:
                         rs.add(n)
+        # carpeted columns keep their wall top course; the overhang fringe stays roof slab
+        rs -= {c for f in features for c in f.carpet_cells}
         for x, z in rs:
             self.set(x, eave, z, _bottom_slab_or_full(rm))
 
@@ -628,10 +723,13 @@ class Build(RoofZonePlanning, DoorPlanning, FacadePlanning, DetailPlanning):
                 self.p.cells, self.live.block, getattr(self.live, 'prefetch', None)).items():
             if self.p.cells.get((x, y, z)) != state:
                 self.set(x, y, z, state)
+        carpet_lines = self._check_carpet_support()
         for line in stair_effect_lines(self.p.cells, self.live.block):
             print(line)
         self.p.signs = [row for row in self.p.signs if '_wall_sign[' in self.p.cells.get(row[0], '')]
         for line in self._zone_pad_lines:
+            print(line)
+        for line in carpet_lines:
             print(line)
         for line in self._roof_warnings:
             print(line)

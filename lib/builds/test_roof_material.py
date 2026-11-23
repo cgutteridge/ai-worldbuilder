@@ -227,6 +227,33 @@ class RoofTypeTest(unittest.TestCase):
                 RM.load_catalogue(path)
         self.assertIn('not a triad', str(caught.exception))
 
+    def test_every_family_has_a_carpet_colour_and_grey_tile_is_gray(self):
+        for family_id in self.catalogue['families']:
+            with self.subTest(family=family_id):
+                self.assertIn(RM.carpet_block(family_id), self.ids)
+        grey_tile = RM.roof_type_blocks('grey_tile')['family']
+        self.assertEqual(RM.carpet_block(grey_tile), 'gray_carpet')
+        self.assertEqual(RM.carpet_block('minecraft:stone_brick_stairs[facing=east]'), 'gray_carpet')
+
+    def test_carpet_finish_names_a_dye_or_refuses(self):
+        self.assertEqual(RM.carpet_block('stone_brick', 'light_gray_carpet'), 'light_gray_carpet')
+        self.assertEqual(RM.carpet_block('granite', 'red_carpet'), 'red_carpet')
+        for material, finish in (('stone_brick', 'tartan_carpet'), ('stone_brick', 'rug'),
+                                 ('granite', 'carpet')):
+            with self.subTest(material=material, finish=finish):
+                with self.assertRaises(ValueError):
+                    RM.carpet_block(material, finish)
+
+    def test_catalogue_refuses_an_unknown_carpet_colour(self):
+        bad = copy.deepcopy(self.catalogue)
+        bad['families']['stone_brick']['carpet'] = 'grey'
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'roof-materials.json'
+            path.write_text(json.dumps(bad), encoding='utf-8')
+            with self.assertRaises(ValueError) as caught:
+                RM.load_catalogue(path)
+        self.assertIn('carpet', str(caught.exception))
+
     def test_catalogue_refuses_a_type_with_an_unknown_family(self):
         bad = copy.deepcopy(self.catalogue)
         bad['types']['grey_tile']['alternates'] = ['no_such_family']

@@ -461,6 +461,20 @@ class FacadePlanning:
             return None
         return roof.get(cell)
 
+    def _band_top(self, f: Feature, cell: tuple[int, int]) -> int:
+        """Highest row a street-face band may write on a column.
+
+        The row under the roof, or the deck row itself when a carpet finish made it the
+        wall top course (#455): there the fascia is that top course.
+
+        @param f: feature mass
+        @param cell: ``(x, z)``
+        @returns: block y
+        """
+        roof_y = self._column_roof_y(f, cell)
+        roof_y = roof_y if roof_y is not None else f.b + f.storeys * STOREY_H
+        return roof_y if cell in (getattr(f, 'carpet_cells', None) or {}) else roof_y - 1
+
     def windows(self, f: Feature):
         """Resolve intended glazing as complete bounded openings before writing glass."""
         from floor_reference import outside_ground
@@ -543,6 +557,9 @@ class FacadePlanning:
     ) -> bool:
         """True when a column has room for glass, the awning row and the sign row under the roof.
 
+        On a carpet-finished deck (#455) the deck row is the band's top course, and one fascia
+        row (awning and sign together) is enough.
+
         @param f: feature mass
         @param cell: ``(x, z)``
         @param glass_height: opening height in blocks from the shop recipe
@@ -550,9 +567,8 @@ class FacadePlanning:
         @returns: whether the fascia band fits below the roof
         """
         floor = self._column_floor(f, cell) if floor is None else floor
-        roof_y = self._column_roof_y(f, cell)
-        roof_y = roof_y if roof_y is not None else f.b + f.storeys * STOREY_H
-        return floor + glass_height + 2 < roof_y
+        rows = 1 if cell in (getattr(f, 'carpet_cells', None) or {}) else 2
+        return floor + glass_height + rows <= self._band_top(f, cell)
 
     def _shop_front_fits(self, f: Feature, fronts: dict, rule: dict) -> bool:
         """True when at least one front column can take the shop fascia band.
@@ -751,7 +767,7 @@ class FacadePlanning:
                 continue
             floor = self._shop_floor(f, cell, face_of[cell], glass_h)
             awning_y = floor + glass_h + 1
-            rows[cell] = (floor, awning_y, awning_y + 1)
+            rows[cell] = (floor, awning_y, min(awning_y + 1, self._band_top(f, cell)))
         if door_cell not in rows:
             door_cell = None
         doors = self._door_keepout(f)
@@ -761,10 +777,8 @@ class FacadePlanning:
                 protected.update((x + dx, y, z + dz) for dx, dz in ((0, 0), *N4))
 
         def write(cell, y, state):
-            roof_y = self._column_roof_y(f, cell)
-            roof_y = roof_y if roof_y is not None else f.b + f.storeys * STOREY_H
             pos = (cell[0], y, cell[1])
-            if y < roof_y and pos not in protected and cell not in doors:
+            if y <= self._band_top(f, cell) and pos not in protected and cell not in doors:
                 self.set(*pos, state)
 
         for run in runs:
@@ -867,10 +881,8 @@ class FacadePlanning:
                 protected.update((x + dx, y, z + dz) for dx, dz in ((0, 0), *N4))
 
         def write(c, y, state):
-            roof_y = self._column_roof_y(f, c)
-            roof_y = roof_y if roof_y is not None else f.b + f.storeys * STOREY_H
             pos = (c[0], y, c[1])
-            if y < roof_y and pos not in protected and c not in doors:
+            if y <= self._band_top(f, c) and pos not in protected and c not in doors:
                 self.set(*pos, state)
 
         fascia_h = (rule['shutter_height'] + 1 if rule['kind'] == 'industrial' else
@@ -878,9 +890,7 @@ class FacadePlanning:
         fascia_y = {}
         for c in fronts:
             floor = self._column_floor(f, c)
-            roof_y = self._column_roof_y(f, c)
-            roof_y = roof_y if roof_y is not None else f.b + f.storeys * STOREY_H
-            fascia_y[c] = min(floor + fascia_h, roof_y - 1)
+            fascia_y[c] = min(floor + fascia_h, self._band_top(f, c))
             if rule['kind'] == 'big_box':
                 for y in range(floor + 1, fascia_y[c]):
                     write(c, y, 'light_blue_stained_glass')

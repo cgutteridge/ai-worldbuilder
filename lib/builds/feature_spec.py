@@ -95,6 +95,7 @@ def load_spec(path) -> dict:
     _validate_signs(path, spec, labels)
     _validate_zones(path, spec, labels)
     _validate_roof_stairs(path, spec)
+    _validate_roof_finish(path, spec)
     _validate_exclude(path, spec, labels)
     _validate_material_regions(path, spec)
     return spec
@@ -179,6 +180,40 @@ def _validate_roof_stairs(path, spec: dict) -> None:
             raise SystemExit(f'{path}: roofs[{lab}].stairs only applies to pitched roofs')
         if lab not in (spec.get('zones') or {}):
             raise SystemExit(f'{path}: roofs[{lab}].stairs "slope" needs zones[{lab}] (it reads the roof volumes)')
+
+
+def _validate_roof_finish(path, spec: dict) -> None:
+    """Validate optional ``roofs[label].finish`` (absent = the deck is the roof material).
+
+    ``"carpet"`` (colour from each roof material's catalogue ``carpet``) or ``"<dye>_carpet"``
+    lays a carpet over flat deck columns, whose deck row becomes the wall top course (#455).
+    Flat roofs only: a pitched roof needs ``zones[label]``, and only its flat columns take it.
+
+    @param path: spec path (for error text)
+    @param spec: feature spec being loaded (zones already validated)
+    @raises SystemExit: on a bad value, a material with no carpet colour, or an unzoned pitched roof
+    """
+    from roof_material import carpet_block
+
+    for lab, roof in spec['roofs'].items():
+        if 'finish' not in roof:
+            continue
+        finish = roof['finish']
+        if not isinstance(finish, str):
+            raise SystemExit(f'{path}: roofs[{lab}].finish must be "carpet" or "<dye>_carpet"')
+        if roof['kind'] == 'pitched' and lab not in (spec.get('zones') or {}):
+            raise SystemExit(
+                f'{path}: roofs[{lab}].finish needs a flat roof; a pitched roof takes it only with '
+                f'zones[{lab}], on its flat columns'
+            )
+        materials = [roof['material'], *(roof.get('zone_materials') or {}).values(),
+                     *(row.get('material') for row in roof.get('material_regions') or ()
+                       if isinstance(row, dict))]
+        for material in materials:
+            try:
+                carpet_block(str(material), finish)
+            except ValueError as exc:
+                raise SystemExit(f'{path}: roofs[{lab}].finish: {exc}') from None
 
 
 def _validate_roof_edge(path, lab: str, roof: dict) -> None:

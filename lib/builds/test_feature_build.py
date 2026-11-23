@@ -14,6 +14,7 @@ import unittest
 import numpy as np
 
 from feature_build_fixtures import (
+    PitchedZonesFixture,
     _StoneWorld,
     _entrance_row,
     _glazing_plan,
@@ -180,6 +181,99 @@ class BuildPlanTest(unittest.TestCase):
                      cell=(0, 0))
             plan = F.build(self.spec(storeys=2), footprints={'A': self.cells}, world=_StoneWorld())
         self.assertIn(pos, plan.cells)
+
+
+class CarpetFinishBuildTest(PitchedZonesFixture, unittest.TestCase):
+    """Seam: ``roofs[label].finish`` carpet through ``Build`` (#455): flat decks only, on solid blocks."""
+
+    def _finished(self, kind: str, levels: list, zone_data: dict, finish='carpet'):
+        spec = self._spec(kind, levels, material='stone_brick')
+        if finish:
+            spec['roofs']['A']['finish'] = finish
+        builder = F.Build(spec, footprints={'A': self.cells}, world=_StoneWorld(), zone_data=zone_data)
+        buf = io.StringIO()
+        with mock.patch.object(FZ, 'metres_aod_to_y', side_effect=lambda m: int(m)), redirect_stdout(buf):
+            plan = builder.build()
+        return builder.features[0], plan, buf.getvalue()
+
+    def _shopfront_and_ridge(self) -> dict:
+        """A low flat strip (x 10..11) in front of a ridged body (x 12..18)."""
+        data = {k: dict(v) for k, v in self.ridge_zone_data.items()}
+        dsm = np.full((7, 11), 45.0)
+        for xi, h in enumerate([45, 45, 48, 49, 50, 52, 50, 49, 48]):
+            dsm[:, 1 + xi] = float(h)
+        data['A']['dsm'] = dsm
+        return data
+
+    def test_flat_zones_get_a_wall_top_course_and_carpet_with_no_extra_height(self):
+        bare_f, bare, _ = self._finished('flat', [45, 50], self.flat_zone_data, finish=None)
+        f, plan, out = self._finished('flat', [45, 50], self.flat_zone_data)
+        self.assertEqual(set(f.carpet_cells), set(self.cells))
+        for (x, z), deck in f.carpet_cells.items():
+            self.assertEqual(deck, bare_f.zone_roof[(x, z)])
+            self.assertEqual(bare.cells[(x, deck, z)], 'minecraft:stone_bricks')
+            self.assertEqual(plan.cells[(x, deck, z)], 'minecraft:bricks')
+            self.assertEqual(plan.cells[(x, deck + 1, z)], 'minecraft:gray_carpet')
+        self.assertEqual(max(y for _x, y, _z in plan.cells), max(y for _x, y, _z in bare.cells))
+        self.assertIn('A roof finish carpet: carpet 45 cells on solid blocks; dropped 0', out)
+
+    def test_pitched_zones_carpet_only_the_flat_strip_never_the_slope(self):
+        data = self._shopfront_and_ridge()
+        bare_f, bare, _ = self._finished('pitched', [45, 48], data, finish=None)
+        f, plan, _ = self._finished('pitched', [45, 48], data, finish='light_gray_carpet')
+        self.assertTrue(f.carpet_cells)
+        self.assertLessEqual(set(f.carpet_cells), f.zone_flat_cells)
+        self.assertEqual({x for x, _z in f.carpet_cells}, {10, 11})
+        sloped = [(x, z) for (x, z), y in f.zone_roof.items() if '_stairs[' in plan.cells.get((x, y, z), '')]
+        self.assertTrue(sloped)
+        carpets = {(x, z) for (x, _y, z), state in plan.cells.items() if state.endswith('_carpet')}
+        self.assertEqual(carpets, set(f.carpet_cells))
+        for x, z in f.carpet_cells:
+            deck = f.carpet_cells[(x, z)]
+            self.assertEqual(plan.cells[(x, deck, z)], 'minecraft:bricks')
+            self.assertEqual(plan.cells[(x, deck + 1, z)], 'minecraft:light_gray_carpet')
+            self.assertEqual(bare.cells.get((x, deck + 1, z)), 'minecraft:air')
+        self.assertEqual(bare_f.zone_roof, f.zone_roof)
+
+    def test_unzoned_pitched_roof_never_takes_a_carpet(self):
+        spec = build_spec(storeys=2, kind='pitched', material='stone_brick')
+        spec['roofs']['A']['finish'] = 'carpet'
+        with redirect_stdout(io.StringIO()):
+            plan = F.build(spec, footprints={'A': {(x, z) for x in range(10, 15) for z in range(20, 25)}},
+                           world=_StoneWorld())
+        self.assertFalse(any(state.endswith('_carpet') for state in plan.cells.values()))
+
+    def test_carpet_over_a_deck_cleared_later_is_dropped(self):
+        victim = (14, 22)
+        real = F.Build.street_face
+
+        def clear_one_deck(builder, f):
+            real(builder, f)
+            if victim in f.carpet_cells:
+                builder.set(victim[0], f.carpet_cells[victim], victim[1], 'air')
+
+        with mock.patch.object(F.Build, 'street_face', clear_one_deck):
+            f, plan, out = self._finished('flat', [45, 50], self.flat_zone_data)
+        deck = f.carpet_cells[victim]
+        self.assertEqual(plan.cells[(victim[0], deck + 1, victim[1])], 'minecraft:air')
+        self.assertIn('carpet 44 cells on solid blocks; dropped 1 without a solid block below', out)
+        for (x, y, z), state in plan.cells.items():
+            if state.endswith('_carpet'):
+                self.assertNotIn(plan.cells.get((x, y - 1, z), 'minecraft:air'), ('minecraft:air', None))
+
+    def test_unzoned_flat_roof_carpets_every_owned_deck_cell(self):
+        cells = {(x, z) for x in range(10, 15) for z in range(20, 25)}
+        spec = build_spec(storeys=2, kind='flat', material='stone_brick')
+        spec['roofs']['A']['finish'] = 'carpet'
+        spec['roofs']['A']['edge'] = {'block': 'stone_brick', 'where': 'outer'}
+        with redirect_stdout(io.StringIO()):
+            plan = F.build(spec, footprints={'A': cells}, world=_StoneWorld())
+        deck = 50 + 2 * 3
+        for x, z in cells:
+            self.assertEqual(plan.cells[(x, deck, z)], 'minecraft:bricks')
+            self.assertEqual(plan.cells[(x, deck + 1, z)], 'minecraft:gray_carpet')
+        self.assertIn('stone_brick_slab', plan.cells[(9, deck, 22)])
+        self.assertNotIn('carpet', plan.cells.get((9, deck + 1, 22), ''))
 
 
 class CliDryRunTest(unittest.TestCase):

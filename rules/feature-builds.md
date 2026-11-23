@@ -35,7 +35,7 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   `STOREY_H=3` from the median-ground datum)
 - `roofs` — `{label: {kind: flat|pitched, material: <slab mat>,
   edge?: {block, where: outer|all}, flat_tol_m?: <m>, stairs?: "slope",
-  zone_materials?: {<level_m_AOD>: <mat>},
+  finish?: "carpet"|"<dye>_carpet", zone_materials?: {<level_m_AOD>: <mat>},
   material_regions?: [{level: <m_AOD>, polygon: [[x,z], ...]}]}}`.
   Absent `edge` = no roof
   edging (default). When set, `block` is the parapet/coping mat;
@@ -261,6 +261,24 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   stairs take their shape from the stairs that stay. Off by default (existing builds and `house_build` roofs
   are unchanged). Dry run prints `<label> roof stairs slope: kept <n> stair(s) (rim .., slope ..); <m> made
   level blocks (flat layer .., step between volumes .., no fitted slope ..)`.
+
+  Optional `roofs[label].finish` (#455): a carpet finish on flat roofs only, so a flat roof shows a
+  material different from the walls without gaining height. `"carpet"` takes each column's roof material's
+  `carpet` colour from `config/roof-materials.json` (every family has one; grey tile `stone_brick` is
+  `gray`); `"<dye>_carpet"` (one of the sixteen dyes) names the carpet outright. A material outside the
+  catalogue needs the named form. On each carpeted column the old deck row becomes the wall's top course
+  (`wall` material) and the carpet sits one row up. Which columns: every owned column of a flat roof (zoned
+  or not); on a pitched roof, which needs `zones[label]`, only its flat columns: a zone the builder judges
+  flat whose fitted surface (with `surface: "fit"`) is flat, at a full-block height (a slab-height deck keeps
+  its slab). Never a sloped column; an unzoned pitched roof is refused. An `edge` block wins over the carpet
+  on its column, and a flat roof's overhang fringe stays roof slab. On an unzoned flat roof whose material
+  is a slab family the top course is a full block, so that roof stands half a block higher than its slab
+  deck. Support check: after every later step, a carpet without a full solid block under it (air, a slab,
+  a stair or a carpet) is removed; door clears stop under a carpeted deck row. On a rule-built shopfront the
+  carpeted deck row is the band's top course: one fascia row (awning and sign row together) may be that
+  deck row, so a one-storey flat shop (glass 2, fascia on the deck) dresses instead of printing `shell too
+  low for a fascia band`. Off by default. Dry run prints `<label> roof finish <finish>: carpet <n> cells on
+  solid blocks; dropped <m> without a solid block below`.
 
   Pipeline: 1-block-stair squaring (close then open, no fixed halo) → 5×5
   median DSM → snap to `levels` (or `"auto"` plateaus) → mode-filter →
