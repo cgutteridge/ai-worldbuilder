@@ -145,13 +145,13 @@
     {
       "id": 447,
       "title": "Live parade fixes after #333: windows on stepped walls, roof material, storeys, doors for rule-built shops",
-      "status": "todo",
+      "status": "doing",
       "priority": "high",
       "complexity": "m",
       "blockedBy": [],
       "builderTask": true,
       "notes": "Live build of #333 + #427 at cell 50,-36 (2026-11-23) read back clean but looked wrong: blank stepped brick walls, roofs of solid brick, nearly no windows (house_build.windows passes no corner_evidence, so every wall column of a 45-degree stair-step wall is a corner and is refused: 'corner pier / tread too short'), no bays, mostly 1-storey bodies, most shops without a door. Fix generally (no street- or shop-specific code): (1) windows on stepped faces in house_build.windows, (2) roof material default for the commercial class (full-block brick roofs), (3) storeys and bay from evidence, (4) doors. Check on ONE shop first, in game, then the group. Source: session notes; docs/plans/typology-buildings.md.\n\nReturned to todo: Zone regions landed. Left: stair-step windows, roof flat_tol default, storeys/bay, doors, live parade.\n\n[tasks CLI] Status update recorded; subject to human review."
-    },
+    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/447-solid-glass-windows"},
     {
       "id": 449,
       "title": "Ground: car-park bay lines read from the aerial image (no generated grid)",
