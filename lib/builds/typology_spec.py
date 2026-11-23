@@ -5,6 +5,12 @@ No model chooses a design. A footprint of any orientation is taken as drawn
 (the builder fits it); a sliver or a multi-part shape comes back as needs-designer.
 House tags (terrace, semi-detached, detached, or a plain
 house whose shared walls make the row obvious) become one house_build spec.
+A terrace row uses the terrace recipe (#441): one roof per house (mode each),
+a domestic chimney on every party wall (explicit ``at`` sites from footprint
+adjacency), and roof families alternating per consecutive pair from the class
+``terrace_roofs`` palette when the appearance came from the class default and
+the form is pitched. A district profile keeps its single roof family. Semi and
+detached keep mode each.
 Any other class the building's own tags name becomes a minimal feature_build
 spec, for example a shop with flats above. Missing tags, an odd footprint, or
 a class the tags do not name is reported with a reason and not guessed.
@@ -35,6 +41,7 @@ from pathlib import Path
 
 import land_use
 import terrace_body
+from house_build import footprint_party_walls
 from roof_material import load_catalogue, normalise_material, roof_blocks
 
 # house_build walls run six blocks, two storeys of three. It cannot say otherwise.
@@ -698,13 +705,16 @@ def _emit(group: list[dict], axis: str | None, streets) -> dict:
     note = _note(ordered, phrase)
     if ordered[0]['path'] == 'house':
         pitch = PITCHED_RISE if ordered[0]['form'] in PITCHED_FORMS else FLAT_RISE
+        if kind == 'terrace':
+            return {'builder': 'house_build', 'spec': _terrace_spec(
+                name, note, ordered, ways, labels, front, pitch)}
         spec = {
             'name': name,
             'notes': note,
             'ways': ways,
             'roofs': {row['label']: row['family'] for row in ordered},
             'roof_pitch': {row['label']: pitch for row in ordered},
-            'groups': [{'nos': labels, 'mode': 'group' if kind == 'terrace' else 'each', 'front': front}],
+            'groups': [{'nos': labels, 'mode': 'each', 'front': front}],
         }
         return {'builder': 'house_build', 'spec': spec}
     if ordered[0]['path'] == 'body':
@@ -722,6 +732,52 @@ def _emit(group: list[dict], axis: str | None, streets) -> dict:
         'wall': ordered[0]['wall'],
     }
     return {'builder': 'feature_build', 'spec': spec}
+
+
+def _terrace_spec(
+        name: str, note: str, ordered: list[dict], ways: dict, labels: list[str],
+        front: str, pitch: float) -> dict:
+    """House_build terrace recipe: per-house roofs, party-wall stacks, alternating colours (#441).
+
+    Every house is its own roof unit (mode ``each``). Chimneys use the domestic
+    ``at`` list: one stack column on each party wall from
+    ``footprint_party_walls``. When the row's appearance came from the class
+    default and the form is pitched, roof families cycle the class
+    ``terrace_roofs`` palette per consecutive pair; a district profile, a flat
+    form, or a missing palette keeps the ordinary family for every house.
+    """
+    pitched = ordered[0]['form'] in PITCHED_FORMS
+    palette = (
+        land_use.terrace_roof_families(ordered[0]['cls'])
+        if pitched and ordered[0].get('section_source') == 'class' else None
+    )
+    families = palette or [ordered[0]['family']]
+    roofs = {}
+    for index, row in enumerate(ordered):
+        roofs[row['label']] = families[(index // 2) % len(families)]
+    return {
+        'name': name,
+        'notes': note,
+        'ways': ways,
+        'roofs': roofs,
+        'roof_pitch': {label: pitch for label in labels},
+        'groups': [{'nos': labels, 'mode': 'each', 'front': front}],
+        'chimneys': _terrace_chimneys(ordered),
+    }
+
+
+def _terrace_chimneys(ordered: list[dict]) -> dict:
+    """Per-label domestic chimney ``at`` lists: one stack on each party wall.
+
+    @param ordered: terrace houses left-to-right (or southwards)
+    @returns: chimneys map for house_build (``none`` when a house has no wall)
+    """
+    sites = {row['label']: [] for row in ordered}
+    for i, j, wall in footprint_party_walls([row['cells'] for row in ordered]):
+        col = min(wall)
+        owner = ordered[i] if col in ordered[i]['cells'] else ordered[j]
+        sites[owner['label']].append({'at': [col[0], col[1]]})
+    return {label: entries if entries else 'none' for label, entries in sites.items()}
 
 
 def _body_spec(name: str, note: str, ordered: list[dict], ways: dict, front: str) -> dict:
