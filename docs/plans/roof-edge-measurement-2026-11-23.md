@@ -5,6 +5,10 @@ No code, spec or world change. Scratch spec copies and the counting script live 
 
 ## Commands
 
+Run from the main checkout's world data: the commands were run with the worktree as cwd, and `worlds/` resolves to the main checkout's `worlds/southampton-build` through `active_world`.
+
+**Not reproducible from a repo command.** The counts for (a) to (c) come from a scratch script that is not committed (it lives under /private/tmp, outside the repo, because this task is report-only). Only the dry runs and `roof_lint` are repo commands. To recreate it: build the plan in process (`feature_build.Build(spec).build()`, spec loaded with `feature_spec.load_spec` from a scratch copy), wrap `feature_build.pitched_roof_states` to capture its `half_heights`, `levels`, `flat_cells` and result, and wrap `stair_ok` to record refused columns and `SlopeStairRule.reason`; regularise heights with `roof_geometry.regularise_roof_half_heights`; read each roof column's final cell at `roof_block_y(h)`; then classify (a) in the order of the terrace-trim conditions in `pitched_roof_states` (flat, refused, higher same-zone neighbour, higher other-zone, drop over one block, zone step only, three or more drops, opposing drops, no level backing), (b) as stairs with no higher cell among the 8 neighbours, (c) as brick-family cells on a zone edge with no brick-family N4 neighbour. The follow-up fix task should commit this script as a tool with tests.
+
 - `python3 scripts/feature_build.py --world southampton-build site/builds/west_w34391673.json` (dry run, no `--apply`), same for `site/builds/w146985470.json`.
 - `python3 scripts/roof_lint.py --world southampton-build west_w34391673 w146985470`: "no ridge jogs, 0 stair-shape mismatches". Note it reads the **recorded** (live journal) plans, not a dry run.
 - Counting: a scratch script calls `feature_build.Build(spec).build()` in process on a scratch spec copy and wraps `pitched_roof_states` to record its regularised heights, zone levels, flat cells and the columns `stair_ok` refused. Counts read the final plan cell on each roof column. `roof_lint.ridge_jogs` and `stair_shape_mismatches` were also run on each scenario's plan cells.
@@ -14,7 +18,7 @@ Fit lines from the dry run: West zone 47 fits a plane (rms 0.34 m, 865 of 1118 c
 
 ## (a) Full-block cells with a lower orthogonal neighbour, by failing trim condition
 
-"Rise" = the lower neighbour is one block or more lower; "half" = a half-block step (a full block beside a bottom slab, the intended slope pattern, not a defect).
+**Visible rises** has one definition in all six columns: the total minus every half-block-step row, minus flat cells (by design), minus cells where the `stairs: "slope"` rule deliberately made a block (6 West, 8 Kiddle in fit+slope; they are intended blocks, so not defects; counting them would give 129 West and 70 Kiddle for fit+slope). "Rise" = the lower neighbour is one block or more lower; "half" = a half-block step (a full block beside a bottom slab, the intended slope pattern, not a defect).
 
 | Group | West base | West fit | West fit+slope | Kiddle base | Kiddle fit | Kiddle fit+slope |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -30,9 +34,9 @@ Fit lines from the dry run: West zone 47 fits a plane (rms 0.34 m, 865 of 1118 c
 | Flat cell (by design) | 0 | 0 | 0 | 70 | 39 | 39 |
 | Stair removed by slope rule (step between volumes) | 0 | 0 | 6 | 0 | 0 | 8 |
 | **Total** | 179 | 142 | 148 | 155 | 149 | 157 |
-| **Total excluding half steps and flat cells (visible rises)** | 155 | 123 | 129 | 85 | 62 | 70 |
+| **Visible rises** (total minus half-block steps, flat cells and slope-rule-removed stairs) | 150 | 123 | 123 | 37 | 62 | 62 |
 
-Reading: the trim conditions the task names (three or more, opposing, no backing) account for only 14 West and 6 Kiddle cells in the baseline. Most remaining full-block rises are cells that have a higher same-zone neighbour (the trim never fires next to a higher cell) or a zone step. Fit cuts West from 179 to 142 and Kiddle's trim failures to 0, but Kiddle's zone-step count grows (12 to 43) because the fit makes more layers flat. Examples, West: higher-neighbour (6166,-5631), (6166,-5630), (6167,-5632); three drops (6155,-5631), (6201,-5615); opposing (6178,-5632); no backing (6165,-5634). Kiddle: higher-neighbour (6359,-5531); three drops (6393,-5493); zone step (6397,-5503).
+Reading: the trim conditions the task names (three or more, opposing, no backing) account for only 14 West and 6 Kiddle cells in the baseline. Most remaining full-block rises are cells that have a higher same-zone neighbour (the trim never fires next to a higher cell) or a zone step. Fit cuts West visible rises from 150 to 123 and Kiddle's trim failures to 0, but Kiddle's visible rises grow from 37 to 62 (zone-step cells 12 to 43) because the fit makes more layers flat. Examples, West: higher-neighbour (6166,-5631), (6166,-5630), (6167,-5632); three drops (6155,-5631), (6201,-5615); opposing (6178,-5632); no backing (6165,-5634). Kiddle: higher-neighbour (6359,-5531); three drops (6393,-5493); zone step (6397,-5503).
 
 ## (b) Stairs with no higher cell in the 8 neighbours, by rule that placed them
 
@@ -45,7 +49,7 @@ Reading: the trim conditions the task names (three or more, opposing, no backing
 | Kiddle | fit | 160 | 0 | none |
 | Kiddle | fit+slope | 84 | 0 | none |
 
-All stairs are bottom half. These are the I-048 leftovers (the earlier read counted 16 on the 2026-11-21 plan; 27 is by a slightly wider test on the current plan). A stair with no higher neighbour cannot be a slope, hip or lidar-bump stair, so the terrace-edge rule (#309) is the candidate that was open in the task notes and is confirmed here: it is the only source. Example West cells: (6171,-5637), (6172,-5637), (6197,-5632), (6192,-5614), (6200,-5614), (6195,-5609); Kiddle (6390,-5479). Slope rule behaviour: West refuses 131 stairs (flat layer 66, step between volumes 58, no fitted slope 7) but keeps 456 with "no fitted surface" because zone 49 has no fit; Kiddle refuses 76 (step between volumes 67, flat layer 5, no fitted slope 4) and keeps 33 with no fitted surface. The slope rule does not touch terrace-edge stairs that sit on the rim or in unfitted zones.
+All stairs are bottom half. These are the I-048 leftovers (the earlier read counted 16 on the 2026-11-21 plan; 27 is by a slightly wider test on the current plan). A stair with no higher neighbour cannot be a slope, hip or lidar-bump stair, so the terrace-edge rule (#309) is the candidate that was open in the task notes and is confirmed here: it is the only source. Example West cells: (6171,-5637), (6172,-5637), (6197,-5632), (6192,-5614), (6200,-5614), (6195,-5609); Kiddle (6390,-5479). Slope rule behaviour: West refuses 131 stairs (the reason sums 66+58+7; the final plan's stair count falls by 130, 627 to 497, because a later pass changes one cell, and the dry run's own line says kept 499 of the 630 considered) (flat layer 66, step between volumes 58, no fitted slope 7) but keeps 456 with "no fitted surface" because zone 49 has no fit; Kiddle refuses 76 (step between volumes 67, flat layer 5, no fitted slope 4) and keeps 33 with no fitted surface. The slope rule does not touch terrace-edge stairs that sit on the rim or in unfitted zones.
 
 ## (c) Brick cells on a zone edge with no brick orthogonal neighbour (S-118)
 
@@ -54,7 +58,7 @@ All stairs are bottom half. These are the I-048 leftovers (the earlier read coun
 | West | all three | 903 | 135 | 0 | 0 |
 | Kiddle | all three | 235 | 6 | 0 | 0 |
 
-The dry-run plan has no isolated bricks, so the ragged edge in S-118 is not isolated single bricks in the current plan. Weaker proxies (identical in all scenarios, since zone 49 and 44 stay raw): West 10 brick cells with at most one brick neighbour (e.g. (6160,-5639), (6162,-5626), (6170,-5622), (6174,-5635), (6185,-5628)) and 5 non-brick cells with three or more brick neighbours (holes: (6171,-5633), (6188,-5611), (6202,-5601), (6204,-5605), (6207,-5595)); Kiddle 6 and 0. The live roof was last built on 2026-11-22 (seq 1725 West, 1718 Kiddle), so S-118 may reflect a live edit, the older plan, or full-block steps on the edge (count (a), zone step only) rather than lone bricks; not verified in game. No picture is committed (coordinates above instead).
+The dry-run plan has no isolated bricks, so the ragged edge in S-118 is not isolated single bricks in the current plan. Weaker proxies (identical in all scenarios, since zone 49 and 44 stay raw): West 10 brick cells with at most one brick neighbour (e.g. (6160,-5639), (6162,-5626), (6170,-5622), (6174,-5635), (6185,-5628)) and 5 non-brick cells with three or more brick neighbours (holes: (6171,-5633), (6188,-5611), (6202,-5601), (6204,-5605), (6207,-5595)); Kiddle 6 and 0. The live roof was last built on 2026-11-22 (seq 1725 West, 1718 Kiddle), so S-118 may reflect a live edit, the older plan, or full-block steps on the edge (count (a), zone step only) rather than lone bricks; not verified in game. No picture is committed: this is a deliberate gap against the ticket's "picture path" ask, covered by coordinates instead.
 
 Lint on scenario plans: ridge jogs 0 everywhere; stair-shape mismatches 0 except West fit (1), which should be looked at if the fit is adopted.
 
@@ -64,4 +68,4 @@ Surface fit alone helps modestly (West 179 to 142, Kiddle trim failures to 0, 27
 
 Any change to `pitched_roof_states` also serves `house_build` (`house_build.py` lines about 772 and 778), so it needs a house dry run and the `house_build` tests. Relevant tasks: #462 (make the #434 rule the default, house roofs included) overlaps the stairs-on-slope question; #463 (rotated hip roofs) for rotated zones.
 
-Check-line figures for the later rebuild: S-024 and S-069 (West) visible rises (a) at or below 155 (baseline), target at or below 123 with fit; S-068 (Kiddle) at or below 85; S-118 count (c) is already 0, so use the proxies (10 and 5); S-088 the 27 stairs of (b) are all terrace-edge (#309) stairs.
+Check-line figures for the later rebuild (visible rises as defined under table (a)): S-024 and S-069 (West) at or below 150 on the current spec, 123 with fit; S-068 (Kiddle) at or below 37 on the current spec (62 with fit, because the fit turns more layers flat and so more cells become zone-step cells, not because it adds defects); S-118 count (c) is already 0, so use the proxies (10 and 5); S-088 the 27 stairs of (b) are all terrace-edge (#309) stairs.
