@@ -1,4 +1,9 @@
-"""Paced MCP access: the mod allows 60 requests/minute shared by all local clients."""
+"""Paced MCP access: one client waits ``interval`` (default 1.1 s) between calls.
+
+The Fabric MCP limiter is a shared per-IP token bucket (loaded default 600 RPM).
+A single paced instance stays near 55 RPM; concurrent clients on the same IP
+share the budget — see ``docs/archive/389-minecraft-rate-limit-waits.md``.
+"""
 import json
 import time
 from pathlib import Path

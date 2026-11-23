@@ -149,16 +149,7 @@
     },
     
     
-    {
-      "id": 389,
-      "title": "Find what triggers Minecraft rate-limit waits during applies",
-      "status": "doing",
-      "priority": "low",
-      "complexity": "s",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "From the 2026-11-21 B35 rebuild thread. The same plan applied four times: fill stage took 122 s with 1 rate-limit retry, 605 s with 10, 485 s with 7, 125 s with 0 (each retry is a fixed 'Minecraft rate limit: retrying in 60s' wait). Unknown what triggers it. One unverified guess: other Minecraft MCP calls (teleport, scan, capture) from a parallel session while an apply runs. Spike: log request timestamps and the server's limit response during an apply, run once with no other calls and once with background calls, and record the limit, whether it is per second or per window, and whether the writer's pacing (see McpWriter, the paced MCP interval in rules/slow-commands.md) can stay under it. Output: a short finding in docs/ with numbers, and either a tuned pacing constant or a filed fix. Acceptance: the finding states the limit and the cause with measurements.\n\nWave investigation 2026-11-22: partial measured findings at docs/plans/minecraft-rate-limit.md. Installed limiter behavior and 60-second Retry-After are reproduced; current config files say 600 RPM but loaded/historical quotas and the original apply cause need measured traces. Saved B35 spec identified as worlds/southampton-build/site/builds/w146985470.json; live paired undo/apply trial remains pending concrete operation review. Owner approved current Codex model/effort for this wave, fresh Codex reviewers in place of unavailable Sonnet, and local merges only (no push)."
-    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/389-rate-limit-waits"},
+    
     
     
     
@@ -214,27 +205,18 @@
       "notes": "Remove the fixed _DEFAULT_UUID (lib/blocks/mc_paced.py) and the southampton_refine namespace fallback (lib/site/site_kit.py). Fail early naming the missing key, check the player before the journal begin, have new_blank_world.py or the skill fill player_uuid from player_list_online, and document both keys in new-world-build and the instance doc. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/3"
     },
     
+    
+    
     {
-      "id": 421,
-      "title": "Make new-world-build's clip folder count in clip_coverage",
+      "id": 423,
+      "title": "Include the home cell in new-world-build's first ghost",
       "status": "doing",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
       "builderTask": false,
-      "notes": "The skill says to use the place name for the clip folder, but _query_bbox only counts clips whose name encodes the extent. Have the extractor encode the extent, or change the skill example. Check: following the skill gives 100% clip_coverage for the home cell. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/6"
-    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/421-clip-folder-coverage"},
-    
-    {
-      "id": 423,
-      "title": "Include the home cell in new-world-build's first ghost",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "builderTask": false,
       "notes": "The first-ghost command uses --ring 1 but --include-focus is off, so it ghosts 8 cells not 9 and --ring 0 ghosts nothing. Add --include-focus to the skill commands or default it on for apply. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/7"
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/423-home-cell-first-ghost"},
     
     
     {
