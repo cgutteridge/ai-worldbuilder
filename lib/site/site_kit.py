@@ -1020,15 +1020,46 @@ def live_session(*, ghosts='default', ring=None, root=None):
     return cell_registry.open_registry(root, blocks=live_blocks(), ghosts=ghosts, ring=ring), McpWriter()
 
 
-def _structure_backup(m, name, lo, hi):
-    """Save a structure template of a box (+1 margin); the guard before every live write."""
+def _structure_backup(m, name, lo, hi, positions=None, *, tiled=False):
+    """Save the affected volume before writes, tiling wide/long features sparsely.
+
+    Small legacy backups retain their wire shape. A tiled logical backup stores
+    ``tiles`` with the same individual name/from/to shape, consumed by recovery
+    and exact undo verification. Each tile has at most 128 blocks per dimension.
+    """
     from mc_paced import box
     a = [lo[0] - 1, lo[1], lo[2] - 1]
     b = [hi[0] + 1, hi[1], hi[2] + 1]
-    res = m.text('structure_save_from_world', {'name': name, 'dimension': D, 'box': box(a, b)})
-    if 'saved' not in res:
-        raise SystemExit('Backup failed: ' + res)
-    return {'name': name, 'from': a, 'to': b}, res
+    if not tiled:
+        res = m.text('structure_save_from_world', {'name': name, 'dimension': D, 'box': box(a, b)})
+        if 'saved' not in res:
+            raise SystemExit('Backup failed: ' + res)
+        return {'name': name, 'from': a, 'to': b}, res
+    groups = {}
+    if positions is None:
+        raise SystemExit('large structure backup needs the explicit affected positions')
+    # 126-column groups leave room for the existing one-column horizontal margin.
+    for p in positions:
+        key = tuple(p[i] // 126 for i in range(3))
+        if key not in groups:
+            groups[key] = [list(p), list(p)]
+        else:
+            lower, upper = groups[key]
+            for i in range(3):
+                lower[i], upper[i] = min(lower[i], p[i]), max(upper[i], p[i])
+    tiles = []
+    for n, (_key, (lower, upper)) in enumerate(sorted(groups.items())):
+        lower[0] -= 1
+        lower[2] -= 1
+        upper[0] += 1
+        upper[2] += 1
+        tile_name = f'{name}_tile_{n}'
+        result = m.text('structure_save_from_world',
+                        {'name': tile_name, 'dimension': D, 'box': box(lower, upper)})
+        if 'saved' not in result:
+            raise SystemExit('Backup failed: ' + result)
+        tiles.append({'name': tile_name, 'from': lower, 'to': upper})
+    return {'name': name, 'from': a, 'to': b, 'tiles': tiles}, f'saved {len(tiles)} tiles'
 
 
 def _journal_refusal(name, exc):
@@ -1171,7 +1202,7 @@ def ensure_live_identity(m) -> str:
     return uuid
 
 
-def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, meta=None, strict=False, mask=None):
+def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, meta=None, strict=False, mask=None, readback_retries=0):
     """protect: optional callable(pos, existing_state) -> bool; True = refuse to overwrite.
     Cells owned by earlier builds are always protected unless that build is in `modifies`.
 
@@ -1191,6 +1222,9 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     from mc_paced import Paced
     import cell_registry
     from cell_journal import Build, CellJournalError, Clash, InFlight, Refused
+    if (not isinstance(readback_retries, int) or isinstance(readback_retries, bool)
+            or not 0 <= readback_retries <= 3):
+        raise ValueError('readback_retries must be an integer from 0 to 3')
     _ensure_world_config()
     pass_ = stage_pass(stage)
     timings = {}
@@ -1333,12 +1367,14 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
         if empty:
             structure = None
         elif not registry.entries(plan=plan.name):
-            structure, res = _structure_backup(m, f'{STRUCTURE_NS}:before_{plan.name}', lo, hi)
+            structure, res = _structure_backup(m, f'{STRUCTURE_NS}:before_{plan.name}', lo, hi, positions=plan.cells,
+                                               tiled=bool((meta or {}).get('tiled_backup')))
             print('backup:', res)
         else:
             # the first-time backup is the original state; recovery needs the state before THIS apply
             structure, _res = _structure_backup(
-                m, f'{STRUCTURE_NS}:before_{plan.name}_{time.strftime("%Y%m%d%H%M%S")}', lo, hi)
+                m, f'{STRUCTURE_NS}:before_{plan.name}_{time.strftime("%Y%m%d%H%M%S")}', lo, hi,
+                positions=plan.cells, tiled=bool((meta or {}).get('tiled_backup')))
     cell = tuple(cell) if cell else primary_cell(plan.cells)
     record = {**(meta or {}), 'structure': structure}
     if pass_ == 'feature' and 'builder' not in record:
@@ -1387,7 +1423,24 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
         blocks.flush()                          # server_save_all_worlds, settle, fresh region reads
     with timed_stage('readback', timings):
         actual = blocks.read_many(plan.cells)
+    # Re-send only mismatches within this same begun entry. The initial prior and
+    # structure backup remain authoritative; a retry never creates a second Build.
+    retries = []
+    for attempt in range(readback_retries):
+        pending = cells_to_fill(plan.cells, actual)
+        if not pending:
+            break
+        from dataclasses import replace
+        retry = replace(ticket.writes, cells=pending, intent=None, signs=(), entities=())
+        writer(retry)
+        if mark is not None:
+            mark()
+        blocks.flush()
+        actual = blocks.read_many(plan.cells)
+        retries.append({'attempt': attempt + 1, 'positions': len(pending)})
     rep = _readback_report(plan, actual)
+    if readback_retries:
+        rep['readback_retries'] = retries
     accounting_error = None
     try:
         rep['counts'] = apply_counts(plan.cells, ticket.writes.cells, before, actual)
@@ -1471,6 +1524,11 @@ def load_before_structure_blocks(structure_meta, m=None, save_root=None):
     @returns: ``{(x, y, z): canonical state}``
     @raises SystemExit: structure cannot be loaded
     """
+    if structure_meta.get('tiles'):
+        out = {}
+        for tile in structure_meta['tiles']:
+            out.update(load_before_structure_blocks(tile, m=m, save_root=save_root))
+        return out
     name = structure_meta['name']
     origin = structure_meta['from']
     structs = getattr(type(m), 'structures', None) if m is not None else None
@@ -1602,7 +1660,8 @@ def undo(target, *, strict=True, meta=None):
         box_plan.cells = dict.fromkeys(positions, 'minecraft:air')
         lo, hi = box_plan.bounds()
         name = f'{STRUCTURE_NS}:before_undo_{"_".join(names)[:80]}_{time.strftime("%Y%m%d%H%M%S")}'
-        record['structure'], _res = _structure_backup(m, name, lo, hi)
+        record['structure'], _res = _structure_backup(
+            m, name, lo, hi, positions=positions, tiled=any(st.get('tiles') for _n, st, _p in footprints))
     writer = McpWriter(m)
     try:
         ticket = registry.begin(Undo(target, strict=strict, meta=record))

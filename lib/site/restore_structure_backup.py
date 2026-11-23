@@ -23,10 +23,15 @@ def load_record(build: str) -> dict:
     @returns: {'structure', 'from', 'to'}
     """
     from cell_registry import view_registry
-    for e in view_registry().entries(plan=build):
+    registry = view_registry()
+    for e in registry.entries(plan=build):
         st = e.meta.get('structure')
         if st:
-            return {'structure': st['name'], 'from': st['from'], 'to': st['to']}
+            result = {'structure': st['name'], 'from': st['from'], 'to': st['to']}
+            if st.get('tiles'):
+                result['tiles'] = st['tiles']
+                result['positions'] = list(registry.cells_at(e.seq) or {})
+            return result
     raise SystemExit(f'no structure backup recorded for {build!r} in the cell journal')
 
 
@@ -50,6 +55,24 @@ def load_structure(name: str, origin, m=None) -> str:
     return res
 
 
+def restore_positions(structure_meta, positions, m=None):
+    """Restore only journalled positions from a tiled logical backup.
+
+    Full structure loads also replace unplanned blocks inside each tile. Rollback
+    instead reads the snapshots and uses the normal writer for the entry's exact
+    positions; no new journal entry is created while recovering the begun entry.
+    """
+    from mc_paced import Paced
+    from cell_journal import Writes
+    from site_kit import McpWriter, load_before_structure_blocks
+    client = m or Paced()
+    before = load_before_structure_blocks(structure_meta, m=client)
+    cells = {tuple(p): before.get(tuple(p), 'minecraft:air') for p in positions}
+    if cells:
+        McpWriter(client)(Writes('rollback_' + structure_meta['name'], 'feature', cells, kind='repair'))
+    return len(cells)
+
+
 def restore(build: str, *, apply: bool) -> None:
     """Load ``before_<build>`` structure at the saved box origin.
 
@@ -67,7 +90,10 @@ def restore(build: str, *, apply: bool) -> None:
     import site_lock
 
     site_lock.check()
-    print(load_structure(name, origin))
+    if rec.get('tiles'):
+        print(f"restored {restore_positions({'name': name, 'tiles': rec['tiles']}, rec['positions'])} positions")
+    else:
+        print(load_structure(name, origin))
 
 
 if __name__ == '__main__':

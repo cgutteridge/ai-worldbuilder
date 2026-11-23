@@ -76,6 +76,10 @@ _Avoid_: aspect, strand, real pass (as the concept name), layer (as the supercla
 A named major build (house, bridge, …) with status `proposed|in_progress|built|…`, optional ownership files under `site/builds/`, and the list of cells its volume touches. One **Element**; not a layered pass.
 _Avoid_: layer pass, decor prop, queue item
 
+**Railway line feature**:
+A named feature carrying one or more through railway tracks with their ballast, side slopes and low planting. It joins neighbouring route features and leaves structure gaps for their own features.
+_Avoid_: railway layer, rail pass
+
 **Structure feature**:
 A bridge or tunnel carrying a mapped route, including its approaches and the space needed to use it. One feature may span several cells and extend below, through or above ground.
 _Avoid_: bridge layer, tunnel layer, per-cell structure fragment

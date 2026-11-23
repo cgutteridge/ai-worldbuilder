@@ -159,7 +159,7 @@ class TypologySpecs(unittest.TestCase):
         self.assertTrue(any('slab' in state for state in plan.cells.values()))
 
     def test_odd_missing_unknown_and_disagreement_are_not_guessed(self):
-        odd = building('odd', rect(0, 0, 6, 6) | rect(0, 6, 3, 3), {'building': 'house', 'building:levels': '2'})
+        odd = building('odd', rect(0, 0, 3, 3) | rect(10, 0, 3, 3), {'building': 'house', 'building:levels': '2'})
         missing = building('missing', rect(20, 0, 5, 8), {})
         unknown = building('unknown', rect(40, 0, 5, 8), {'building': 'banana', 'building:levels': '2'})
         disagreed = [building(
@@ -176,6 +176,71 @@ class TypologySpecs(unittest.TestCase):
         three = building('three', rect(140, 0, 5, 8), {'building': 'house', 'building:levels': '3'}, lidar=9)
         alone = T.generate([three], STREET)
         self.assertEqual(alone['needs_designer'], [{'way_id': 'three', 'reason': 'house builder is two storeys'}])
+
+    def test_slivers_and_multi_part_shapes_are_odd_but_rotated_ones_are_not(self):
+        diagonal = {(x, z) for z in range(8) for x in range(z, z + 8)}   # a rotated (sheared) rectangle
+        sliver = {(i, i) for i in range(12)}
+        shop_sliver = {(i, j) for i in range(8) for j in range(3)}   # 24 cells, a small shop is fine
+        house = {'building': 'house', 'building:levels': '2'}
+        report = T.generate([
+            building('turned', diagonal, house, profile=PINNED),
+            building('sliver', {(x + 100, z) for x, z in sliver}, house, profile=PINNED),
+            building('shop', {(x, z + 28) for x, z in shop_sliver},
+                     {'building': 'retail', 'building:levels': '2'}, profile=PINNED),
+        ], [[(-50.0, 20.0), (150.0, 20.0)]])
+        reasons = {row['way_id']: row['reason'] for row in report['needs_designer']}
+        self.assertEqual(reasons, {'sliver': 'odd footprint'})
+        self.assertEqual(len(report['specs']), 2)
+
+    def test_thin_strips_are_refused_in_either_direction(self):
+        house = {'building': 'house', 'building:levels': '2'}
+        report = T.generate([
+            building('w1', rect(0, 0, 1, 12), house, profile=PINNED),
+            building('w2', rect(10, 0, 2, 10), house, profile=PINNED),
+            building('z2', rect(20, 0, 10, 2), house, profile=PINNED),
+            building('ok', rect(40, 0, 3, 8), house, profile=PINNED),
+        ], [[(-20.0, 20.0), (80.0, 20.0)]])
+        reasons = {row['way_id']: row['reason'] for row in report['needs_designer']}
+        self.assertEqual(reasons, {'w1': 'odd footprint', 'w2': 'odd footprint', 'z2': 'odd footprint'})
+        self.assertEqual(len(report['specs']), 1)
+
+    def test_a_street_off_the_end_of_a_row_gives_no_front(self):
+        house = {'building': 'house', 'building:levels': '2'}
+        row = [building(f'r{i}', rect(0, 4 * i, 6, 3), house, profile=PINNED) for i in range(3)]
+        for offset in (0.0, 0.3, -0.3):   # a street beside the end of the row, off by less than a block
+            report = T.generate(row, [[(3.0 + offset, 30.0), (3.0 + offset, 60.0)]])
+            self.assertEqual(report['specs'], [])
+            self.assertEqual({r['reason'] for r in report['needs_designer']}, {'no clear front'})
+
+    def test_footprints_one_block_apart_form_a_row_and_wider_gaps_do_not(self):
+        house = {'building': 'house', 'building:levels': '2'}
+        row = [building(f'r{i}', {(x, z + 4 * i) for x in range(0, 6) for z in range(0, 3)}, house,
+                        profile=PINNED) for i in range(3)]   # one empty column between neighbours
+        apart = [building(f'a{i}', rect(40 + 12 * i, 0, 6, 6), house, profile=PINNED) for i in range(2)]
+        report = T.generate(row + apart, [[(30.0, -20.0), (30.0, 100.0)]])
+        names = sorted(tuple(sorted(item['spec']['ways'])) for item in report['specs'])
+        self.assertEqual(names, [('a0',), ('a1',), ('r0', 'r1', 'r2')])
+
+    def test_front_follows_a_diagonal_street_and_only_a_missing_street_has_none(self):
+        shop = {'building': 'retail', 'building:levels': '2'}
+        diagonal = [[(0.0, 0.0), (60.0, 60.0)]]
+        # the street's normal is exactly diagonal, so the axes tie and the north-south one wins
+        for cells, side in ((rect(40, 10, 8, 6), 'S'), (rect(10, 40, 8, 6), 'N')):
+            report = T.generate([building('s', cells, shop, profile=PINNED)], diagonal)
+            self.assertEqual(report['specs'][0]['spec']['groups'][0]['front'], side)
+        far = T.generate([building('s', rect(200, 200, 8, 6), shop, profile=PINNED)], diagonal)
+        self.assertEqual(far['needs_designer'], [{'way_id': 's', 'reason': 'no street to face'}])
+
+    def test_refused_neighbour_blocks_a_house_row_but_not_shops(self):
+        house = {'building': 'house', 'building:levels': '2'}
+        shop = {'building': 'retail', 'building:levels': '2'}
+        for tags, expect in ((house, 'attached building cannot be decided'), (shop, None)):
+            report = T.generate([
+                building('x1', rect(0, 0, 6, 6), tags, profile=PINNED),
+                building('x2', rect(6, 0, 6, 6), {}, profile=PINNED),
+            ], [[(-20.0, 20.0), (60.0, 20.0)]])
+            reasons = {row['way_id']: row['reason'] for row in report['needs_designer']}
+            self.assertEqual(reasons.get('x1'), expect)
 
     def test_missing_levels_use_a_pinned_profile_storey_count(self):
         house = building('h', rect(0, 0, 5, 8), {'building': 'house'}, profile=PINNED)
@@ -372,3 +437,34 @@ def plan_house(spec, footprints):
             return H.build(H.load_spec(path))
     finally:
         path.unlink(missing_ok=True)
+
+
+class RealFootprints(unittest.TestCase):
+    """Footprints and street lines cut from the Southampton map (Begonia, Northcote, Portswood Road)."""
+
+    DATA = json.loads((Path(__file__).parent / 'fixtures' / 'typology_real_footprints.json').read_text())
+
+    def run_street(self, key):
+        street = self.DATA[key]
+        buildings = [building(row['way_id'], {tuple(c) for c in row['cells']},
+                              {k: v for k, v in row['tags'].items() if k != 'osm_way_id'}, profile=PINNED)
+                     for row in street['buildings']]
+        return T.generate(buildings, [[tuple(p) for p in line] for line in street['streets']])
+
+    def test_rotated_streets_produce_specs_with_a_front(self):
+        for key in ('begonia', 'northcote', 'portswood'):
+            report = self.run_street(key)
+            self.assertNotIn('odd footprint', [row['reason'] for row in report['needs_designer']], key)
+            self.assertTrue(report['specs'], key)
+            for item in report['specs']:
+                self.assertIn(item['spec']['groups'][0]['front'], 'NSEW', key)
+
+    def test_northcote_houses_make_terrace_rows(self):
+        report = self.run_street('northcote')
+        self.assertEqual(report['needs_designer'], [])
+        self.assertEqual(sorted(len(item['spec']['ways']) for item in report['specs']), [1, 3, 4])
+
+    def test_portswood_shops_are_feature_specs_and_one_is_undecided(self):
+        report = self.run_street('portswood')
+        self.assertEqual({item['builder'] for item in report['specs']}, {'feature_build'})
+        self.assertEqual(report['needs_designer'], [{'way_id': '149814015', 'reason': 'missing tags'}])

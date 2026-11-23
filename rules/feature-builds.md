@@ -280,3 +280,70 @@ aerial crop), and record the sheet path in the build review
 
 If something looks wrong, fix the **spec** (or `feature_build.py` if the bug
 is shared) and re-apply the same build name. Never stack `_b`/`_c` patch builds.
+
+## Railway line features
+
+A through railway is a named feature, `railway_<tx>_<tz>` (negative cell coordinates
+use the usual `m` prefix), containing its rails, ballast, formation, side slopes
+and low planting. It uses the ordinary feature journal, backup, ownership and
+undo paths. Junctions and service/decor lines remain outside this mechanism.
+
+The per-cell proposal and preparation paths check the smallest complete railway
+cell extract first. They return immediately when it has no through line or when
+a landed railway box already covers the whole cell. A partially covered boundary
+cell can start the next box. Planning uses whole, unclipped ways for a 2048 by
+2048 box centred on the starting cell, the explicit point and road extracts,
+cached lidar terrain/surface arrays and applicable joins from earlier features.
+There are no implicit downloads or live planning reads.
+
+Create a spec from those explicit local inputs:
+
+```sh
+python3 scripts/railway_build.py --world WORLD --cell TX,TZ \
+  --railway-extract PATH --points-extract PATH --roads-extract PATH
+```
+
+This writes `site/builds/railway_<tx>_<tz>.json` and refuses to overwrite an
+existing spec. Then review/dry-run the saved spec with
+`python3 scripts/railway_build.py --world WORLD PATH`. The same command with
+`--apply` uses the normal site lock and readiness gates. A planned failure,
+invalid saved geometry or conflicting line plans refuses before block writes.
+
+The schema and public adapters live in `lib/builds/railway_feature.py`:
+`kind: railway`, `name`, starting `cell`, `plans` containing JSON-able
+`railway_plan.plan_line` results, optional earlier `exclude_boxes` and `modifies`.
+Each plan records rails, torch supports, torches, corridor columns, surfaces,
+planting, continuous profiles, gaps and joins; `clear_to` retains the surface
+clearance evidence, capped below overhead decks. The registry verifies the
+saved spec rather than merely checking that its file exists.
+
+Every straight or ascending rail is powered with a torch two blocks below it;
+corners remain ordinary rails. The block immediately below a powered rail must
+not fall into its torch cavity: use hidden stone where the formation is gravel
+or absent, retain a compatible nonfalling road carrier, and keep the surrounding
+ballast gravel. `railway_feature.place_rails` is the shared placement seam.
+
+Railway metadata records the boxes, line ids, gap end records and outgoing joins
+on the feature's build entry. A join records rail Y, direction and track index;
+box cuts also record the next cell, constituent track way ids and step-spacing
+history. Continuations match those members and the directed boundary segment,
+because an extract can add member ways and change the aggregate line id or track
+ordering. The first uncovered rail must retain the recorded boundary level. The line leaves
+crossing/bridge/tunnel gaps empty for their own features. A road/path bridge over
+the line is overhead evidence, not a railway gap; its deck is preserved and does
+not become planting.
+
+The feature reserves every written footprint column from later ground, trees
+and decor, including cuts below the old terrain. Ground must not refill above
+buried rails; trees and decor must not place into that footprint. These
+reservations and coverage marks are derived from active landed journal entries,
+so ordinary whole-feature undo clears them while retaining the planned feature.
+
+Applies request sparse structure-backup tiles, each at most 128 blocks per edge,
+without changing legacy backup defaults for other builders. Undo checks the
+recorded prior blocks against all tiles; interrupted tiled rollback restores only
+the journalled positions, preserving unrelated blocks inside a tile. Readback
+rescans the plan and retries only mismatches, at most twice within the same begun
+entry and original backup. A persistent miss fails and leaves the entry available
+for normal recovery. `element_undo.py` and recorded-builder `reapply_feature.py`
+use the same feature paths.

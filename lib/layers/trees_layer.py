@@ -910,6 +910,8 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
     species_weights = {cid: land_use.tree_species_weights(cid)
                        for cid in set(inputs.land_classes.values()) | {'unknown'}}
     owned, ground_cols, masked, fp = inputs.owned, inputs.ground_cols, inputs.masked, inputs.footprints
+    from layer_common import railway_reserved_columns
+    railway = railway_reserved_columns(cell)
     placed: dict[tuple[int, int, int], str] = {}
     report = {'candidates': len(crowns), 'detected': inputs.detected, 'trees': [], 'skipped': [],
               'crown_sources': inputs.source_counts, 'height_source': inputs.height_source,
@@ -942,6 +944,8 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
     def candidate(x, z, r, observed, species):
         if (x, 0, z) not in cell_xz:
             return {}, 'trunk outside cell'
+        if (x, z) in railway:
+            return {}, 'railway feature footprint'
         surf = ground(x, z)
         if not surf:
             return {}, no_ground(x, z)
@@ -978,7 +982,8 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, inputs: TreeInput
         if any((q[0], y, q[1]) in owned for q in roots for y in range(gy + 1, crown_top + 1)):
             return {}, 'feature above terrain'
         kept = {p: b for p, b in vox.items()
-                if may_plant(world.block(*p), b, masked.get(p)) and p not in owned and p not in placed}
+                if may_plant(world.block(*p), b, masked.get(p)) and p not in owned and p not in placed
+                and (p[0], p[2]) not in railway}
         if any(p not in kept or p not in cell_xz for p in trunk):
             return {}, 'feature above terrain' if any(p in owned for p in trunk) else 'trunk blocked'
         if len(kept) < KEEP_FRACTION * len(vox):

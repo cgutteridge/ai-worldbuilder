@@ -1,6 +1,6 @@
 CRAFTSMANSHIP — MINECRAFT BLOCK CRAFT
 Tool-repo rules (ai-worldbuilder/rules/craftsmanship.md).
-Updated: 11 October 2026 (Europe/London)
+Updated: 23 November 2026 (Europe/London)
 
 How to place blocks so houses read as careful Minecraft builds, not as
 jagged footprint-map extrusions or stock lidar carpet roofs. Accuracy still wins for
@@ -27,12 +27,18 @@ rule-file copy.
  Footprint-map polygons are ragged at 1 m. At house scale, a 1:1 stair-step wall on
  every diagonal reads as noise. Prefer what a human would place:
   - Axis-align long wall runs; square corners.
+  - Square a shop row only when it lies within 15° of a cardinal axis.
+    A steeper row keeps its stepped front (the Portswood Road parade sits
+    about 37° to 45° off axis). On that front the awning, the sign and the
+    door sit on each wall step, one block outward along that step's face,
+    so they still touch the wall.
   - Nudge/straighten ±1–2 blocks when street photo + aerial still agree.
   - Match party walls with the neighbour so semis meet cleanly.
   - Skip one-block map dents that make holes or knife-edge zigzags.
 
  Wiki note: non-axis buildings only look convincing at large scale. For
  Ordinary semis, square the mass; do not diamond-trace the raw polygon.
+ Shop rows square only within 15° of a cardinal axis, as above.
 
  site_kit footprint guard still blocks pavement builds. It is not a licence
  to demand pixel-perfect footprint walls.

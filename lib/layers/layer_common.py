@@ -101,6 +101,12 @@ def neighbour_owned(cell: tuple[int, int], exclude=()) -> set:
     return set(neighbour_owned_states(cell, exclude))
 
 
+def railway_reserved_columns(cell) -> set:
+    """Columns a landed railway feature reserves against later layer placement."""
+    from railway_feature import reserved_columns
+    return reserved_columns(cell)
+
+
 def owned_air_ceilings(neighbour_owned: set, owned_air: set) -> tuple[set, dict]:
     """Split owned columns into structure columns and air-only (feature margin) columns.
 

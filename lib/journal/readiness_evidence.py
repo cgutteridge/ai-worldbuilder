@@ -244,6 +244,8 @@ class LocalEvidence:
                 ref = osm_ref(props)
                 refs.update({p: ref for p in columns})
         items += missing_water_bodies(*cell, water_columns=water, water_refs=refs, covered=covered)
+        from railway_feature import proposal
+        items += proposal(cell, reg, root=self.root)
         skip = feature_plan_ids(reg) | reg.plan_dismissed_ids(cell)
         # Prefixed / house plans cover their map refs here and in other cells (tasks 293, 233)
         here = planned_here(reg, cell) | planned_elsewhere(reg, cell)
