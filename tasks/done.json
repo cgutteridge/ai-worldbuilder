@@ -4112,5 +4112,16 @@
       "claimedBy": "cursor",
       "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/419-default-player-uuid"
     }
+  ,
+    {
+      "id": 448,
+      "title": "Lean shared workflow instructions and Codex execution guidance",
+      "status": "done",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "Apply the owner-approved retro instruction changes only: shared runner-neutral review verdicts reserve CHANGES for blockers and keep nits nonblocking; milestone handoff guidance uses existing tracker state. Put Codex-specific fresh-context, tool-waiting and reasoning economy guidance in /Users/cjg/.codex/AGENTS.md, preserving existing authorization boundaries. Existing model/effort and test gates remain in force; test-receipt, mapping and lint implementation are separate engineering work. Validate shared skill stubs and existing documentation audits, use the normal commit hook. builderTask false: instruction edits and synthetic checks only.\n\nClosed at d36c8b04c3d469fb96b8563dd4c76fbca433fb7f: Instruction-only update committed directly to main under ADR 005. Shared review verdicts reserve CHANGES for blockers, nits stay nonblocking; handoffs use milestone checkpoints and tracker claims. Three Codex-specific economy bullets saved to /Users/cjg/.codex/AGENTS.md with original authorization instructions preserved. Native skill stubs and documentation audits plus normal provider audit/full-suite hook passed. Standalone quick_validate unavailable because PyYAML is missing; frontmatter unchanged. Existing model/test gates unchanged; no runtime tooling changes or push.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    }
   ]
 }
