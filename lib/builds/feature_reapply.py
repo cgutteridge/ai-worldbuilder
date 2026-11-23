@@ -40,6 +40,8 @@ def builder_command(name: str, builder: dict) -> list[str]:
             raise SystemExit(f'{name}: recorded builder missing: {command}; refusing undo')
         if builder_name == 'railway_build':
             from railway_feature import load_spec
+        elif builder_name == 'crossing_build':
+            from crossing_feature import load_spec
         elif builder_name == HOUSE_BUILDER:
             from house_build import load_spec
         else:

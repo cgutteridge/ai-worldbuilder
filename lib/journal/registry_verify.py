@@ -100,6 +100,12 @@ def check_feature_specs(reg: CellRegistry, root: Path) -> list[dict[str, Any]]:
                 spec = load_spec_dict(data)
                 if spec['name'] != fid:
                     raise ValueError('railway spec name differs from its feature id')
+            elif (fid.startswith(('crossing_', 'bridge_', 'tunnel_'))
+                    or isinstance(data, dict) and data.get('kind') in ('crossing', 'bridge', 'tunnel')):
+                from crossing_feature import load_spec_dict
+                spec = load_spec_dict(data)
+                if spec['name'] != fid:
+                    raise ValueError('structure spec name differs from its feature id')
         except (OSError, ValueError, TypeError, KeyError) as exc:
             out.append(_issue(f'invalid-spec:{fid}', SEVERITY_ERROR,
                               f'feature {fid} has an invalid spec: {exc}'))

@@ -115,6 +115,35 @@ class RailwayPlannerTest(unittest.TestCase):
         self.assertIn((45, 2), {(c[0], c[1]) for c in p['columns']})
         self.assertIn((55, 2), {(c[0], c[1]) for c in p['columns']})
 
+    def test_footpath_without_equipment_keeps_rails_and_lays_the_path(self):
+        crossing = LevelCrossing('foot-1', 'fixture-line', 0, (50, 0), 50,
+                                 None, None, None, None, None)
+        p = self.plan(line(((0, 0), (100, 0)), crossings=(crossing,)),
+                      crossing_roads={'foot-1': {'highway': 'footway'}})
+        self.assertEqual(p['failures'], [])
+        self.assertEqual(p['gaps'], [])
+        self.assertTrue(any(r[0] == 50 and r[2] == 0 for r in p['rails']))
+        surface = {tuple(row[:2]): row[2] for row in p['surfaces']}
+        self.assertEqual(surface[(50, 0)], 'paving')
+
+    def test_private_track_without_equipment_is_not_a_gap(self):
+        crossing = LevelCrossing('yard-1', 'fixture-line', 0, (50, 0), 50,
+                                 None, None, None, None, None)
+        p = self.plan(line(((0, 0), (100, 0)), crossings=(crossing,)),
+                      crossing_roads={'yard-1': {'highway': 'track', 'access': 'private'}})
+        self.assertEqual(p['failures'], [])
+        self.assertEqual(p['gaps'], [])
+        self.assertTrue(any(r[0] == 50 for r in p['rails']))
+
+    def test_footpath_with_a_barrier_tag_is_still_a_crossing_gap(self):
+        crossing = LevelCrossing('foot-2', 'fixture-line', 0, (50, 0), 50,
+                                 'gate', None, None, None, None)
+        p = self.plan(line(((0, 0), (100, 0)), crossings=(crossing,)),
+                      crossing_roads={'foot-2': {'highway': 'footway', 'width': '2'}})
+        self.assertEqual(p['failures'], [])
+        self.assertEqual(p['gaps'][0]['kind'], 'crossing')
+        self.assertFalse(any(r[0] == 50 for r in p['rails']))
+
     def test_boundary_corner_uses_the_actual_outside_neighbour(self):
         g = ground(x0=-100, z0=-20, width=1450, depth=160)
         evidence = line(((0, 0), (1087, 0), (1087, 100), (1200, 100)))
@@ -158,7 +187,7 @@ class RailwayPlannerTest(unittest.TestCase):
         crossings = tuple(LevelCrossing(str(x), 'fixture-line', 0, (x, 0), x,
                                        None, None, None, None, None) for x in (50, 55))
         p = self.plan(line(((0, 0), (100, 0)), crossings=crossings),
-                      crossing_roads={str(x): {'width': '6'} for x in (50, 55)})
+                      crossing_roads={str(x): {'highway': 'residential', 'width': '6'} for x in (50, 55)})
         self.assertTrue(p['failures'])
         self.assertIn('gap', p['failures'][0]['reason'])
         self.assertEqual(p['rails'], [])

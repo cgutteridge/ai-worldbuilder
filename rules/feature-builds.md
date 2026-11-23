@@ -352,8 +352,11 @@ on the feature's build entry. A join records rail Y, direction and track index;
 box cuts also record the next cell, constituent track way ids and step-spacing
 history. Continuations match those members and the directed boundary segment,
 because an extract can add member ways and change the aggregate line id or track
-ordering. The first uncovered rail must retain the recorded boundary level. The line leaves
-crossing/bridge/tunnel gaps empty for their own features. A road/path bridge over
+ordering. The first uncovered rail must retain the recorded boundary level. The line leaves a gap for a mapped-road level crossing, for any crossing with a
+barrier, light or bell tag, and for a bridge or tunnel that carries the rail.
+A footpath or private crossing with none of those tags is not a gap: the rails
+stay continuous and the line lays that path's surface across them
+(`railway_plan.crossing_is_feature`). A road/path bridge over
 the line is overhead evidence, not a railway gap; its deck is preserved and does
 not become planting. Deck heights come from `lib/sources/structure_evidence.py`
 (`measured`, `inferred` or `unknown`; never the terrain beneath or tree columns
@@ -397,3 +400,49 @@ rescans the plan and retries only mismatches, at most twice within the same begu
 entry and original backup. A persistent miss fails and leaves the entry available
 for normal recovery. `element_undo.py` and recorded-builder `reapply_feature.py`
 use the same feature paths.
+
+## Crossing, bridge and tunnel features
+
+A level crossing, a bridge and a tunnel share one spec header. The saved file
+is `site/builds/<kind>_<tx>_<tz>_<n>.json` (a negative cell coordinate uses the
+usual `m` prefix). `n` numbers the features that start in one cell. The schema
+and the builder live in `lib/builds/crossing_feature.py`.
+
+```sh
+python3 scripts/crossing_build.py --world WORLD PATH
+python3 scripts/crossing_build.py --world WORLD PATH --apply
+```
+
+The header is `kind` (`crossing`, `bridge` or `tunnel`), `name`, `cell`, `n`,
+exactly two `abutments`, and `evidence`. Each abutment names one landed line
+feature and the join records it must already hold: `line_id`, `source` (the
+crossing node or the bridge/tunnel ref), and `ends` with track index, the rail
+cell `at`, rail `level` and `direction` into the gap. The evidence map holds
+the tags the flags are checked against. `evidence.frames` holds the Street View
+frame ids for a later design; it may be empty in a synthetic spec.
+
+The builder reads those ends from the landed line features
+(`crossing_feature.read_joins`). It refuses, exit non-zero, and writes nothing
+while either abutment's feature is missing or undone (`NotReady`). A present
+feature whose recorded end does not match the spec is rejected the same way:
+nothing is written. Both ends may belong to one line feature. Bridge and tunnel
+stop there. Their geometry is not built.
+
+A crossing spec also carries `road` (way ids, a ground surface kind, and the
+columns to pave), `tracks` (ordered columns that connect the two ends of each
+track), and equipment only where the evidence tags say so. `barrier`, `light`
+and `bell` each repeat the tag value as `flag`. Barrier block ids are `blocks`
+(`bar`, `post`, or any part a position names). Light and bell each carry one
+`block`. Positions are explicit. Block ids are checked with
+`block_reference.known_block`; a barrier-vocabulary kind such as `iron_bars` or
+`plank_fence` resolves through `barrier_vocab` instead of a private table.
+There is no default style: a missing flag places nothing, and a flag that
+disagrees with the recorded map tag is rejected.
+
+The crossing lays the road surface across the rails at the recorded level, then
+places rails with `railway_plan.rail_rows` and `railway_feature.place_rails`
+(powered straight cells, torch two blocks below, plain corners). It journals
+the footprint, asks for a tiled structure backup, read-back with retry, and
+undoes as one feature. Only a mapped road, or a crossing with a barrier, light
+or bell tag, is this feature. A plain footpath crossing is the line's job, as
+above.
