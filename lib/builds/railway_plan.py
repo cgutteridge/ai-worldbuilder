@@ -27,6 +27,10 @@ from ``at``; the track may turn immediately at next. Pass the selected
 outgoing join back as ``incoming``. Profiles retain ``before`` and ``after``
 neighbours so boundary corners keep their actual shape. Gap ``ends`` describe
 the two abutting rail cells, with rail Y, direction and track index.
+A mapped road crossing, or any crossing with a barrier, light or bell tag,
+becomes a ``crossing`` gap (:func:`crossing_is_feature`). A footpath or private
+crossing with none of those tags is not a gap: the rails stay continuous and
+that path's surface is laid across those track columns.
 
 Where several lines of one feature share rail columns, :func:`junction_gaps`
 keeps the main line's rails and names the side tracks' overlapping (and
@@ -41,7 +45,7 @@ from collections.abc import Mapping, Sequence
 import numpy as np
 
 import cellmath
-from ground_sources import road_width
+from ground_sources import PATH_WIDTH, ROAD_CLASSES, SURFACE_KIND, road_width
 from railway_evidence import PLANNER_BOX, Line
 
 RAIL_MIN_STEP_RUN = 100
@@ -253,6 +257,89 @@ def _overhead_gaps(line, paths, decks):
     return result
 
 
+def _equipped(value) -> bool:
+    """True when a crossing equipment tag asks for a piece of kit."""
+    return value not in (None, '', 'no')
+
+
+def crossing_is_feature(road: Mapping, crossing=None) -> bool:
+    """Whether this level crossing is its own feature, and so a gap in the line.
+
+    A mapped road (``ROAD_CLASSES``) is always its own feature. So is any
+    crossing whose barrier, light or bell tag is set to something other than
+    empty or ``no``, including a footpath that has those tags. A footpath or
+    private way with none of them stays on the line: no gap, rails continuous,
+    and the path surface laid across the rails.
+
+    @param road: tags of the way being crossed
+    @param crossing: optional :class:`railway_evidence.LevelCrossing`; its
+        equipment tags win over the same keys copied onto ``road``
+    @returns: True when the line must leave a gap for a crossing feature
+    """
+    tags = dict(road or {})
+    highway = tags.get('highway') or ''
+    if crossing is None:
+        flags = (tags.get('crossing:barrier'), tags.get('crossing:light'), tags.get('crossing:bell'))
+    else:
+        flags = (crossing.barrier, crossing.light, crossing.bell)
+    return highway in ROAD_CLASSES or any(_equipped(flag) for flag in flags)
+
+
+def _crossing_indices(path, poly, along, half):
+    """Path indices within ``half`` of a crossing's distance along its track."""
+    intervals = []
+    for p in path:
+        best = None
+        along0 = 0.0
+        for a, b in zip(poly, poly[1:]):
+            distance, at = cellmath.segment_distance(p, a, b, along=True)
+            candidate = (distance, along0 + at)
+            if best is None or candidate[0] < best[0]:
+                best = candidate
+            along0 += math.dist(a, b)
+        intervals.append(None if best is None else best[1])
+    included = [i for i, value in enumerate(intervals) if value is not None and abs(value - along) <= half]
+    if not included:
+        return None
+    return min(included), max(included)
+
+
+def _plain_half(road: Mapping) -> float:
+    """Half-width of a crossing the line itself paints, in blocks."""
+    if road.get('width'):
+        return road_width(dict(road)) / 2
+    highway = road.get('highway') or ''
+    if highway in PATH_WIDTH:
+        return PATH_WIDTH[highway] / 2
+    return road_width(dict(road)) / 2
+
+
+def _plain_surface(road: Mapping) -> str:
+    """Surface kind a footpath or private crossing lays across the rails."""
+    highway = road.get('highway') or ''
+    default = 'gravel' if highway in ('track', 'service') else 'paving'
+    return SURFACE_KIND.get(road.get('surface') or '', default)
+
+
+def _plain_crossing_surfaces(line, paths, roads) -> dict:
+    """Track columns of crossings that stay on the line, mapped to a surface kind."""
+    out = {}
+    for crossing in line.crossings:
+        ti = crossing.track_index
+        if ti >= len(paths) or not paths[ti]:
+            continue
+        road = roads.get(str(crossing.osm_id))
+        if road is None or crossing_is_feature(road, crossing):
+            continue
+        span = _crossing_indices(paths[ti], line.tracks[ti], crossing.along, _plain_half(road))
+        if span is None:
+            continue
+        kind = _plain_surface(road)
+        for p in paths[ti][span[0]:span[1] + 1]:
+            out[tuple(p)] = kind
+    return out
+
+
 def _gaps(line, paths, roads, decks=(), junctions=None):
     """Gap intervals in snapped path indices, with source ids for integration."""
     result = _overhead_gaps(line, paths, decks)
@@ -272,23 +359,14 @@ def _gaps(line, paths, roads, decks=(), junctions=None):
             # Width is evidence, not a guessed road class or a default design.
             result[ti].append({'error': 'crossing is missing road tags', 'where': list(crossing.at)})
             continue
+        # A footpath or private crossing with no equipment stays on the line.
+        if not crossing_is_feature(road, crossing):
+            continue
         half = road_width(dict(road)) / 2 + 1
-        poly = line.tracks[ti]
-        intervals = []
-        for p in paths[ti]:
-            best = None
-            along0 = 0.0
-            for a, b in zip(poly, poly[1:]):
-                distance, along = cellmath.segment_distance(p, a, b, along=True)
-                candidate = (distance, along0 + along)
-                if best is None or candidate[0] < best[0]:
-                    best = candidate
-                along0 += math.dist(a, b)
-            intervals.append(best[1])
-        included = [i for i, along in enumerate(intervals) if abs(along - crossing.along) <= half]
-        if included:
+        span = _crossing_indices(paths[ti], line.tracks[ti], crossing.along, half)
+        if span:
             result[ti].append({'kind': 'crossing', 'source': crossing.osm_id,
-                               'start': min(included), 'end': max(included)})
+                               'start': span[0], 'end': span[1]})
     for span in line.spans:
         for track in span.tracks:
             ti = track.track_index
@@ -434,6 +512,37 @@ def _corridor(plan, ground, deck, supports, road_surfaces):
             plan['planting'].append([p[0], surface + 1, p[1], 'bush'])
 
 
+def rail_rows(path, formation_levels, *, before=None, after=None, omit=()):
+    """Rail, torch and support rows shared by the line and a crossing.
+
+    ``formation_levels`` is the block under each rail. Straight and ascending
+    cells are powered, with a torch two blocks below the rail and a solid
+    support under the torch. Corners stay plain rail. ``omit`` lists path
+    indices left empty (a structure gap).
+
+    @param path: (x, z) columns in order
+    @param formation_levels: formation Y for each column
+    @param before: neighbour before the first column, when it is outside ``path``
+    @param after: neighbour after the last column, when it is outside ``path``
+    @param omit: path indices that stay empty
+    @returns: (rails, torches, supports) in the planner's row shape
+    """
+    skip = set(omit)
+    rails, torches, supports = [], [], []
+    for i, (p, level) in enumerate(zip(path, formation_levels)):
+        if i in skip:
+            continue
+        shape = _shape(path, formation_levels, i, before, after)
+        powered = shape in ('east_west', 'north_south') or shape.startswith('ascending_')
+        block = (f'minecraft:powered_rail[shape={shape},powered=true]' if powered
+                 else f'minecraft:rail[shape={shape}]')
+        rails.append([p[0], level + 1, p[1], shape, block])
+        if powered:
+            torches.append([p[0], level - 1, p[1]])
+            supports.append([p[0], level - 2, p[1]])
+    return rails, torches, supports
+
+
 def plan_line(
     line: Line, ground: Mapping, start_cell: tuple[int, int], incoming: Sequence[dict] = (), *,
     crossing_roads: Mapping[str, Mapping] | None = None,
@@ -504,6 +613,9 @@ def plan_line(
         next_cells.append(nxt)
     under, plan['decks'] = deck_evidence(line, structures, inferred_deck_usable)
     gaps = _gaps(line, paths, crossing_roads or {}, plan['decks'], junction_gaps)
+    painted = _plain_crossing_surfaces(line, paths, crossing_roads or {})
+    if road_surfaces:
+        painted.update(road_surfaces)
     heights = []
     for ti, path in enumerate(paths):
         samples = [_ground(ground, p) for p in path]
@@ -587,17 +699,12 @@ def plan_line(
                    'before': list(before) if before is not None else None,
                    'after': list(after) if after is not None else None}
         plan['tracks'].append(profile)
-        for i, (p, level) in enumerate(zip(path, levels)):
-            if gap_mask[i]:
-                continue
-            shape = _shape(path, levels, i, before, after)
-            powered = shape in ('east_west', 'north_south') or shape.startswith('ascending_')
-            block = (f'minecraft:powered_rail[shape={shape},powered=true]' if powered
-                     else f'minecraft:rail[shape={shape}]')
-            plan['rails'].append([p[0], level + 1, p[1], shape, block])
-            if powered:
-                plan['torches'].append([p[0], level - 1, p[1]])
-                plan['torch_supports'].append([p[0], level - 2, p[1]])
+        rail_list, torch_list, support_list = rail_rows(
+            path, levels, before=before, after=after,
+            omit=[i for i, gap in enumerate(gap_mask) if gap])
+        plan['rails'].extend(rail_list)
+        plan['torches'].extend(torch_list)
+        plan['torch_supports'].extend(support_list)
         for gap in gaps[ti]:
             ends = []
             for index, inward in ((gap['start'] - 1, 1), (gap['end'] + 1, -1)):
@@ -641,7 +748,7 @@ def plan_line(
                     supports.add(p)
                 else:
                     deck.add(p)
-    _corridor(plan, ground, deck, supports, road_surfaces or {})
+    _corridor(plan, ground, deck, supports, painted)
     return plan
 
 
