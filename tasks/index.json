@@ -44,13 +44,13 @@
     {
       "id": 429,
       "title": "house_build: roof underlay block sits in the wall's top course (roof material one layer low)",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
       "builderTask": false,
       "notes": "From trial #257 (docs/plans/typology-buildings.md, \"Roof layer\"). The owner says the roof material appears to be applied one layer below the roof on the rule-built Begonia Road and Northcote Road houses. Likely cause, to confirm first: house_build.roof() adds a two-layer skin, setting a full block of the roof material at y - 1 under every non-eave pitched cell (self.set(x, y - 1, z, family_variants(rm)['full'])); cells beside the eave sit at the wall-top level, so that block lands in the wall's top course. A live scan of the west semi at x 6347, z -6134..-6123 found full deepslate_tiles at y 63 and y 64 where the top wall course should be brick. First step is a diagnosis against a dry-run plan (compare the planned top course with the wall material); then keep the wall's top course in wall material and seal the stair cutouts without it, or move the underlay below the wall top. Affects house_build pitched roofs (roof_pitch above 0.5) in both the rule-built and hand-spec path; check whether feature_build pitched roofs have the same extra layer. Tests with a synthetic rectangular footprint asserting the wall-top row and the roof rows. Stretch (a diagnosis that touches the roof planner); do not raise model or effort without the owner.\n\n\nReview corrections (2026-11-22): cite #414. Today's code is `if not eave: self.set(x, y-1, z, full)` in lib/builds/house_build.py (about line 492), so the eave ring already has no underlay; the leftover is the first row below the eave, which at pitch 0.6 sits at the wall top plus 6, so its underlay lands at plus 5, the wall's top course. The live column scan (x 6347, full tiles at y 63 and 64) was taken before #414 was checked and is NOT re-checked; it is also not verified that this is the exact spot the owner means (\"one layer below the roof\"). Constraint: legacy flat output must stay byte-identical (test_legacy_flatish_plans_match_pre_change_output). This is a stretch because it starts as a diagnosis, even though complexity is m. Also check whether feature_build roofs have the same extra layer (cheap)."
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/429-roof-underlay"},
     {
       "id": 431,
       "title": "Typology generator: glazing and facade detail as a class recipe (shopfront table into facade_plan)",
@@ -79,13 +79,13 @@
     {
       "id": 433,
       "title": "Cell-edge features: plan each feature in its primary cell",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
       "builderTask": false,
       "notes": "Found in trial #257 (parade, Portswood Road; findings in docs/plans/typology-buildings.md, Cell edges). Two shops straddling the 51,-37 / 52,-37 edge, ways 149855650 and 167071535, could not be built. Their feature plans were recorded under 51,-37 (when that cell's plans were recorded), but they are built from 52,-37. The builder refuses them with \"feature plan absent from cell plan 52,-37\"; `cell_registry.py propose-features --cell 52,-37` reports no candidates for them because they are already planned elsewhere; dismissing the plans on 51,-37 did not release them, so they now have a plan in no cell (the parade stays at 17 of 19).\n\nA finished task (#288) already sets the rule: a feature that crosses a cell line is planned once, in the cell holding most of its columns (site_kit.primary_cell, cell_journal). This task must agree with it, not replace it.\n\nStep 1, diagnose (read-only): give the column count each of the two shops has in 51,-37 and in 52,-37, and name which of propose-features, the plan record and the builder disagrees with #288's rule for them. The cause is NOT diagnosed yet.\nStep 2: make propose-features, the plan record and the builder all follow #288's rule, and make a plan recorded in the wrong cell recoverable without a manual registry edit (including after a dismissal).\nNon-builder: fixtures, no live world work. Acceptance: a synthetic two-cell footprint fixture where a feature planned in the wrong cell is proposed and applied from its primary cell; the two shops then propose and apply from their primary cell. Building the two shops is a separate world step with the owner's OK.\n"
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/433-cell-edge-features"},
     {
       "id": 434,
       "title": "feature_build roofs: octant fit or fixed stair rotation for pitched feature roofs",
@@ -131,13 +131,13 @@
     {
       "id": 442,
       "title": "Car-park bay lines draw a dense white grid on 50,-35 (S-117)",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
       "builderTask": false,
       "notes": "From the 2026-11-23 trial of fix #336 on cell 50,-35 (issue I-053 \"Car-park bay lines do not match the real car park\"; snags S-116 from the owner, S-117 from the agent; screenshots on both). The owner saw long white stripes on the east side. After the stale hand patch (feature w1480342683_carpark_lines_removed, 557 gray_concrete blocks) was undone and ground redone, the north-west car park shows a dense white brick-like grid of many short rows, not rows at right angles to the aisle with gaps. I-053's cause text (\"no repo code reproduces this today\") is stale and should be updated when this lands.\n\nChecked 2026-11-23: all 339 white_concrete blocks in the east of the cell are in the ground redo's own block list, so none are old leftovers. The generator is lib/layers/bay_lines.py (mark_car_park_bays / bay_line_columns, called from lib/layers/ground_layer.py near line 838).\n\nVerified in the code (reviewer and agent): bay_line_columns loops every car-park polygon against every aisle segment in the cell, so an aisle paints bay lines into any car-park polygon it is near, even one it does not belong to. Each column is owned by its single nearest segment, so bands from different segments cannot stack. The line phase restarts at the start of each segment, so a bent aisle gets uneven spacing (gaps or doubled lines) at its joins. The pri==parking filter already keeps lines off plaza and driveway columns.\n\nNOT verified: which of these actually makes the grid at 50,-35. Step 1 is to dump the 50,-35 aisles (points, segment lengths, which polygon each lies in) and the bay columns coloured by owning segment, and say which cause holds.\n\nDeliverable (after step 1, fix the cause found): candidates are (a) associate each aisle with its own car-park polygon; (b) measure the spacing along a whole bent aisle instead of restarting at each segment; (c) draw nothing where the geometry cannot give consistent rows (nothing invented, as now). Files: lib/layers/bay_lines.py and lib/layers/test_bay_lines.py; update the layout statement in docs/plans/industrial-commercial.md (lines about 71 and 189, which cites #336). No change to the surface rule (#338).\n\nCheck line per snag (S-116 and S-117): after ground is redone on 50,-35, a scan of its white_concrete bay columns shows no two lines closer than 2 blocks along one aisle, each row at right angles to its aisle; a unit test covers a bent multi-segment aisle and two neighbouring car parks. The owner's in-game look at 50,-35 is the snag review.\nSize: m, because the cause is not yet known. Not a builder task: the check is a scan command; the in-game look is the owner's snag review. I-053 stays open until the owner confirms.\n"
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/442-carpark-bay-lines"},
     {
       "id": 443,
       "title": "Decor: let the owner mark a lidar shed or garage as not real (S-114)",
