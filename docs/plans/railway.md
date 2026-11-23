@@ -179,6 +179,12 @@ None of these may be lost when the tickets are written. Each ticket should quote
     `overhead` gap with end records for a human, not a failure (#451). A usable height under 5 blocks still fails. The complex area at about
     50.91436,-1.45871 (MC 1901,-3299) is a yard of 17 sidings, 3 crossovers, 2 spurs and 20 switches with only 2
     through ways, so it suits the unfiled decor sidings ticket and a junction stress test, not trial D.
+16. **Junction rule (#452, decided in the #384 grilling 2026-11-23).** Through lines that share rail columns in one
+    feature: the main line (more tracks, then more rail columns, then lowest line id) keeps its rails; each side track
+    leaves a `junction` gap over its overlapping columns and over any rail stub the overlap orphans, with end records
+    and a `where` coordinate listed in the feature metadata for a person. Specified in
+    [feature-builds](../../rules/feature-builds.md) ("Railway line features"). Shared columns of three lines go to the
+    best ranked; the planner fails loudly only when an overlap covers a box join or a line is wholly overlapped.
 14. **Not filed yet:** decor sidings, yards and spurs. **Study area chosen by the owner (2026-11-22):** the yard around
     50.91436,-1.45871 (MC 1901,-3299, cell 23,-32), which also has the viaduct over rail (decision 15). Probe extracts
     are in the world repo under `reference/vector_map/rail_probe_complex/`. Note it in D's ticket as the next step and file it once D has

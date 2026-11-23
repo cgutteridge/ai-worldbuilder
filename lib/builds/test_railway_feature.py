@@ -299,6 +299,142 @@ class TestRailwayDeckGap(unittest.TestCase):
             F.plan_feature(self.lines, low, self.cell, structures=evidence)
 
 
+class TestRailwayJunctions(unittest.TestCase):
+    """Lines that share rail columns: the main line keeps them, the side track leaves a gap (#452)."""
+
+    @staticmethod
+    def L(line_id, *tracks):
+        return Line(line_id, tuple(tuple(t) for t in tracks), tuple((f'{line_id}-{i}',) for i in range(len(tracks))),
+                    (), (), ())
+
+    def plan(self, *lines):
+        return F.plan_feature(list(lines), ground(), (0, 0))
+
+    def by_id(self, raw):
+        return {p['line_id']: p for p in raw['plans']}
+
+    def columns(self, plan):
+        return {(r[0], r[2]) for r in plan['rails']}
+
+    def assert_resolved_round_trip(self, raw):
+        """No shared rail column remains, and the saved spec loads and builds."""
+        seen = set()
+        for p in raw['plans']:
+            self.assertFalse(seen & self.columns(p))
+            seen |= self.columns(p)
+        saved = json.loads(json.dumps(raw))
+        built = F.build(F.load_spec_dict(saved))
+        self.assertTrue(built.cells)
+        return built
+
+    def test_t_junction_keeps_the_double_track_main_and_gaps_the_side_track(self):
+        main = self.L('main-line', [(10, 10), (90, 10)], [(10, 14), (90, 14)])
+        side = self.L('side-line', [(50, 50), (50, 10)])
+        alone = self.plan(main)['plans'][0]
+        raw = self.plan(side, main)
+        plans = self.by_id(raw)
+        self.assertEqual(plans['main-line']['rails'], alone['rails'])
+        self.assertEqual(plans['main-line']['gaps'], [])
+        gap, = plans['side-line']['gaps']
+        # The side track crosses the second main track, runs three cells between the two
+        # main tracks (a stub that joins nothing) and ends on the first one: one gap.
+        self.assertEqual((gap['kind'], gap['source']), ('junction', 'main-line'))
+        self.assertEqual((gap['where'], gap['columns'][-1], len(gap['columns'])), ([50, 14], [50, 10], 5))
+        end, = gap['ends']
+        self.assertEqual((end['track_index'], end['at'], end['level'], cellmath.FACING[end['direction']]),
+                         (0, [50, 15], 31, (0, -1)))
+        self.assertEqual(self.columns(plans['side-line']) & {tuple(c) for c in gap['columns']}, set())
+        self.assertEqual(plans['side-line']['joins'], [])
+        self.assert_resolved_round_trip(raw)
+        # Nothing of the side track is written in the gap columns.
+        solo = {**raw, 'plans': [plans['side-line']]}
+        written = {(x, z) for x, _y, z in F.build(solo).cells}
+        self.assertFalse(written & {tuple(c) for c in gap['columns']})
+        listed = F.metadata(json.loads(json.dumps(raw)))['junctions']
+        self.assertEqual([(j['line_id'], j['main_line_id'], j['where'], j['last']) for j in listed],
+                         [('side-line', 'main-line', [50, 14], [50, 10])])
+
+    def test_crossing_lines_gap_the_shorter_line_at_the_crossing_with_two_ends(self):
+        across = self.L('across', [(10, 30), (90, 30)])
+        down = self.L('down', [(50, 10), (50, 50)])
+        raw = self.plan(down, across)
+        plans = self.by_id(raw)
+        self.assertEqual(plans['across']['gaps'], [])
+        gap, = plans['down']['gaps']
+        self.assertEqual((gap['kind'], gap['where'], len(gap['columns'])), ('junction', [50, 30], 1))
+        self.assertEqual([e['at'] for e in gap['ends']], [[50, 29], [50, 31]])
+        self.assertEqual({e['level'] for e in gap['ends']}, {31})
+        self.assert_resolved_round_trip(raw)
+
+    def test_equal_tracks_and_rails_choose_the_lowest_line_id(self):
+        a = self.L('a-line', [(10, 10), (50, 10)])
+        b = self.L('b-line', [(50, 10), (90, 10)])
+        raw = self.plan(b, a)
+        plans = self.by_id(raw)
+        self.assertEqual(plans['a-line']['gaps'], [])
+        gap, = plans['b-line']['gaps']
+        self.assertEqual((gap['where'], len(gap['columns']), len(gap['ends'])), ([50, 10], 1, 1))
+        self.assertEqual(gap['ends'][0]['at'], [51, 10])
+        self.assert_resolved_round_trip(raw)
+
+    def test_more_rail_columns_beat_the_line_id_on_equal_tracks(self):
+        long_line = self.L('z-line', [(10, 30), (90, 30)])
+        short_line = self.L('a-line', [(50, 30), (50, 60)])
+        plans = self.by_id(self.plan(short_line, long_line))
+        self.assertEqual(plans['z-line']['gaps'], [])
+        self.assertEqual([g['source'] for g in plans['a-line']['gaps']], ['z-line'])
+
+    def test_one_column_touch_leaves_a_single_column_gap(self):
+        main = self.L('main-line', [(10, 10), (90, 10)])
+        spur = self.L('spur', [(50, 10), (50, 40)])
+        raw = self.plan(main, spur)
+        gap, = self.by_id(raw)['spur']['gaps']
+        self.assertEqual((gap['kind'], gap['columns'], len(gap['ends'])), ('junction', [[50, 10]], 1))
+        self.assert_resolved_round_trip(raw)
+
+    def test_three_lines_in_one_column_keep_the_best_ranked_and_gap_the_others(self):
+        a = self.L('a-line', [(10, 10), (50, 10)])
+        b = self.L('b-line', [(50, 10), (90, 10)])
+        c = self.L('c-line', [(50, 10), (50, 50)])
+        raw = self.plan(c, b, a)
+        plans = self.by_id(raw)
+        self.assertEqual(plans['a-line']['gaps'], [])
+        for other in ('b-line', 'c-line'):
+            gap, = plans[other]['gaps']
+            self.assertEqual((gap['source'], gap['where']), ('a-line', [50, 10]))
+        self.assert_resolved_round_trip(raw)
+
+    def test_a_line_entirely_inside_another_fails_loudly_with_coordinates(self):
+        one = self.L('a-line', [(10, 10), (50, 10)])
+        two = self.L('b-line', [(10, 10), (50, 10)])
+        with self.assertRaisesRegex(ValueError, r'b-line lies entirely inside rails of other lines.*\[10, 10\]'):
+            self.plan(one, two)
+
+    def test_unresolved_overlaps_and_disagreeing_plans_still_refuse_at_build(self):
+        a = self.plan(self.L('a-line', [(10, 10), (50, 10)]))
+        b = self.plan(self.L('b-line', [(30, 10), (70, 10)]))
+        with self.assertRaisesRegex(ValueError, 'overlapping railway lines need a human'):
+            F.build({**a, 'plans': a['plans'] + b['plans']})
+        c = self.plan(self.L('c-line', [(10, 10), (50, 10)]))
+        d = self.plan(self.L('d-line', [(10, 13), (50, 13)]))
+        for row in d['plans'][0]['surfaces']:
+            if row[:2] == [20, 11]:
+                row[2] = 'tarmac'
+        with self.assertRaisesRegex(ValueError, 'disagree in their overlapping footprint'):
+            F.build({**c, 'plans': c['plans'] + d['plans']})
+
+    def test_parallel_lines_with_different_ground_on_a_shared_column_get_one_owner(self):
+        c = self.L('c-line', [(10, 10), (50, 10)])
+        d = self.L('d-line', [(10, 13), (50, 13)])
+        bumpy = ground()
+        bumpy['h'][:, 62:] = bumpy['terrain'][:, 62:] = 33  # the ground rises 3 blocks from z=12
+        raw = F.plan_feature([c, d], bumpy, (0, 0))
+        for column in ((20, 11), (20, 12)):  # inside both beds, built at different heights
+            owners = [p['line_id'] for p in raw['plans'] if column in {(r[0], r[1]) for r in p['columns']}]
+            self.assertEqual(owners, ['c-line'])
+        self.assert_resolved_round_trip(raw)
+
+
 class TestRailwayApply(LiveApplyCase):
     def test_apply_owns_footprint_and_normal_undo_restores_exactly(self):
         raw = spec()
