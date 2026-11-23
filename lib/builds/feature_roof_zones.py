@@ -488,8 +488,8 @@ def fit_clean_heights(
     A zone is a region polygon when ``regions`` are given (the image says where each roof volume is),
     otherwise the columns sharing one zone level. Columns outside every group keep their lidar height.
     The fit (``roof_surface.fit_surface``) trims edge cells that read a wall or the ground, so noise,
-    chimneys and canopy stop turning into stairs and slabs. A group with too few readable columns keeps
-    its raw heights.
+    chimneys and canopy stop turning into stairs and slabs. A group with too few readable columns, or
+    that no shape explains (a hip, a stepped roof), keeps its raw heights and gets a report line saying why.
 
     @param fine: float DSM, metres AOD (``[z, x]``; NaN = no data)
     @param zone: zone level grid
@@ -522,7 +522,12 @@ def fit_clean_heights(
         use = member & np.isfinite(out)
         surface = roof_surface.fit_surface(xs[use], zs[use], out[use], axis_deg)
         if surface is None:
-            lines.append(f'{label} {name}: surface fit skipped (under {roof_surface.MIN_POINTS} readable columns)')
+            if int(use.sum()) < roof_surface.MIN_POINTS:
+                why = f'under {roof_surface.MIN_POINTS} readable columns'
+            else:
+                why = (f'no flat, plane or gable fits within {roof_surface.ACCEPT_RMS_M:g} m '
+                       f'keeping {roof_surface.MIN_KEPT:.0%} of the columns')
+            lines.append(f'{label} {name}: surface fit skipped ({why}); raw lidar heights kept')
             continue
         out[member] = surface.height(xs[member], zs[member])
         shape = surface.kind

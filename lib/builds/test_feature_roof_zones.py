@@ -181,6 +181,17 @@ class ZoneMathTest(unittest.TestCase):
         clean, lines = FZ.fit_clean_heights(dsm, zone, readable, xx.astype(float), zz.astype(float), 0.0, regions, 'a')
         self.assertTrue(np.array_equal(clean, dsm))
         self.assertIn('surface fit skipped', lines[0])
+        self.assertIn('no flat, plane or gable fits', lines[0])
+        self.assertNotIn('readable columns', lines[0])
+
+    def test_surface_fit_skip_line_names_too_few_columns(self):
+        outline = np.ones((2, 2), dtype=bool)
+        zz, xx = np.mgrid[0:2, 0:2]
+        dsm = np.full((2, 2), 30.0)
+        readable = outline
+        zone = np.full((2, 2), 30.0)
+        clean, lines = FZ.fit_clean_heights(dsm, zone, readable, xx.astype(float), zz.astype(float), 0.0, None, 'a')
+        self.assertIn('under 6 readable columns', lines[0])
 
     def test_surface_fit_ignores_nan_columns_in_a_group(self):
         outline = np.ones((8, 12), dtype=bool)
