@@ -42,17 +42,7 @@
     
     
     
-    {
-      "id": 333,
-      "title": "Shop typology: terrace-house body over a shopfront ground floor",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "l",
-      "blockedBy": [
-        
-      ],
-      "notes": "Owner: west-side shops are three storeys with a dormer top floor, east-side shops two storeys with an upper bay window and pitched roofs, not flat commercial. This is the question blocked spike #257 asks, so file work only after its findings (blockedBy 257); alternative is to add the owner's west/east evidence to #257. Deliverable: storeys and dormers from lidar eave and ridge, pitched roofs, upper bay windows, reusing the terrace builder (scripts/house_build.py). Check: west and east parades of 50,-36 show dormers and bay windows by side; owner verdict. Source: docs/plans/industrial-commercial.md (trial #258).\n\nSequencing (housekeeping review): land #407 (shared stoop/ground helpers) and #408 (feature_build split) before starting builder code here.\n\nTrial #257 findings (docs/plans/typology-buildings.md, 2026-11-22): rule-built shops on Portswood Road came out as flat-roofed brick boxes with default entrances and awnings; roof form and shopfront detail came only from hand specs. The class-recipe table for glazing is task 431; this task keeps per-side storeys, dormers, bay windows and pitched roofs from the aerial.\n\nPointer (2026-11-22, parade snag S-111/S-113): the owner's street view of 233 Portswood Road shows the typology: a two-storey brick building with a pitched roof behind and a one-storey flat shopfront roof added in front; the real run is mostly black fascias. Footprints that belong to one building (Kovan & Ramo's belongs to its neighbour) cannot come from the map tags and are needs-designer. Builder tasks from the same snags: 434 (feature roof stairs/octant), 435 (signs falling off), 436 (doors one level low), 437 (sign and fascia options).\n\nReview correction (2026-11-22): also read task 427 (rotated footprints, rows by adjacency) and 431 (glazing and facade recipe)."
-    , "builderTask": true, "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/333-shop-typology-terrace-body"},
+    
     
     
     
@@ -168,13 +158,13 @@
     {
       "id": 419,
       "title": "Remove default player UUID and structure namespace; fail early and fill from player_list_online",
-      "status": "todo",
+      "status": "doing",
       "priority": "high",
       "complexity": "m",
       "blockedBy": [],
       "builderTask": false,
       "notes": "Remove the fixed _DEFAULT_UUID (lib/blocks/mc_paced.py) and the southampton_refine namespace fallback (lib/site/site_kit.py). Fail early naming the missing key, check the player before the journal begin, have new_blank_world.py or the skill fill player_uuid from player_list_online, and document both keys in new-world-build and the instance doc. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/3"
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/419-default-player-uuid"},
     
     
     
@@ -195,13 +185,13 @@
     {
       "id": 428,
       "title": "Typology generator: default storeys from the profile, lidar check advisory, class-default fallback for a missing district profile",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
       "builderTask": false,
       "notes": "From trial #257 (docs/plans/typology-buildings.md, Recommendation 1 and 2). On the study streets building:levels was present on 0 of 18 estate and 0 of 42 terrace buildings and 6 of 42 parade buildings, roof:shape on 0, 0 and 1. The generator refuses on missing building:levels, then on the lidar agreement check, then on no district profile. Change lib/builds/typology_spec.py so a missing building:levels takes the profile class storeys (default from storeys.min when min and max agree, else needs-designer with a clear reason), the lidar height check is advisory (reported in the spec notes, never a refusal, and missing lidar is not a refusal), and a missing district profile falls back to the land-use class default (ADR 006) with the fallback named in the spec note. Observed tags still win. Non-builder: fixtures and unit tests. Independent of the footprint-gates task. The world itself still needs real district profile files (site/districts/*.json) before a rule route gives a district palette: that is world work (profile from the aerial), not a tool task, and the world currently has none.\n"
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/428-typology-storeys-fallback"},
     {
       "id": 429,
       "title": "house_build: roof underlay block sits in the wall's top course (roof material one layer low)",
@@ -215,13 +205,13 @@
     {
       "id": 430,
       "title": "house_build: domestic chimney option (stack per house, pair or party wall) instead of one per roof unit",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
       "builderTask": false,
       "notes": "From trial #257 (docs/plans/typology-buildings.md, \"Chimneys\"). house_build.roof() plans one chimney per roof unit (chim.append((best, b)): the deepest column nearest the unit's centre) and the spec has no chimney option; a terrace spec in mode group is one roof unit, so 20 houses got one chimney in the middle (owner: wrong for a terrace). feature_build's details kind chimney is only an industrial hollow stack (base_diameter at least 3), so the hand path has no domestic stack either. Add an optional per-label spec key, for example chimneys: {\"<label>\": \"per_house\" | \"per_pair\" | \"party_walls\" | [{at}] | \"none\"}, default per roof unit so existing specs are unchanged, placing a one-by-one brick stack on the ridge at each chosen position (party walls: where two adjacent footprints in a group share a wall line). Reuse the existing stack-through-the-roof code (WALL column to ridge + 2, flower_pot cap). Tests with synthetic fixtures: a three-house terrace and a semi. Non-builder.\n\n\nReview corrections (2026-11-22): the existing per-roof-unit default chimney behaviour must stay unchanged unless the new option is set (add a test). Party walls come from footprint adjacency in lib/builds/house_build.py; name that as the detection source."
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/430-house-chimney-option"},
     {
       "id": 431,
       "title": "Typology generator: glazing and facade detail as a class recipe (shopfront table into facade_plan)",
@@ -290,13 +280,13 @@
     {
       "id": 437,
       "title": "Builder sign options: wood, text colour, fascia colour and a contrast rule",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
       "builderTask": false,
       "notes": "From trial #257 parade snags S-108 (signs always default oak), S-109 (sign text colour clashes with its background) and S-112 (fascia colours not the real ones); issue I-059. Checked 2026-11-22: the sign block is hard-coded oak_wall_sign in lib/builds/feature_facade.py (about lines 579 and 696) and lib/builds/feature_details.py:201. Fascia colour comes from FASCIA_COLOURS, six bright colours picked by hash (fascia_colour), with no black, grey or teal and no per-building override. Text colour is chosen against the fascia by contrasting_sign_colour (black or white), but the board is always pale oak, so grey text on the oak board clashes (the owner's \"Tidal vape\" sign); one sign path (about line 697) forces white glowing text. Not verified: the contrast on every parade sign.\n\nDeliverable: (1) a spec key for sign wood (the wall-sign and hanging-sign families), default oak as today; (2) a spec key for fascia colour that overrides the hash, default unchanged; (3) text colour computed against the sign board, not only the fascia, using block map colours, and a refusal of low-contrast pairs (reuse the catalogue pattern of I-057); (4) the second sign path honours the same keys. No palette values here: task 431 (the class recipe) and world data supply the values, so land this before 431. Non-builder: fixtures that the keys validate and emit the chosen blocks, and that the \"Tidal vape\" case (grey text on pale oak) is refused or recoloured. Acceptance: tests, a note in rules/feature-builds.md, a spec example, and the owner reviews S-108, S-109 and S-112 in game after a rebuild.\n"
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/437-builder-sign-options"},
     
     {
       "id": 440,
