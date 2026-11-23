@@ -91,12 +91,16 @@ class ScaffoldTests(unittest.TestCase):
 
             with mock.patch.object(gp.shutil, 'which', return_value='/bin/ogr2ogr'), \
                  mock.patch.object(gp, 'place_clip_dir', return_value=output), \
-                 mock.patch.object(gp.subprocess, 'run', side_effect=run):
+                 mock.patch.object(gp.subprocess, 'run', side_effect=run), \
+                 mock.patch('world_frame.wgs84_to_mc',
+                            side_effect=lambda lat, lon: (int(lon * 1000), int(lat * 1000))):
                 result = gp.extractor_main(package / 'provider.json', ['--place', 'survey',
                     '--bbox-wgs84', '1,1,3,3', '--pbf', str(pbf), '--layers', 'buildings,trees'])
             self.assertEqual(result, 0)
             self.assertEqual(sorted(p.name for p in output.iterdir()), [
-                'buildings.geojson', 'trees-0.geojson', 'trees-1.geojson'])
+                'buildings-bbox-1000-1000-3000-3000.geojson',
+                'trees-0-bbox-1000-1000-3000-3000.geojson',
+                'trees-1-bbox-1000-1000-3000-3000.geojson'])
             self.assertIn(str(package / 'osmconf.ini'), calls[0])
             self.assertIn('-clipsrc', calls[0])
 
@@ -114,8 +118,15 @@ class PerLayerExtractionTests(unittest.TestCase):
         self.stack.enter_context(mock.patch.object(gp.shutil, 'which', return_value='/bin/ogr2ogr'))
         self.stack.enter_context(mock.patch.object(gp, 'place_clip_dir', return_value=self.output))
         self.run = self.stack.enter_context(mock.patch.object(gp.subprocess, 'run', side_effect=self.write_extract))
+        self.stack.enter_context(mock.patch(
+            'world_frame.wgs84_to_mc',
+            side_effect=lambda lat, lon: (int(lon * 1000), int(lat * 1000))))
+        self.stack.enter_context(mock.patch(
+            'world_frame.mc_to_wgs84',
+            side_effect=lambda x, z: (z / 1000, x / 1000)))
         self.stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
         self.stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
+        self.extent = 'bbox-1000-1000-3000-3000'
 
     @staticmethod
     def write_extract(command, **kwargs):
@@ -134,7 +145,7 @@ class PerLayerExtractionTests(unittest.TestCase):
         self.assertIn('amenity', command[command.index('-where') + 1])
         self.assertIn('-clipsrc', command)
         self.assertNotIn('COORDINATE_PRECISION=7', command)
-        self.assertTrue((self.output / 'furniture.geojson').is_file())
+        self.assertTrue((self.output / f'furniture-{self.extent}.geojson').is_file())
         self.assertFalse((self.root / 'reference/manifest.jsonl').exists())
 
     def test_schema_falls_back_to_tool_when_provider_copy_absent(self):
@@ -145,7 +156,7 @@ class PerLayerExtractionTests(unittest.TestCase):
 
     def test_failed_query_preserves_existing_layer_and_reports_gdal_error(self):
         self.output.mkdir(parents=True)
-        path = self.output / 'furniture.geojson'
+        path = self.output / f'furniture-{self.extent}.geojson'
         path.write_bytes(b'previous-good-evidence')
         self.run.side_effect = subprocess.CalledProcessError(1, 'ogr2ogr', stderr='missing amenity')
         error = io.StringIO()
@@ -158,23 +169,42 @@ class PerLayerExtractionTests(unittest.TestCase):
 
     def test_existing_custom_query_interface_and_per_layer_names(self):
         self.assertEqual(self.invoke('--gdal-layer', 'points', '--where', "amenity = 'bench'"), 0)
-        self.assertEqual([p.name for p in self.output.iterdir()], ['points.geojson'])
+        self.assertEqual([p.name for p in self.output.iterdir()],
+                         [f'points-{self.extent}.geojson'])
         command = self.run.call_args.args[0]
         self.assertEqual(command[command.index('-where') + 1], "amenity = 'bench'")
         self.assertEqual(command[-1], 'points')
 
     def test_default_layers_and_radius_remain_the_modern_defaults(self):
-        with mock.patch('world_frame.mc_to_wgs84', side_effect=lambda x, z: (z / 1000, x / 1000)):
-            self.assertEqual(self.provider['main'](['--place', 'survey', '--at', '10,20',
-                                                   '--pbf', str(self.pbf)]), 0)
+        self.assertEqual(self.provider['main'](['--place', 'survey', '--at', '10,20',
+                                               '--pbf', str(self.pbf)]), 0)
         command = self.run.call_args_list[0].args[0]
         offset = command.index('-spat')
         self.assertEqual(command[offset + 1:offset + 5], ['-0.118', '-0.108', '0.138', '0.148'])
         names = {p.name for p in self.output.iterdir()}
-        self.assertIn('buildings.geojson', names)
-        self.assertIn('furniture.geojson', names)
-        self.assertIn('trees-0.geojson', names)
-        self.assertIn('trees-1.geojson', names)
+        self.assertIn('buildings-r128m-at-10-20.geojson', names)
+        self.assertIn('furniture-r128m-at-10-20.geojson', names)
+        self.assertIn('trees-0-r128m-at-10-20.geojson', names)
+        self.assertIn('trees-1-r128m-at-10-20.geojson', names)
+
+    def test_skill_place_folder_cell_extract_scores_full_clip_coverage(self):
+        """new-world-build §3: --place PLACE folder + --cell must count in clip_coverage."""
+        import cellmath
+        import osm_footprints as OF
+
+        cellmath.reload_grid({'cell': {'size': 128, 'home': [0, 0]}})
+        self.addCleanup(cellmath.reload_grid)
+        place_root = self.root / 'reference' / 'vector_map'
+        with mock.patch.object(gp, 'place_clip_dir',
+                               return_value=place_root / 'home-gate'):
+            self.assertEqual(self.provider['main']([
+                '--place', 'home-gate', '--at', '10,20', '--cell',
+                '--pbf', str(self.pbf), '--layers', 'buildings',
+            ]), 0)
+        path = place_root / 'home-gate' / 'buildings-cell-0-0.geojson'
+        self.assertTrue(path.is_file())
+        with mock.patch.object(OF, '_projected', side_effect=lambda p: p):
+            self.assertEqual(OF.clip_coverage((0, 0), root=place_root), 1.0)
 
 
 class ShimTests(unittest.TestCase):
