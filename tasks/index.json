@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the worldbuilder-tasks skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 461,
+  "nextTaskId": 462,
   "tasks": [
     
     
@@ -164,6 +164,21 @@
       ],
       "builderTask": false,
       "notes": "Issues I-019 (Pitched roofs built from full blocks, no stairs or slabs; owner marked S-024, S-068 and S-069 not fixed on 2026-11-23, S-086 fixed; new agent snag S-118) and I-048 (Flat roof areas are built with stairs that gain no height; S-088). Records: python3 scripts/issues.py --world southampton-build show I-019 (and I-048).\n\nCause as far as known: pitched_roof_states (lib/builds/roof_geometry.py, from line 351) trims a terrace edge (#309) only when the cell has an even height, is not already a stair, cap or flat cell, has no higher neighbour in any zone, and has exactly one same-zone drop of one block (or two at right angles) with a level same-zone cell behind each drop. Three or more drops, opposing drops, missing backing cells, zone steps and drops larger than one block are never trimmed (a half-block drop gets a slab and is handled). Many edges on noisy lidar steps may fail that test; the share is NOT measured. For I-048, a read-only classification of West's 2026-11-21 plan found 16 of 760 bottom-half roof stairs with no higher cell around them (about 14 new since #311/#314); the rule that adds them was not found (untested candidates, test first: ridge caps #304, then terrace edges #309). NOT verified: whether the ragged brick-to-deepslate edge in S-118 is lidar noise or zone-edge handling; whether the opt-in per-zone surface fit already on main (commits 385bd57, a0d44d1, a7c178f; spec key zones.<label>.surface, read at lib/builds/feature_roof_zones.py about line 1031) gives West and Kiddle clean surfaces if switched on (West's zones have no surface key today, so this is a real test).\n\nScope: measurement and a recommendation only. Read-only: no live apply, no spec change committed, no code change. Non-builder.\n\nDeliverable (a report in the repo, e.g. docs/plans/roof-edge-measurement-<date>.md):\n1. Dry-run West (worlds/southampton-build/site/builds/west_w34391673.json) and Kiddle (w146985470.json) with python3 scripts/feature_build.py (dry run), then python3 scripts/roof_lint.py on both. State the exact commands.\n2. Per roof, a counts table: (a) full-block cells that have a lower orthogonal neighbour, grouped by the trim condition that fails (three or more drops, opposing drops, no level backing, higher neighbour, zone step, drop larger than one block); (b) stairs with no higher cell around them, grouped by the rule that placed them; (c) brick cells on a zone edge with no brick orthogonal neighbour (the S-118 ragged edge), with a picture path.\n3. Repeat (a)-(c) with zones.<label>.surface switched on for West's and Kiddle's zones in a scratch copy of the spec (not committed).\n4. Recommendation: either (i) switch the surface fit on for these roofs (a world spec change, a separate world step, owner OK first) or (ii) a fix task naming the missing trim rules, each with the fixture that would prove it. The same function serves house_build (house_build.py about lines 772 and 778), so any later rule change needs a house dry run and the house_build tests; say so in the recommendation. The fix task is filed after this report, by the orchestrator, with the owner's yes.\n\nCheck lines (after a separate world rebuild step, the owner's in-game look is the snag review): S-024 and S-069 (West slopes and terrace edges): count (a) after the fix is at or below the figure the report states; S-068 (Kiddle SW wing ridge-edge caps): the same count for Kiddle; S-118: count (c) is at or below the report's figure; S-088: the 16 flat stairs of (b) are explained, and S-088 may also close earlier through the owner's review of the #314 check on I-048.\n\nOverlap: blocked by task 434 (octant fit or fixed stair rotation for pitched feature roofs), whose step 2 may edit pitched_roof_states and align_stair_shapes. Task 447 (doing) does not need to land first: the surface fit is already on main.\n"
+    },
+    {
+      "id": 461,
+      "title": "Parade live rebuild and owner check: Portswood Road shops, cell 50,-36 (split from #447)",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [
+        434,
+        455,
+        436,
+        457
+      ],
+      "builderTask": false,
+      "notes": "Split out of #447 (re-scoped 2026-11-23). The owner-gated live step: rebuild the Portswood Road parade shops in cell 50,-36 with the fixed generator and builders and look at them in game. Check on ONE shop first, in game (Papa John's, plan w149814013, spec site/builds/w149814013.json), then the group. Owner looks at the roof near 6518, 39, -4568, the street end 6512, 36, -4574 and the rear.\n\nFollows the roof and frontage swarm: stairs and blocks (#434), flat-roof carpet finish (#455), door floor (#436), typology row front direction (#457). Handoff and live-world protocol (site lock, take turns, registry gates for cells 50,-36 and 51,-36, undo plus rebuild in one lock command, do not move the owner's player): docs/plans/roof-and-frontage-swarm.md. A rebuild of w149814013 overwrites any hand edits there (the owner said earlier scratch edits may be erased).\n\nNon-builder: a live build run with readback, owner review. Acceptance: the owner's in-game verdict on one shop, then on the group, with snags filed for anything wrong.\n"
     }
   ]
 }
