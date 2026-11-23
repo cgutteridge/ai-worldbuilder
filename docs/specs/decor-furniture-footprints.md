@@ -5,7 +5,7 @@ Original design for task #306; ground support and reporting updated by #444. Wri
 ## 0. What exists
 
 - `place_furniture` (`lib/layers/decor_layer.py`) takes one `ground_at` top per item; every recipe voxel is `(x, top+dy, z)`. Recipes in `lib/sources/street_furniture.py` are `(dy, block)` pairs with no `dx`/`dz`, so a table with a bench each side cannot be written.
-- `lib/layers/outbuildings.py` (#251) and `place_outbuildings` already answer the multi-column questions for sheds: a footprint is all or nothing; it is refused (not halved) when it crosses the cell edge, and when any column is on a route/clearance/opening (`keep_clear`), a mapped way, a house, or the carriageway. Each column's ground is its own lidar terrain. Task #444 adds a shared `level_and_shift` helper for level furniture support; #446 applies it to sheds and garages separately. Hedges, fences and walls continue to follow terrain.
+- `lib/layers/outbuildings.py` (#251) and `place_outbuildings` already answer the multi-column questions for sheds: a footprint is all or nothing; it is refused (not halved) when it crosses the cell edge, and when any column is on a route/clearance/opening (`keep_clear`), a mapped way, a house, or the carriageway. Each column's ground is its own lidar terrain. Task #444 adds a shared `level_and_shift` helper. Task #446 uses it for sheds and garages (section 3a), including a mapped building outline. Hedges, fences and walls continue to follow terrain.
 - Kinds to add: **`picnic_table`** (rectangular, from the map and designer) and **`picnic_table_round`** (designer only; no map tag distinguishes a round one).
 
 ## 1. Footprint format (question 1)
@@ -41,6 +41,30 @@ If no adjacent anchor is level, fill low columns at the **original anchor** up t
 
 Separate cell caps allow at most ceil(30% of final placed items) needing a 1-block fill and ceil(10%) needing a 2-block fill, each at least one. Items without fill count in the denominator. Place unfilled items first, then rank filled items by maximum depth and blocks added, smallest first. Recheck both caps whenever rejecting an item changes the denominator; remove rejected support and furniture together, and report `ground fill cell cap`. These are deterministic planning decisions; no builder model is involved.
 
+### 3a. Sheds and garages (#446)
+
+Sheds and garages use the same helper and the same spread limit of 0. A mapped outline may move, the same as a lidar or designer item. A move is one block in any of the eight directions. It recomputes cells, evidence cells, the door (from the same house and route targets) and the plot share. `x` and `z` on the report stay the original corner; `placed_at` is the new corner; `footprint` and `door` are the moved ones.
+
+If no neighbour is level, the item stays and low columns are filled up to the highest ground, at most 2 blocks, with that column's own surface block. Walls and the door then start at that common level. Spread over 2 is refused (`uneven ground`). A fill that would replace a live, owned or masked block is refused too.
+
+The 30% and 10% caps use the same rounding (`ground_fill_cap`), but the share is outbuildings alone, not furniture plus sheds. The two placers run one after the other and do not keep a combined list, so each pass is its own denominator. The dry-run stats key is `outbuilding_ground_fill` (same fields as `furniture_ground_fill`).
+
+Task #446 measurement (2026-11-23), lidar terrain on resolved outbuildings, highest minus lowest. Limit stays 0: spread 1 or 2 can shift or fill, and spread 5 is refused.
+
+Cell 48,-44:
+
+| Item | Kind | Spread | Terrain Y |
+| --- | --- | --- | --- |
+| map 391790374 | shed 5×5 | 5 | 50–55 |
+| map 294963447 | shed 3×5 | 1 | 49–50 |
+| lidar 6166,-5513 | garage | 0 | 45 |
+| lidar 6168,-5584 | shed | 2 | 48–50 |
+| lidar 6199,-5518 | shed | 1 | 48–49 |
+| lidar 6204,-5532 | shed | 1 | 50–51 |
+| lidar 6226,-5547 | shed | 2 | 52–54 |
+
+Cell 53,-43 (built): seven resolved items with terrain are all spread 0. Three more resolved items have no terrain on part of the footprint, so they are not placed (`no lidar ground`). This is the planner's resolved set, not a live apply. The world file had no owner veto at measurement time, so lidar shed 6168,-5584 is still in the list.
+
 Task #444 measurement (2026-11-23, Southampton cell 48,-44): the round table at
 6174,-5594 has terrain tops 52,52,53,53,52 (spread 1); the table at
 6178,-5592 has five tops at 53 (spread 0). Keep limit 0: it matches the owner's
@@ -54,6 +78,24 @@ the owner's check.
 ## 4. Filters (question 4)
 
 Run on **every footprint column**, whole item refused on the first failing column (reason as today): `cell_contains` (section 8), `way`, `near1` (unless `allow_against_build`), carriageway (`column_ground_kind in ROAD_KINDS`), ground, and the voxel check (not air, `owned`, `masked`).
+
+`way` is built by `way_columns` (`lib/layers/decor_layer.py`): railway columns, carriageway (`vmap.road`), water polygons, waterway lines, and every path-line column (`vmap.feat`). A column with no feat id is not a path column. Outbuildings, barriers and woodland use that full set.
+
+Furniture uses the same helper with `open_paved` (pedestrian-area and `area:highway` columns, kept on `OSMGround` even where a path line overwrites the surface). A `footway` or `path` line that is not a sidewalk is left out of the furniture set where the column lies in `open_paved`. That is the one-block footpath line across a plaza or paved open area, and a table may stand on it. A footway anywhere else is a real footpath and stays refused. A cycleway, a sidewalk, a carriageway and water stay refused.
+
+Step 1, Southampton cell 48,-44 (2026-11-23). None of the blocked columns is in `vmap.road`, `vmap.water` or `vmap.water_line`. Each is a path line:
+
+| Table anchor | First blocked column | Way id | Class |
+| --- | --- | --- | --- |
+| rectangular 6176,-5600 | 6177,-5600 | 1030214384 | cycleway, surface paved |
+| round 6174,-5604 | 6175,-5604 | 1030214384 | cycleway, surface paved |
+| plaza 6208,-5576 | 6207,-5577 | 1174317556 | footway, no footway role, no surface |
+| plaza 6211,-5577 | 6212,-5577 | 1174317566 | footway, no footway role, no surface |
+| plaza 6214,-5577 | 6214,-5578 | 1174317566 | footway, no footway role, no surface |
+
+The two garden tables sit on cycleway 1030214384, beside grass, not in a pedestrian area, so they stay refused (`blocked_column` 6177,-5600 and 6175,-5604). The three plaza tables sit in pedestrian area 160020739 (name Redbrick). Their blocking columns are footway lines 1174317556 and 1174317566 crossing that area, so furniture no longer treats those columns as path.
+
+Dry run `python3 scripts/decor_layer.py --world southampton-build --cell 48,-44` (2026-11-23): the three plaza tables place (`picnic_table` at 6208,-5576, 6211,-5577 and 6214,-5577, 9 blocks each). The two garden tables stay unplaced, reason `on path/road/water column`, with the blocked columns above. Accepted furniture in the cell is 42, three more than the 39 in the #444 note, which is these three tables.
 
 `reserved_gap` (route, clearance, entrance opening) also applies **per column**, matching outbuildings: a bench over a door opening is as bad as a shed over one. It currently runs at the caller (`plan_cell`, about lines 696-699) on the anchor only. Change: `place_furniture` takes `keep_clear: set = frozenset()`, applies it per column with the existing reason `entrance opening or route reserved`, and `plan_cell` stops pre-splitting `all_furniture`. For single-column kinds the result is identical.
 

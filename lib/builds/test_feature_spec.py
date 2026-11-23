@@ -264,6 +264,22 @@ class ZonesSpecTest(unittest.TestCase):
         spec = FS.load_spec(self.write(g))
         self.assertEqual(len(spec['zones']['A']['regions']), 2)
 
+    def test_zone_surface_fit_needs_a_pitched_roof(self):
+        g = self.good()
+        g['zones']['A']['surface'] = 'fit'
+        g['roofs']['A']['kind'] = 'flat'
+        with self.assertRaises(SystemExit):
+            FS.load_spec(self.write(g))
+        g['roofs']['A']['kind'] = 'pitched'
+        spec = FS.load_spec(self.write(g))
+        self.assertEqual(spec['zones']['A']['surface'], 'fit')
+
+    def test_zone_surface_only_accepts_fit(self):
+        g = self.good()
+        g['zones']['A']['surface'] = 'smooth'
+        with self.assertRaises(SystemExit):
+            FS.load_spec(self.write(g))
+
     def test_bad_zone_regions_refused(self):
         for regions in ([], 'x', [[[0, 0], [1, 1]]], [[[0, 0], [1, 1], [1, 1]]], [[[0, 0], [1, 1], ['a', 2]]]):
             with self.subTest(regions=regions):

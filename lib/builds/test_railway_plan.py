@@ -4,10 +4,12 @@ from __future__ import annotations
 import json
 import math
 import unittest
+from types import SimpleNamespace
 
 import numpy as np
 
 import railway_plan as R
+import structure_evidence as se
 from railway_evidence import Line, LevelCrossing, OverheadSpan, OverheadCrossing, RailSpan, TrackSpan
 
 
@@ -113,6 +115,35 @@ class RailwayPlannerTest(unittest.TestCase):
         self.assertIn((45, 2), {(c[0], c[1]) for c in p['columns']})
         self.assertIn((55, 2), {(c[0], c[1]) for c in p['columns']})
 
+    def test_footpath_without_equipment_keeps_rails_and_lays_the_path(self):
+        crossing = LevelCrossing('foot-1', 'fixture-line', 0, (50, 0), 50,
+                                 None, None, None, None, None)
+        p = self.plan(line(((0, 0), (100, 0)), crossings=(crossing,)),
+                      crossing_roads={'foot-1': {'highway': 'footway'}})
+        self.assertEqual(p['failures'], [])
+        self.assertEqual(p['gaps'], [])
+        self.assertTrue(any(r[0] == 50 and r[2] == 0 for r in p['rails']))
+        surface = {tuple(row[:2]): row[2] for row in p['surfaces']}
+        self.assertEqual(surface[(50, 0)], 'paving')
+
+    def test_private_track_without_equipment_is_not_a_gap(self):
+        crossing = LevelCrossing('yard-1', 'fixture-line', 0, (50, 0), 50,
+                                 None, None, None, None, None)
+        p = self.plan(line(((0, 0), (100, 0)), crossings=(crossing,)),
+                      crossing_roads={'yard-1': {'highway': 'track', 'access': 'private'}})
+        self.assertEqual(p['failures'], [])
+        self.assertEqual(p['gaps'], [])
+        self.assertTrue(any(r[0] == 50 for r in p['rails']))
+
+    def test_footpath_with_a_barrier_tag_is_still_a_crossing_gap(self):
+        crossing = LevelCrossing('foot-2', 'fixture-line', 0, (50, 0), 50,
+                                 'gate', None, None, None, None)
+        p = self.plan(line(((0, 0), (100, 0)), crossings=(crossing,)),
+                      crossing_roads={'foot-2': {'highway': 'footway', 'width': '2'}})
+        self.assertEqual(p['failures'], [])
+        self.assertEqual(p['gaps'][0]['kind'], 'crossing')
+        self.assertFalse(any(r[0] == 50 for r in p['rails']))
+
     def test_boundary_corner_uses_the_actual_outside_neighbour(self):
         g = ground(x0=-100, z0=-20, width=1450, depth=160)
         evidence = line(((0, 0), (1087, 0), (1087, 100), (1200, 100)))
@@ -156,7 +187,7 @@ class RailwayPlannerTest(unittest.TestCase):
         crossings = tuple(LevelCrossing(str(x), 'fixture-line', 0, (x, 0), x,
                                        None, None, None, None, None) for x in (50, 55))
         p = self.plan(line(((0, 0), (100, 0)), crossings=crossings),
-                      crossing_roads={str(x): {'width': '6'} for x in (50, 55)})
+                      crossing_roads={str(x): {'highway': 'residential', 'width': '6'} for x in (50, 55)})
         self.assertTrue(p['failures'])
         self.assertIn('gap', p['failures'][0]['reason'])
         self.assertEqual(p['rails'], [])
@@ -309,6 +340,175 @@ class RailwayPlannerTest(unittest.TestCase):
         corner[4] = 'minecraft:powered_rail[powered=true]'
         with self.assertRaises(AssertionError):
             R.validate_plan(p)
+
+
+def deck_height(status, underside=None, reason='test'):
+    top = None if underside is None else underside + se.DECK_THICKNESS - 1
+    return SimpleNamespace(height=se.DeckHeight(status, top, underside, 0, 9, reason))
+
+
+class DeckEvidenceTest(RailwayPlannerTest):
+    """Overhead deck heights from structure evidence (#451). Rail level is 30; rail Y 31."""
+
+    deck = frozenset((x, z) for x in range(40, 61) for z in range(-2, 3))
+
+    def overhead(self, osm_id='b'):
+        return OverheadSpan('fixture-line', osm_id, 'footway', 'yes', '1', self.deck,
+                            (OverheadCrossing(0, 50, (50, 0)),))
+
+    def corridor(self):
+        return line(((0, 0), (100, 0)), overhead=(self.overhead(),))
+
+    def test_without_evidence_the_lidar_surface_is_the_ceiling(self):
+        p = self.plan(self.corridor())
+        self.assertIn('clearance', p['failures'][0]['reason'])
+        self.assertEqual(p['decks'], [])
+
+    def test_measured_deck_with_clearance_plans_through_without_a_gap(self):
+        p = self.plan(self.corridor(), structures={'b': deck_height('measured', 40)})
+        self.assertEqual((p['failures'], p['gaps']), ([], []))
+        self.assertEqual(len(p['rails']), 101)
+        self.assertEqual([(d['osm_id'], d['status'], d['usable'], d['underside']) for d in p['decks']],
+                         [('b', 'measured', True, 40)])
+
+    def test_measured_low_deck_still_fails_loudly(self):
+        for underside, ok in ((36, True), (35, False), (34, False)):
+            p = self.plan(self.corridor(), structures={'b': deck_height('measured', underside)})
+            self.assertEqual(p['failures'] == [], ok, underside)
+            if not ok:
+                self.assertIn('less than 5 blocks', p['failures'][0]['reason'])
+                self.assertEqual(p['rails'], [])
+                self.assertEqual(p['gaps'], [])
+
+    def test_unknown_deck_becomes_a_gap_with_end_records_and_the_rest_plans(self):
+        p = self.plan(self.corridor(), structures={'b': deck_height('unknown', None, 'no columns')})
+        self.assertEqual(p['failures'], [])
+        (gap,) = p['gaps']
+        self.assertEqual((gap['kind'], gap['source'], gap['deck'], gap['reason']),
+                         ('overhead', 'b', 'unknown', 'no columns'))
+        self.assertEqual(gap['where'], gap['columns'][0])
+        self.assertEqual(sorted(c[0] for c in gap['columns']), list(range(40, 61)))
+        self.assertEqual([(e['at'], e['level'], e['direction']) for e in gap['ends']],
+                         [([39, 0], 31, 'east'), ([61, 0], 31, 'west')])
+        xs = {r[0] for r in p['rails']}
+        self.assertFalse(xs & set(range(40, 61)))
+        self.assertEqual(len(p['rails']), 101 - 21)
+        self.assertEqual(p['tracks'][0]['gap'].count(True), 21)
+
+    def test_missing_evidence_record_is_unknown_not_a_failure(self):
+        p = self.plan(self.corridor(), structures={})
+        self.assertEqual(p['failures'], [])
+        self.assertEqual(p['decks'][0]['status'], 'unknown')
+        self.assertEqual(len(p['gaps']), 1)
+
+    def test_inferred_deck_is_a_gap_by_default_and_trusted_by_policy(self):
+        inferred = {'b': deck_height('inferred', 40)}
+        self.assertFalse(R.INFERRED_DECK_USABLE)
+        p = self.plan(self.corridor(), structures=inferred)
+        self.assertEqual(p['failures'], [])
+        self.assertEqual(p['gaps'][0]['deck'], 'inferred')
+        self.assertIn('INFERRED_DECK_USABLE', p['gaps'][0]['reason'])
+        p = self.plan(self.corridor(), structures=inferred, inferred_deck_usable=True)
+        self.assertEqual((p['failures'], p['gaps']), ([], []))
+        self.assertTrue(p['decks'][0]['usable'])
+
+    def test_a_trusted_inferred_deck_that_is_too_low_still_fails_loudly(self):
+        p = self.plan(self.corridor(), structures={'b': deck_height('inferred', 34)},
+                      inferred_deck_usable=True)
+        self.assertIn('less than 5 blocks', p['failures'][0]['reason'])
+        self.assertEqual(p['gaps'], [])
+
+    def test_inferred_policy_follows_the_module_constant(self):
+        from unittest import mock
+        with mock.patch.object(R, 'INFERRED_DECK_USABLE', True):
+            p = self.plan(self.corridor(), structures={'b': deck_height('inferred', 40)})
+        self.assertEqual((p['failures'], p['gaps']), ([], []))
+
+    def test_touching_unknown_decks_merge_into_one_gap_per_track(self):
+        near = OverheadSpan('fixture-line', 'c', 'footway', 'yes', '1',
+                            frozenset((x, z) for x in range(62, 70) for z in range(-2, 7)),
+                            (OverheadCrossing(0, 65, (65, 0)),))
+        ev = {'b': deck_height('unknown'), 'c': deck_height('unknown')}
+        p = self.plan(line(((0, 0), (100, 0)), ((0, 4), (100, 4)),
+                           overhead=(self.overhead(), near)), structures=ev)
+        self.assertEqual(p['failures'], [])
+        self.assertEqual(sorted((g['track_index'], g['source'], g['columns'][0][0], g['columns'][-1][0])
+                                for g in p['gaps']),
+                         [(0, 'b+c', 40, 69), (1, 'c', 62, 69)])
+
+    def test_gap_leaves_no_ground_or_planting_in_its_columns(self):
+        g = ground()
+        g['terrain'][:] = 33
+        g['terrain'][:, 100] = 30
+        g['h'][:] = g['terrain'] + 3
+        p = self.plan(self.corridor(), g, structures={'b': deck_height('unknown')})
+        self.assertEqual(p['failures'], [])
+        gap = {tuple(c) for c in p['gaps'][0]['columns']}
+        self.assertFalse({(c[0], c[1]) for c in p['columns']} & gap)
+        self.assertFalse({(c[0], c[2]) for c in p['planting']} & gap)
+
+
+class JunctionGapsTest(unittest.TestCase):
+    """:func:`railway_plan.junction_gaps` on hand-made first-pass plans (#452)."""
+
+    @staticmethod
+    def plan(line_id, path, gap=None, before=None, after=None, tracks=1):
+        mask = gap or [False] * len(path)
+        track = {'track_index': 0, 'path': [list(p) for p in path], 'gap': list(mask),
+                 'before': before, 'after': after}
+        rails = [[x, 31, z, 'east_west', ''] for (x, z), g in zip(path, mask) if not g]
+        return {'line_id': line_id, 'tracks': [track] * tracks, 'rails': rails}
+
+    @staticmethod
+    def row(z, x0, x1):
+        return [(x, z) for x in range(x0, x1 + 1)]
+
+    @classmethod
+    def dipping(cls, line_id, hits, length, **kwargs):
+        """A side line along z=5 that touches the main line (z=0) at the given x values."""
+        return cls.plan(line_id, [(x, 0 if x in hits else 5) for x in range(length)], **kwargs)
+
+    def spans(self, out, index):
+        return [(g['start'], g['end'], g['source']) for g in out[index][0]]
+
+    def test_short_runs_cut_off_by_the_overlap_are_absorbed_and_long_ones_kept(self):
+        main = self.plan('main', self.row(0, 0, 200), tracks=2)
+        side = self.dipping('side', {10, 14, 40}, 60)
+        out = R.junction_gaps([side, main])
+        self.assertEqual(sorted(out), [0])
+        # 11..13 is a three-cell stub between two overlaps (absorbed); 0..9, 15..39 and
+        # 41..59 are long enough to join something and stay.
+        self.assertEqual(self.spans(out, 0), [(10, 14, 'main'), (40, 40, 'main')])
+
+    def test_runs_next_to_a_structure_gap_or_a_box_join_are_not_orphans(self):
+        main = self.plan('main', self.row(0, 0, 100), tracks=2)
+        gap = [True, True] + [False] * 28
+        side = self.dipping('side', {4, 8, 20, 28}, 30, gap=gap, after=(30, 5))
+        out = R.junction_gaps([main, side])
+        # 2..3 touches the structure gap and 29 the box join, so both stay; 5..7 is cut off
+        # on both sides and goes.
+        self.assertEqual(self.spans(out, 1), [(4, 8, 'main'), (20, 20, 'main'), (28, 28, 'main')])
+
+    def test_an_overlap_on_a_box_join_fails_with_both_line_ids_and_the_coordinates(self):
+        main = self.plan('main', self.row(0, 0, 100), tracks=2)
+        side = self.plan('side', self.row(0, 50, 80), before=(49, 0))
+        with self.assertRaisesRegex(ValueError, r'junction with main covers the box join of side at \[50, 0\]'):
+            R.junction_gaps([main, side])
+
+    def test_duplicate_line_ids_cannot_choose_a_main_line(self):
+        a = self.plan('same', self.row(0, 0, 10))
+        b = self.plan('same', self.row(0, 5, 20))
+        with self.assertRaisesRegex(ValueError, 'distinct line ids'):
+            R.junction_gaps([a, b])
+
+    def test_no_shared_columns_means_no_gaps(self):
+        self.assertEqual(R.junction_gaps([self.plan('a', self.row(0, 0, 10)),
+                                          self.plan('b', self.row(5, 0, 10))]), {})
+
+    def test_plan_line_rejects_junction_gaps_outside_the_track(self):
+        with self.assertRaisesRegex(ValueError, 'outside track 0'):
+            R.plan_line(line(((0, 0), (50, 0))), ground(), (0, 0), cell_size=128,
+                        junction_gaps={0: [{'source': 'x', 'start': 40, 'end': 90}]})
 
 
 if __name__ == '__main__':

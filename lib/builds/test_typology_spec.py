@@ -17,6 +17,7 @@ import numpy as np
 import feature_build as F
 import feature_spec as FS
 import house_build as H
+import land_use
 import typology_spec as T
 
 
@@ -56,11 +57,11 @@ def building(way, cells, tags, lidar=8.0, profile=PROFILE):
     }
 
 
-def house_row(tag, count, levels='2', lidar=8.0):
+def house_row(tag, count, levels='2', lidar=8.0, profile=PROFILE):
     """Houses side by side, sharing the short wall, street to the south."""
     return [building(
         i + 1, rect(i * 5, 0, 5, 8),
-        {'building': tag, 'building:levels': levels}, lidar=lidar,
+        {'building': tag, 'building:levels': levels}, lidar=lidar, profile=profile,
     ) for i in range(count)]
 
 
@@ -95,24 +96,95 @@ def tearDownModule():
 class TypologySpecs(unittest.TestCase):
     """The three shapes the ticket names, plus a building the rules will not guess."""
 
-    def test_terrace_row_is_one_pitched_house_spec(self):
+    def test_terrace_row_uses_per_house_roofs_and_party_wall_chimneys(self):
         for tag in ('house', 'terrace'):
             with self.subTest(tag=tag):
-                report = T.generate(house_row(tag, 3), STREET)
+                houses = house_row(tag, 3, profile=None)
+                report = T.generate(houses, STREET)
                 self.assertEqual(report['needs_designer'], [])
                 item = report['specs'][0]
                 spec = item['spec']
                 self.assertEqual(item['builder'], 'house_build')
                 self.assertEqual(set(spec['ways']), {'1', '2', '3'})
-                self.assertEqual(spec['groups'], [{'nos': ['a', 'b', 'c'], 'mode': 'group', 'front': 'S'}])
-                self.assertEqual(spec['roofs'], {'a': 'brick', 'b': 'brick', 'c': 'brick'})
+                self.assertEqual(spec['groups'], [{'nos': ['a', 'b', 'c'], 'mode': 'each', 'front': 'S'}])
+                # Odd leftover house still shares the second pair's colour slot.
+                self.assertEqual(spec['roofs']['a'], spec['roofs']['b'])
+                self.assertNotEqual(spec['roofs']['a'], spec['roofs']['c'])
                 self.assertEqual(
                     spec['roof_pitch'],
                     {'a': T.PITCHED_RISE, 'b': T.PITCHED_RISE, 'c': T.PITCHED_RISE},
                 )
                 self.assertGreater(T.PITCHED_RISE, 0.5)
-                plan = plan_house(spec, {row['way_id']: row['cells'] for row in house_row(tag, 3)})
+                walls = H.footprint_party_walls([row['cells'] for row in houses])
+                self.assertEqual(len(walls), 2)
+                assert_chimneys_on_party_walls(spec, walls)
+                plan = plan_house(spec, {row['way_id']: row['cells'] for row in houses})
                 self.assertTrue(any('_stairs[' in state for state in plan.cells.values()))
+                pots = {(x, z) for (x, _y, z), state in plan.cells.items() if 'flower_pot' in state}
+                self.assertEqual(len(pots), 2)
+                self.assertTrue(pots <= party_wall_columns(walls))
+
+    def test_long_terrace_alternates_pair_colours_and_stacks_every_party_wall(self):
+        houses = house_row('house', 20, profile=None)
+        report = T.generate(houses, STREET)
+        self.assertEqual(report['needs_designer'], [])
+        self.assertEqual(len(report['specs']), 1)
+        spec = report['specs'][0]['spec']
+        self.assertEqual(spec['groups'], [{
+            'nos': [chr(ord('a') + i) for i in range(20)],
+            'mode': 'each',
+            'front': 'S',
+        }])
+        families = land_use.terrace_roof_families('residential')
+        self.assertEqual(len(families), 2)
+        for i, label in enumerate(spec['groups'][0]['nos']):
+            self.assertEqual(spec['roofs'][label], families[(i // 2) % 2], label)
+        walls = H.footprint_party_walls([row['cells'] for row in houses])
+        self.assertEqual(len(walls), 19)
+        assert_chimneys_on_party_walls(spec, walls)
+        plan = plan_house(spec, {row['way_id']: row['cells'] for row in houses})
+        pots = {(x, z) for (x, _y, z), state in plan.cells.items() if 'flower_pot' in state}
+        self.assertEqual(len(pots), 19)
+        self.assertTrue(pots <= party_wall_columns(walls))
+
+    def test_rotated_terrace_row_keeps_the_recipe(self):
+        houses = [
+            building(
+                i + 1, rect(0, i * 5, 8, 5),
+                {'building': 'house', 'building:levels': '2'},
+                profile=None,
+            )
+            for i in range(20)
+        ]
+        street = [[(20.0, -10.0), (20.0, 120.0)]]
+        report = T.generate(houses, street)
+        self.assertEqual(report['needs_designer'], [])
+        spec = report['specs'][0]['spec']
+        self.assertEqual(spec['groups'][0]['mode'], 'each')
+        self.assertEqual(len(spec['groups'][0]['nos']), 20)
+        self.assertIn(spec['groups'][0]['front'], 'NSEW')
+        walls = H.footprint_party_walls([row['cells'] for row in houses])
+        self.assertEqual(len(walls), 19)
+        assert_chimneys_on_party_walls(spec, walls)
+        plan = plan_house(spec, {row['way_id']: row['cells'] for row in houses})
+        pots = {(x, z) for (x, _y, z), state in plan.cells.items() if 'flower_pot' in state}
+        self.assertEqual(len(pots), 19)
+        self.assertTrue(pots <= party_wall_columns(walls))
+
+    def test_district_profile_keeps_one_roof_family_on_a_terrace(self):
+        houses = house_row('house', 4)
+        for row in houses:
+            row['profile'] = {
+                'name': 'Fixture',
+                'classes': {
+                    'residential': {
+                        'palette': ['bricks'], 'roofs': ['gable'], 'storeys': {'min': 2, 'max': 2},
+                    },
+                },
+            }
+        report = T.generate(houses, STREET)
+        spec = report['specs'][0]['spec']
+        self.assertEqual(set(spec['roofs'].values()), {'brick'})
 
     def test_semi_detached_pair_keeps_separate_roofs(self):
         for tag in ('house', 'semidetached_house'):
@@ -405,6 +477,32 @@ class LoadAndWrite(unittest.TestCase):
             H.load_spec(spec_path)
             with self.assertRaises(SystemExit):
                 T.write_specs(report, Path(tmp))
+
+
+def party_wall_columns(walls) -> set:
+    """Union of columns on every party wall."""
+    cols = set()
+    for _i, _j, wall in walls:
+        cols |= wall
+    return cols
+
+
+def assert_chimneys_on_party_walls(spec, walls):
+    """Every party wall has exactly one domestic ``at`` site on its columns."""
+    ats = []
+    for opt in spec['chimneys'].values():
+        if opt == 'none':
+            continue
+        for row in opt:
+            at = row['at']
+            ats.append((int(at[0]), int(at[1] if len(at) == 2 else at[2])))
+    unittest.TestCase().assertEqual(len(ats), len(walls))
+    remaining = list(walls)
+    for col in ats:
+        match = next((item for item in remaining if col in item[2]), None)
+        unittest.TestCase().assertIsNotNone(match, col)
+        remaining.remove(match)
+    unittest.TestCase().assertEqual(remaining, [])
 
 
 def write_spec(spec) -> Path:

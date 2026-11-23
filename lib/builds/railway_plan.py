@@ -6,7 +6,11 @@ indexed [x, z]: ``terrain`` (DTM block Y), ``h`` (surface block Y), optional
 ``have``, ``kind`` (4 means structure), ``supports`` (structure piers), and
 ``solid`` (solid material below terrain; defaults true). ``deck_y`` may give
 an overhead deck's underside; otherwise h is the available height evidence.
-All arrays cover the same rectangle. Missing/NaN terrain is a reported failure.
+``structures`` (optional, ``structure_evidence.by_osm_id``) is the deck
+evidence for the line's overhead spans: a measured underside replaces h as
+the clearance ceiling, and a span whose deck height is unknown (or inferred
+while :data:`INFERRED_DECK_USABLE` is false) becomes an ``overhead`` gap with
+end records for a human, never a failure. All arrays cover the same rectangle. Missing/NaN terrain is a reported failure.
 
 Rail tuples are [x, rail_y, z, shape, full_block_state]; columns are
 [x, z, original_ground_y, formation_y, bed|slope]. ``surfaces`` gives
@@ -23,6 +27,15 @@ from ``at``; the track may turn immediately at next. Pass the selected
 outgoing join back as ``incoming``. Profiles retain ``before`` and ``after``
 neighbours so boundary corners keep their actual shape. Gap ``ends`` describe
 the two abutting rail cells, with rail Y, direction and track index.
+A mapped road crossing, or any crossing with a barrier, light or bell tag,
+becomes a ``crossing`` gap (:func:`crossing_is_feature`). A footpath or private
+crossing with none of those tags is not a gap: the rails stay continuous and
+that path's surface is laid across those track columns.
+
+Where several lines of one feature share rail columns, :func:`junction_gaps`
+keeps the main line's rails and names the side tracks' overlapping (and
+orphaned) rail runs as ``junction`` gaps, which :func:`plan_line` then plans
+through its ``junction_gaps`` argument; a person finishes the junction.
 """
 from __future__ import annotations
 
@@ -32,7 +45,7 @@ from collections.abc import Mapping, Sequence
 import numpy as np
 
 import cellmath
-from ground_sources import road_width
+from ground_sources import PATH_WIDTH, ROAD_CLASSES, SURFACE_KIND, road_width
 from railway_evidence import PLANNER_BOX, Line
 
 RAIL_MIN_STEP_RUN = 100
@@ -41,6 +54,14 @@ BED_RADIUS = 2.3
 SLOPE_RATIO = 2.0
 SLOPE_MAX = 40
 RAIL_CLEARANCE = 5
+# A rail run this short, cut off by junction gaps (or a dead end) on both sides, joins nothing.
+JUNCTION_MIN_RUN = 4
+# Deck-height policy for an overhead span whose lidar height is only inferred
+# (too few or conflicting structure columns). False: leave a gap for a human.
+# True: trust the inferred underside; if it leaves under RAIL_CLEARANCE the
+# corridor still fails loudly. A measured height is always trusted, and an
+# unknown height is always a gap.
+INFERRED_DECK_USABLE = False
 
 
 def snap_track(points: Sequence[Sequence[float]]) -> list[tuple[int, int]]:
@@ -176,9 +197,159 @@ def _clip(path, box, entry, centre):
     return path[a:b], before, after, None
 
 
-def _gaps(line, paths, roads):
-    """Gap intervals in snapped path indices, with source ids for integration."""
+def deck_evidence(line, structures, inferred_usable=None):
+    """Clearance ceilings and unknown decks for a line's overhead spans.
+
+    @param line: line whose ``overhead`` spans are looked up by way id
+    @param structures: ``structure_evidence.by_osm_id`` mapping, or None for no evidence
+    @param inferred_usable: trust an inferred height; defaults to :data:`INFERRED_DECK_USABLE`
+    @returns: ``(undersides, decks)``: ``{(x, z): underside Y}`` over usable decks, and a
+        JSON-able report per span with ``osm_id``, ``status``, ``underside``, ``usable`` and ``reason``
+    """
+    usable_inferred = INFERRED_DECK_USABLE if inferred_usable is None else inferred_usable
+    undersides, report = {}, []
+    if structures is None:
+        return undersides, report
+    for span in line.overhead:
+        record = structures.get(span.osm_id)
+        if record is None:
+            status, under, usable, reason = 'unknown', None, False, 'no structure evidence for this deck'
+        else:
+            height = record.height
+            status, under, reason = height.status, height.underside, height.reason
+            usable = under is not None and (status == 'measured' or (status == 'inferred' and usable_inferred))
+            if status == 'inferred' and not usable:
+                reason = 'inferred height is not trusted (INFERRED_DECK_USABLE): ' + reason
+        report.append({'osm_id': span.osm_id, 'status': status, 'underside': under,
+                       'usable': usable, 'reason': reason})
+        if usable:
+            for p in span.deck:
+                undersides[p] = min(under, undersides.get(p, under))
+    return undersides, report
+
+
+def _overhead_gaps(line, paths, decks):
+    """Gaps under overhead decks whose height cannot be used, merged when they touch."""
     result = [[] for _ in paths]
+    for deck in decks:
+        if deck['usable']:
+            continue
+        for span in (s for s in line.overhead if s.osm_id == deck['osm_id']):
+            for ti, path in enumerate(paths):
+                inside = [i for i, p in enumerate(path) if p in span.deck]
+                for i in inside:
+                    last = result[ti][-1] if result[ti] else None
+                    if last and last['source'] == deck['osm_id'] and i <= last['end'] + 2:
+                        last['end'] = i
+                    else:
+                        result[ti].append({'kind': 'overhead', 'source': deck['osm_id'], 'start': i,
+                                           'end': i, 'deck': deck['status'], 'reason': deck['reason']})
+    for ti, intervals in enumerate(result):
+        merged = []
+        for gap in sorted(intervals, key=lambda g: (g['start'], g['end'])):
+            if merged and gap['start'] <= merged[-1]['end'] + 2:
+                merged[-1]['end'] = max(merged[-1]['end'], gap['end'])
+                if gap['source'] not in merged[-1]['source'].split('+'):
+                    merged[-1]['source'] += '+' + gap['source']
+            else:
+                merged.append(gap)
+        result[ti] = merged
+    return result
+
+
+def _equipped(value) -> bool:
+    """True when a crossing equipment tag asks for a piece of kit."""
+    return value not in (None, '', 'no')
+
+
+def crossing_is_feature(road: Mapping, crossing=None) -> bool:
+    """Whether this level crossing is its own feature, and so a gap in the line.
+
+    A mapped road (``ROAD_CLASSES``) is always its own feature. So is any
+    crossing whose barrier, light or bell tag is set to something other than
+    empty or ``no``, including a footpath that has those tags. A footpath or
+    private way with none of them stays on the line: no gap, rails continuous,
+    and the path surface laid across the rails.
+
+    @param road: tags of the way being crossed
+    @param crossing: optional :class:`railway_evidence.LevelCrossing`; its
+        equipment tags win over the same keys copied onto ``road``
+    @returns: True when the line must leave a gap for a crossing feature
+    """
+    tags = dict(road or {})
+    highway = tags.get('highway') or ''
+    if crossing is None:
+        flags = (tags.get('crossing:barrier'), tags.get('crossing:light'), tags.get('crossing:bell'))
+    else:
+        flags = (crossing.barrier, crossing.light, crossing.bell)
+    return highway in ROAD_CLASSES or any(_equipped(flag) for flag in flags)
+
+
+def _crossing_indices(path, poly, along, half):
+    """Path indices within ``half`` of a crossing's distance along its track."""
+    intervals = []
+    for p in path:
+        best = None
+        along0 = 0.0
+        for a, b in zip(poly, poly[1:]):
+            distance, at = cellmath.segment_distance(p, a, b, along=True)
+            candidate = (distance, along0 + at)
+            if best is None or candidate[0] < best[0]:
+                best = candidate
+            along0 += math.dist(a, b)
+        intervals.append(None if best is None else best[1])
+    included = [i for i, value in enumerate(intervals) if value is not None and abs(value - along) <= half]
+    if not included:
+        return None
+    return min(included), max(included)
+
+
+def _plain_half(road: Mapping) -> float:
+    """Half-width of a crossing the line itself paints, in blocks."""
+    if road.get('width'):
+        return road_width(dict(road)) / 2
+    highway = road.get('highway') or ''
+    if highway in PATH_WIDTH:
+        return PATH_WIDTH[highway] / 2
+    return road_width(dict(road)) / 2
+
+
+def _plain_surface(road: Mapping) -> str:
+    """Surface kind a footpath or private crossing lays across the rails."""
+    highway = road.get('highway') or ''
+    default = 'gravel' if highway in ('track', 'service') else 'paving'
+    return SURFACE_KIND.get(road.get('surface') or '', default)
+
+
+def _plain_crossing_surfaces(line, paths, roads) -> dict:
+    """Track columns of crossings that stay on the line, mapped to a surface kind."""
+    out = {}
+    for crossing in line.crossings:
+        ti = crossing.track_index
+        if ti >= len(paths) or not paths[ti]:
+            continue
+        road = roads.get(str(crossing.osm_id))
+        if road is None or crossing_is_feature(road, crossing):
+            continue
+        span = _crossing_indices(paths[ti], line.tracks[ti], crossing.along, _plain_half(road))
+        if span is None:
+            continue
+        kind = _plain_surface(road)
+        for p in paths[ti][span[0]:span[1] + 1]:
+            out[tuple(p)] = kind
+    return out
+
+
+def _gaps(line, paths, roads, decks=(), junctions=None):
+    """Gap intervals in snapped path indices, with source ids for integration."""
+    result = _overhead_gaps(line, paths, decks)
+    for ti, intervals in (junctions or {}).items():
+        if ti >= len(paths) or not paths[ti]:
+            continue
+        for gap in intervals:
+            if not 0 <= gap['start'] <= gap['end'] < len(paths[ti]):
+                raise ValueError(f'junction gap {gap["start"]}..{gap["end"]} is outside track {ti}')
+            result[ti].append({**gap, 'kind': 'junction'})
     for crossing in line.crossings:
         ti = crossing.track_index
         if ti >= len(paths) or not paths[ti]:
@@ -188,23 +359,14 @@ def _gaps(line, paths, roads):
             # Width is evidence, not a guessed road class or a default design.
             result[ti].append({'error': 'crossing is missing road tags', 'where': list(crossing.at)})
             continue
+        # A footpath or private crossing with no equipment stays on the line.
+        if not crossing_is_feature(road, crossing):
+            continue
         half = road_width(dict(road)) / 2 + 1
-        poly = line.tracks[ti]
-        intervals = []
-        for p in paths[ti]:
-            best = None
-            along0 = 0.0
-            for a, b in zip(poly, poly[1:]):
-                distance, along = cellmath.segment_distance(p, a, b, along=True)
-                candidate = (distance, along0 + along)
-                if best is None or candidate[0] < best[0]:
-                    best = candidate
-                along0 += math.dist(a, b)
-            intervals.append(best[1])
-        included = [i for i, along in enumerate(intervals) if abs(along - crossing.along) <= half]
-        if included:
+        span = _crossing_indices(paths[ti], line.tracks[ti], crossing.along, half)
+        if span:
             result[ti].append({'kind': 'crossing', 'source': crossing.osm_id,
-                               'start': min(included), 'end': max(included)})
+                               'start': span[0], 'end': span[1]})
     for span in line.spans:
         for track in span.tracks:
             ti = track.track_index
@@ -350,12 +512,45 @@ def _corridor(plan, ground, deck, supports, road_surfaces):
             plan['planting'].append([p[0], surface + 1, p[1], 'bush'])
 
 
+def rail_rows(path, formation_levels, *, before=None, after=None, omit=()):
+    """Rail, torch and support rows shared by the line and a crossing.
+
+    ``formation_levels`` is the block under each rail. Straight and ascending
+    cells are powered, with a torch two blocks below the rail and a solid
+    support under the torch. Corners stay plain rail. ``omit`` lists path
+    indices left empty (a structure gap).
+
+    @param path: (x, z) columns in order
+    @param formation_levels: formation Y for each column
+    @param before: neighbour before the first column, when it is outside ``path``
+    @param after: neighbour after the last column, when it is outside ``path``
+    @param omit: path indices that stay empty
+    @returns: (rails, torches, supports) in the planner's row shape
+    """
+    skip = set(omit)
+    rails, torches, supports = [], [], []
+    for i, (p, level) in enumerate(zip(path, formation_levels)):
+        if i in skip:
+            continue
+        shape = _shape(path, formation_levels, i, before, after)
+        powered = shape in ('east_west', 'north_south') or shape.startswith('ascending_')
+        block = (f'minecraft:powered_rail[shape={shape},powered=true]' if powered
+                 else f'minecraft:rail[shape={shape}]')
+        rails.append([p[0], level + 1, p[1], shape, block])
+        if powered:
+            torches.append([p[0], level - 1, p[1]])
+            supports.append([p[0], level - 2, p[1]])
+    return rails, torches, supports
+
+
 def plan_line(
     line: Line, ground: Mapping, start_cell: tuple[int, int], incoming: Sequence[dict] = (), *,
     crossing_roads: Mapping[str, Mapping] | None = None,
     road_surfaces: Mapping[tuple[int, int], str] | None = None,
     min_step_run: int = RAIL_MIN_STEP_RUN, max_deviation: int = RAIL_MAX_DEVIATION,
     cell_size: int | None = None,
+    structures: Mapping | None = None, inferred_deck_usable: bool | None = None,
+    junction_gaps: Mapping[int, Sequence[Mapping]] | None = None,
 ) -> dict:
     """Plan one box of a single/paired through line; report unbuildable tracks.
 
@@ -368,6 +563,9 @@ def plan_line(
     @param min_step_run: positive minimum number of rail cells between unit steps
     @param max_deviation: maximum formation-height departure from DTM under a track
     @param cell_size: explicit coverage-grid size, or cellmath's configured size
+    @param structures: deck evidence by way id (see :func:`deck_evidence`); None keeps the lidar surface as ceiling
+    @param inferred_deck_usable: trust an inferred deck height; defaults to :data:`INFERRED_DECK_USABLE`
+    @param junction_gaps: track index -> ``junction`` gap intervals from :func:`junction_gaps`
     @returns: JSON-able placement lists, profiles, gaps, joins and explicit failures
     """
     if (not isinstance(min_step_run, int) or isinstance(min_step_run, bool) or min_step_run < 1
@@ -380,7 +578,7 @@ def plan_line(
            centre[0] + PLANNER_BOX // 2 - 1, centre[1] + PLANNER_BOX // 2 - 1]
     plan = dict(line_id=line.id, box=box, min_step_run=min_step_run, max_deviation=max_deviation,
                 rails=[], torches=[], torch_supports=[], columns=[], surfaces=[], planting=[],
-                tracks=[], gaps=[], joins=[], failures=[])
+                tracks=[], gaps=[], joins=[], failures=[], decks=[])
 
     def fail(where, reason):
         plan['failures'].append({'where': list(where), 'reason': reason})
@@ -413,7 +611,11 @@ def plan_line(
         paths.append(path)
         previous_cells.append(before)
         next_cells.append(nxt)
-    gaps = _gaps(line, paths, crossing_roads or {})
+    under, plan['decks'] = deck_evidence(line, structures, inferred_deck_usable)
+    gaps = _gaps(line, paths, crossing_roads or {}, plan['decks'], junction_gaps)
+    painted = _plain_crossing_surfaces(line, paths, crossing_roads or {})
+    if road_surfaces:
+        painted.update(road_surfaces)
     heights = []
     for ti, path in enumerate(paths):
         samples = [_ground(ground, p) for p in path]
@@ -478,7 +680,7 @@ def plan_line(
             structure = _sample(ground, 'kind', p, 0) == 4
             if p in deck or structure:
                 deck.add(p)
-                ceiling = _sample(ground, 'deck_y', p, _sample(ground, 'h', p))
+                ceiling = under[p] if p in under else _sample(ground, 'deck_y', p, _sample(ground, 'h', p))
                 if ceiling is None or ceiling - (level + 1) < RAIL_CLEARANCE:
                     blocked = (p, 'overhead deck leaves less than 5 blocks rail clearance')
                     break
@@ -497,17 +699,12 @@ def plan_line(
                    'before': list(before) if before is not None else None,
                    'after': list(after) if after is not None else None}
         plan['tracks'].append(profile)
-        for i, (p, level) in enumerate(zip(path, levels)):
-            if gap_mask[i]:
-                continue
-            shape = _shape(path, levels, i, before, after)
-            powered = shape in ('east_west', 'north_south') or shape.startswith('ascending_')
-            block = (f'minecraft:powered_rail[shape={shape},powered=true]' if powered
-                     else f'minecraft:rail[shape={shape}]')
-            plan['rails'].append([p[0], level + 1, p[1], shape, block])
-            if powered:
-                plan['torches'].append([p[0], level - 1, p[1]])
-                plan['torch_supports'].append([p[0], level - 2, p[1]])
+        rail_list, torch_list, support_list = rail_rows(
+            path, levels, before=before, after=after,
+            omit=[i for i, gap in enumerate(gap_mask) if gap])
+        plan['rails'].extend(rail_list)
+        plan['torches'].extend(torch_list)
+        plan['torch_supports'].extend(support_list)
         for gap in gaps[ti]:
             ends = []
             for index, inward in ((gap['start'] - 1, 1), (gap['end'] + 1, -1)):
@@ -516,6 +713,7 @@ def plan_line(
                     ends.append({'track_index': ti, 'at': list(path[index]), 'level': levels[index] + 1,
                                  'direction': _direction(path[index], neighbour)})
             plan['gaps'].append({**gap, 'track_index': ti, 'ends': ends,
+                                 'where': list(path[gap['start']]),
                                  'columns': [list(p) for p in path[gap['start']:gap['end'] + 1]]})
         steps = [i for i in range(1, len(path)) if levels[i] != levels[i - 1]]
         for side, index, nxt in (('end', len(path) - 1, after), ('start', 0, before)):
@@ -550,8 +748,131 @@ def plan_line(
                     supports.add(p)
                 else:
                     deck.add(p)
-    _corridor(plan, ground, deck, supports, road_surfaces or {})
+    _corridor(plan, ground, deck, supports, painted)
     return plan
+
+
+def _line_rank(plan):
+    """Main line first: more tracks, then more rail columns, then lowest line id."""
+    return -len(plan['tracks']), -len(plan['rails']), plan['line_id']
+
+
+def junction_gaps(plans: Sequence[Mapping]) -> dict:
+    """Choose the main line where plans share rail columns; gap the side tracks.
+
+    The line with the best rank (:func:`_line_rank`) keeps every shared rail column.
+    Each other claimant's overlapping rail columns, plus any rail run that the
+    overlap leaves shorter than :data:`JUNCTION_MIN_RUN` with nothing to connect to
+    (junction gaps or a dead end on both sides, no box join and no structure gap),
+    become ``junction`` gaps whose ``source`` is the winning line id.
+
+    @param plans: first-pass :func:`plan_line` results of one feature
+    @returns: ``{plan_index: {track_index: [gap, ...]}}`` for the side plans only; pass
+        each value back to :func:`plan_line` as ``junction_gaps``
+    @raises ValueError: with coordinates, when a join end would be gapped or a line vanishes
+    """
+    ids = [p['line_id'] for p in plans]
+    if len(set(ids)) != len(ids):
+        raise ValueError('railway plans need distinct line ids to choose a main line')
+    rank = {i: _line_rank(p) for i, p in enumerate(plans)}
+    claims = {}
+    for i, p in enumerate(plans):
+        for r in p['rails']:
+            claims.setdefault((r[0], r[2]), []).append(i)
+    lost = {}
+    for q, claimants in claims.items():
+        if len(claimants) > 1:
+            winner = min(claimants, key=rank.get)
+            for i in claimants:
+                if i != winner:
+                    lost.setdefault(i, {})[q] = winner
+    result = {}
+    for i, columns in lost.items():
+        plan, by_track, kept = plans[i], {}, 0
+        for track in plan['tracks']:
+            path, g0, n = [tuple(q) for q in track['path']], track['gap'], len(track['path'])
+            mask = [q in columns for q in path]
+            for index, joined in ((0, track['before']), (n - 1, track['after'])):
+                if mask[index] and joined is not None:
+                    raise ValueError(f'junction with {ids[columns[path[index]]]} covers the box join of '
+                                     f'{ids[i]} at {list(path[index])}')
+            full = list(mask)
+            start = 0
+            while start < n:
+                if mask[start] or g0[start]:
+                    start += 1
+                    continue
+                end = start
+                while end + 1 < n and not mask[end + 1] and not g0[end + 1]:
+                    end += 1
+                anchored = ((track['before'] is not None if start == 0 else bool(g0[start - 1]))
+                            or (track['after'] is not None if end == n - 1 else bool(g0[end + 1])))
+                if any(mask) and end - start + 1 < JUNCTION_MIN_RUN and not anchored:
+                    full[start:end + 1] = [True] * (end - start + 1)
+                start = end + 1
+            kept += sum(1 for k in range(n) if not full[k] and not g0[k])
+            intervals, index = [], 0
+            while index < n:
+                if not full[index]:
+                    index += 1
+                    continue
+                end = index
+                while end + 1 < n and full[end + 1]:
+                    end += 1
+                sources = []
+                for q in path[index:end + 1]:
+                    if q in columns and ids[columns[q]] not in sources:
+                        sources.append(ids[columns[q]])
+                intervals.append({'kind': 'junction', 'source': '+'.join(sources),
+                                  'start': index, 'end': end})
+                index = end + 1
+            if intervals:
+                by_track[track['track_index']] = intervals
+        if kept <= 0:
+            first = min(columns)
+            raise ValueError(f'{ids[i]} lies entirely inside rails of other lines, e.g. at {list(first)}')
+        result[i] = by_track
+    return result
+
+
+def share_footprints(plans: Sequence[dict]) -> None:
+    """Give each column that corridors claim differently to one owner, in place.
+
+    Columns that plans write identically, with no rail among them, stay as they
+    are. For any other shared column the plan holding a rail there keeps it; otherwise the best
+    ranked (main) line wins. Every other plan drops that column's ground, surface
+    and planting, so a junction's side track neither rewrites the main line's
+    formation nor buries its own rails under it.
+    """
+    rails = [{(r[0], r[2]) for r in p['rails']} for p in plans]
+    rows = []
+    for p in plans:
+        surfaces = {(x, z): kind for x, z, kind in p['surfaces']}
+        planting = {}
+        for x, y, z, kind in p['planting']:
+            planting.setdefault((x, z), []).append((y, kind))
+        rows.append({(c[0], c[1]): (tuple(c), surfaces.get((c[0], c[1])), tuple(sorted(planting.get((c[0], c[1]), ()))))
+                     for c in p['columns']})
+    claims = {}
+    for i, mine in enumerate(rows):
+        for q in mine:
+            claims.setdefault(q, []).append(i)
+    drops = [set() for _ in plans]
+    for q, claimants in claims.items():
+        if len(claimants) < 2:
+            continue
+        holders = [i for i in claimants if q in rails[i]]
+        if not holders and len({rows[i][q] for i in claimants}) == 1:
+            continue
+        holders = holders or claimants
+        owner = min(holders, key=lambda i: _line_rank(plans[i]))
+        for i in claimants:
+            if i != owner:
+                drops[i].add(q)
+    for p, owned in zip(plans, drops):
+        if owned:
+            for key, (a, b) in (('columns', (0, 1)), ('surfaces', (0, 1)), ('planting', (0, 2))):
+                p[key] = [row for row in p[key] if (row[a], row[b]) not in owned]
 
 
 def validate_plan(plan: Mapping) -> None:

@@ -16,6 +16,40 @@ from plan_refs import covered_by_plans, uncovered_candidates
 POLICY_VERSION = 1
 CLI = 'python3 scripts/cell_registry.py --world <world>'
 
+# Evidence a feature kind consumes (task 454). Map query coverage and the lidar cache are
+# always required; the table only says whether aerial coverage is. A kind not listed, and
+# every non-feature pass, needs all three. The railway planner reads railway lines, map
+# points, roads, lidar terrain/surface and earlier railway joins, never aerial imagery.
+ALL_EVIDENCE = frozenset({'map', 'lidar', 'aerial'})
+FEATURE_EVIDENCE = {'railway': frozenset({'map', 'lidar'})}
+
+
+def feature_evidence_kind(reg, plan):
+    """Feature kind of a journalled plan whose evidence needs differ from the default.
+
+    A railway feature is the plan ``railway_<tx>_<tz>`` (``railway_feature.feature_name`` of
+    its starting cell) that stands on that cell's plan in the journal; the name alone, or a
+    plan absent from the journal, is not enough.
+
+    @param reg: cell journal
+    @param plan: plan / feature id, or None
+    @returns: ``'railway'`` or None (default evidence needs)
+    """
+    import re
+    match = re.fullmatch(r'railway_(m?\d+)_(m?\d+)', plan or '')
+    if not match:
+        return None
+    cell = tuple(-int(n[1:]) if n[0] == 'm' else int(n) for n in match.groups())
+    from railway_feature import feature_name
+    if feature_name(cell) != plan:
+        return None
+    return 'railway' if any(f.id == plan for f in reg.cell(cell).features) else None
+
+
+def needs_aerial(kind) -> bool:
+    """Whether a feature kind (None: no feature scope) requires aerial coverage."""
+    return 'aerial' in FEATURE_EVIDENCE.get(kind, ALL_EVIDENCE)
+
 
 def _aerial_coverage_blocker(facts: dict) -> str:
     """User-facing aerial gap line with an uncovered column count when known.
@@ -133,7 +167,8 @@ def planned_here(reg, cell):
     return covered_by_plans(reg.root, {f.id for f in reg.cell(cell).features} | reg.plan_dismissed_ids(cell))
 
 
-def clearing_command(cell, blocker, *, registry, plan=None, layer=None, ref=None, owner_cell=None, stale=None):
+def clearing_command(cell, blocker, *, registry, plan=None, layer=None, ref=None, owner_cell=None, stale=None,
+                     feature=None):
     """The sanctioned command that clears one preflight blocker, or what only the owner can supply.
 
     Every blocker ``ReadinessPolicy.check`` raises is answered here, so a refusal never
@@ -147,9 +182,11 @@ def clearing_command(cell, blocker, *, registry, plan=None, layer=None, ref=None
     @param ref: note ref, for a coverage warning
     @param owner_cell: the mismatched entry's own cell (a neighbour's entry may touch ``cell``)
     @param stale: :func:`stale_ground` result, for a stale-ground blocker
+    @param feature: railway feature id the check was scoped to; prepare repeats it
     @returns: command text
     """
     c = f'{cell[0]},{cell[1]}'
+    scope = f' --feature {feature}' if feature else ''
     if blocker.startswith('ground stale:'):
         return ground_redo_command(cell, stale or {})
     if blocker.startswith('recovery: mismatched apply'):
@@ -165,11 +202,11 @@ def clearing_command(cell, blocker, *, registry, plan=None, layer=None, ref=None
     if blocker.startswith(('map query coverage', 'map coverage dismissal stale')):
         return f'{CLI} dismiss-clip-coverage {c} --reason "<why>" (or fix the map extract, then prepare)'
     if blocker.startswith('evidence validation'):
-        return f'{CLI} prepare --cell {c} --apply --evidence-only (records no feature plans)'
+        return f'{CLI} prepare --cell {c} --apply --evidence-only{scope} (records no feature plans)'
     if blocker.startswith('feature plans:'):
         return f'{CLI} propose-features --cell {c} --record, then dismiss-feature {c} --feature <id> --reason "<why>" for any you reject'
     if blocker.startswith(('validation', 'terrain:', 'candidate evidence error')):
-        return f'{CLI} prepare --cell {c} --apply'
+        return f'{CLI} prepare --cell {c} --apply{scope}'
     if blocker.startswith(('aerial coverage', 'lidar cache')):
         return 'owner supplies local data (state source, filename and size; authorization first), then prepare'
     if blocker == 'generated ground required':
@@ -265,7 +302,7 @@ class ReadinessPolicy:
         self.require_plan_identity = require_plan_identity
 
     def check(self, cell, operation='build', *, inspect_candidates=True, require_validation=True,
-              redoing=(), neighbour=False):
+              redoing=(), neighbour=False, feature=None):
         """Read-only report, including cells never mentioned in the journal.
 
         ``neighbour`` checks a cell that a cross-cell feature touches but is not planned in
@@ -281,6 +318,11 @@ class ReadinessPolicy:
         later landed entries have wholly superseded (it owns no position) blocks nothing.
         Every blocker has its clearing command in ``clear_with``.
 
+        ``feature`` names the journalled feature this check serves. When it is a railway
+        (:func:`feature_evidence_kind`) aerial coverage is not required, for the primary cell and
+        its neighbours alike (task 454); map coverage, lidar and terrain still are. Without it,
+        or for any other feature, nothing changes.
+
         A feature entry later than the cell's last landed ground makes the ground stale
         (``ground_stale`` causes, ``ground_redo`` command): the cell is not complete, and trees/decor
         are refused until the ground is redone (unless the redo names the ground plan in
@@ -289,6 +331,9 @@ class ReadinessPolicy:
         cell = tuple(cell)
         v = self.reg.cell(cell)
         blockers, warnings = [], []
+        kind = feature_evidence_kind(self.reg, feature)
+        aerial = needs_aerial(kind)
+        feature = feature if kind else None
         try:
             facts = self.evidence.facts(cell)
         except (OSError, ValueError, LookupError, RuntimeError, ImportError) as exc:
@@ -347,7 +392,7 @@ class ReadinessPolicy:
             # A complete query needs no dismissal; dismiss-clip-coverage rightly refuses it.
             elif facts['clip_coverage'] < 1 and dismissals[-1]['ref'] != facts.get('map_revision', facts['revision']):
                 blockers.append('map coverage dismissal stale')
-        if facts['aerial_coverage'] < 1:
+        if aerial and facts['aerial_coverage'] < 1:
             blockers.append(_aerial_coverage_blocker(facts))
         if facts['lidar_missing']:
             blockers.append('lidar cache: missing local tiles')
@@ -381,10 +426,13 @@ class ReadinessPolicy:
             current[layer] = bool(getattr(v, layer) and landed
                                   and landed.meta.get('readiness_revision') == revision)
         if neighbour:
-            actions = [] if evidence_validated else [f'prepare --cell {cell[0]},{cell[1]} --apply --evidence-only']
+            actions = ([] if evidence_validated else
+                       [f'prepare --cell {cell[0]},{cell[1]} --apply --evidence-only'
+                        + (f' --feature {feature}' if feature else '')])
         else:
-            actions = [f'prepare --cell {cell[0]},{cell[1]} --apply'] if not validated else []
-        if facts['aerial_coverage'] < 1:
+            actions = ([f'prepare --cell {cell[0]},{cell[1]} --apply' + (f' --feature {feature}' if feature else '')]
+                       if not validated else [])
+        if aerial and facts['aerial_coverage'] < 1:
             actions.append('supply full local aerial coverage; state source, filename and size '
                            'and obtain authorization before downloading')
         if facts['lidar_missing']:
@@ -401,9 +449,11 @@ class ReadinessPolicy:
             e = by_plan.get(b.removeprefix('recovery: mismatched apply '))
             clear_with[b] = clearing_command(cell, b, registry=self.reg, plan=e.plan if e else None,
                                              layer=e.pass_ if e else None, ref=refs.get(b),
-                                             owner_cell=e.cell if e else None, stale=stale)
+                                             owner_cell=e.cell if e else None, stale=stale,
+                                             feature=feature)
         return {'world': str(self.reg.root), 'cell': f'{cell[0]},{cell[1]}',
-                **facts, 'revision': revision, 'revision_parts': parts, 'evidence_revision': facts['revision'],
+                **facts, **({'feature_evidence': kind} if kind else {}),
+                'revision': revision, 'revision_parts': parts, 'evidence_revision': facts['revision'],
                 'journal_revision': self.reg.planning_revision([cell]),
                 'validated': validated, 'evidence_validated': evidence_validated,
                 'scope': 'evidence' if neighbour else 'full', 'operation': operation, 'ground': v.ground,
@@ -421,9 +471,9 @@ class ReadinessPolicy:
                 'notes': self.reg.notes(cell, kinds=('plan_feature', 'plan_feature-dismiss',
                                                      'clip_coverage-dismiss'))}
 
-    def validate(self, cell):
+    def validate(self, cell, *, feature=None):
         """Journal successful preparation against the actual inputs; refuse remaining gaps."""
-        report = self.check(cell, require_validation=False)
+        report = self.check(cell, require_validation=False, feature=feature)
         if not report['ready']:
             raise Refused('; '.join(report['blockers']), report)
         if not report['validated']:
@@ -431,18 +481,18 @@ class ReadinessPolicy:
                                                                      'revision_parts': report['revision_parts'],
                                                                      'policy': POLICY_VERSION,
                                                                      'warnings': report['warnings']})))
-        return self.check(cell)
+        return self.check(cell, feature=feature)
 
-    def validate_evidence(self, cell):
+    def validate_evidence(self, cell, *, feature=None):
         """Journal a cross-cell neighbour's current evidence; writes no plans and validates none (task 292)."""
-        report = self.check(cell, require_validation=False, neighbour=True)
+        report = self.check(cell, require_validation=False, neighbour=True, feature=feature)
         if not report['ready']:
             raise Refused('; '.join(report['blockers']), report)
         if not report['evidence_validated']:
             parts = {k: report['revision_parts'][k] for k in ('policy', 'evidence')}
             self.reg.change(Note(tuple(cell), 'readiness_evidence', json.dumps(
                 {'revision': evidence_identity(parts), 'revision_parts': parts, 'policy': POLICY_VERSION})))
-        return self.check(cell, neighbour=True)
+        return self.check(cell, neighbour=True, feature=feature)
 
     def _plan_stamp_cells(self, build, primary, required):
         """Cells whose evidence/journal identity the plan stamped.
@@ -511,13 +561,18 @@ class ReadinessPolicy:
         # Apply re-runs checks under the lock and refreshes validation when those checks pass
         # (task 232); hold/coverage/recovery blockers still refuse, and plan identities are
         # checked after refresh so an outdated plan is never approved by a fresh readiness note.
+        # A railway feature (the build records kind railway, and its plan is the journalled
+        # railway_<tx>_<tz>) needs no aerial coverage in any cell it touches (task 454).
+        feature = (build.plan if build.pass_ == 'feature' and (build.meta or {}).get('kind') == 'railway'
+                   else None)
         reports = []
         for cell in sorted(required):
             neighbour = build.pass_ == 'feature' and cell != primary
-            report = self.check(cell, build.pass_, redoing=(build.plan,), neighbour=neighbour)
+            report = self.check(cell, build.pass_, redoing=(build.plan,), neighbour=neighbour, feature=feature)
             if not report['ready'] and self._refresh_validation_if_ready(cell, build.pass_,
-                    redoing=(build.plan,), neighbour=neighbour):
-                report = self.check(cell, build.pass_, redoing=(build.plan,), neighbour=neighbour)
+                    redoing=(build.plan,), neighbour=neighbour, feature=feature):
+                report = self.check(cell, build.pass_, redoing=(build.plan,), neighbour=neighbour,
+                                    feature=feature)
             if build.pass_ == 'feature' and cell == primary:
                 features = {f.id: f.status for f in self.reg.cell(cell).features}
                 if parent:
@@ -565,7 +620,7 @@ class ReadinessPolicy:
         return {'readiness_revision': revisions[f'{primary[0]},{primary[1]}'],
                 'readiness_cells': revisions, **({'parent_feature': parent} if parent else {})}
 
-    def _refresh_validation_if_ready(self, cell, operation, *, redoing=(), neighbour=False):
+    def _refresh_validation_if_ready(self, cell, operation, *, redoing=(), neighbour=False, feature=None):
         """Rewrite a stale readiness note when every non-validation check already passes.
 
         Only refreshes when a previous readiness / readiness_evidence note exists: a cell
@@ -581,17 +636,17 @@ class ReadinessPolicy:
         if not prior:
             return False
         probe = self.check(cell, operation, require_validation=False, redoing=redoing,
-                           neighbour=neighbour)
+                           neighbour=neighbour, feature=feature)
         if not probe['ready']:
             return False
         if neighbour:
             if probe['evidence_validated']:
                 return False
-            self.validate_evidence(cell)
+            self.validate_evidence(cell, feature=feature)
             return True
         if probe['validated']:
             return False
-        self.validate(cell)
+        self.validate(cell, feature=feature)
         return True
 
 

@@ -104,6 +104,122 @@ class ZoneMathTest(unittest.TestCase):
         self.assertIn(26.0, levels)
         self.assertIn(eave, levels)
 
+    def _hip_with_dead_auto_plateau(self):
+        # A 4 m hip over a 30 m eave. Lidar finds auto plateaus between 30 and 34 m (the hip's flank) that
+        # the region then absorbs into one 30 m zone, beside a flat 26 m deck.
+        outline = np.ones((12, 20), dtype=bool)
+        zz, xx = np.mgrid[0:12, 0:20]
+        dsm = np.full((12, 20), 26.0)
+        front = xx < 10
+        dsm[front] = 30.0 + 4.0 * (1 - np.abs(zz[front] - 5.5) / 6.0)
+        regions = [
+            [(0, 0), (10, 0), (10, 12), (0, 12)],
+            [(10, 0), (20, 0), (20, 12), (10, 12)],
+        ]
+        readable, zone, levels, _axis, _dropped = FZ.assign_roof_zones(
+            dsm, outline, 'auto', xx, zz, bucket=4, axis_deg=0.0, regions=regions,
+        )
+        return dsm, front, regions, readable, zone, levels
+
+    def test_auto_levels_unused_after_regions_do_not_clip_the_ridge(self):
+        dsm, front, regions, readable, zone, levels = self._hip_with_dead_auto_plateau()
+        dead = [v for v in levels if v not in {float(z) for z in zone[readable].tolist()}]
+        self.assertTrue(dead, 'the lidar found plateaus the regions absorbed')
+        eave = float(zone[readable & front][0])
+        want = int(2 * (float(dsm[readable & front].max()) - eave)) - 1
+        clipped = FZ.zone_ridge_half_steps(dsm, zone, readable, flat_tol_m=0.8, levels=levels)
+        self.assertLess(int(clipped[readable & front].max()), want)   # the old behaviour: the dead levels clip
+        used = FZ.ridge_clip_levels('auto', regions, zone, readable, levels)
+        self.assertEqual(used, sorted({float(v) for v in zone[readable].tolist()}))
+        half = FZ.zone_ridge_half_steps(dsm, zone, readable, flat_tol_m=0.8, levels=used)
+        self.assertGreaterEqual(int(half[readable & front].max()), want)
+
+    def test_full_level_list_stays_known_for_material_regions(self):
+        # material_regions[].level may still name an auto plateau a region absorbed.
+        _dsm, _front, regions, readable, zone, levels = self._hip_with_dead_auto_plateau()
+        dead = [v for v in levels if v not in {float(z) for z in zone[readable].tolist()}]
+        self.assertTrue(set(dead) <= set(levels))
+        self.assertNotEqual(FZ.ridge_clip_levels('auto', regions, zone, readable, levels), levels)
+
+    def test_explicit_levels_or_no_regions_keep_the_full_clip_list(self):
+        _dsm, _front, regions, readable, zone, levels = self._hip_with_dead_auto_plateau()
+        self.assertEqual(FZ.ridge_clip_levels([26, 30, 34], regions, zone, readable, levels), levels)
+        self.assertEqual(FZ.ridge_clip_levels('auto', None, zone, readable, levels), levels)
+
+    def test_surface_fit_cleans_noise_per_region_and_leaves_other_cells_alone(self):
+        # A noisy gable (ridge across the axis, 30 -> 34 -> 30 m) beside a noisy flat deck at 26 m.
+        rng = np.random.default_rng(11)
+        outline = np.ones((8, 24), dtype=bool)
+        zz, xx = np.mgrid[0:8, 0:24]
+        gable = xx < 12
+        dsm = np.where(gable, 34.0 - 0.7 * np.abs(xx - 6.0), 26.0) + rng.normal(0, 0.3, (8, 24))
+        regions = [[(0, 0), (12, 0), (12, 8), (0, 8)], [(12, 0), (24, 0), (24, 8), (12, 8)]]
+        readable, zone, _levels, _axis, _dropped = FZ.assign_roof_zones(
+            dsm, outline, 'auto', xx, zz, bucket=4, axis_deg=0.0, regions=regions,
+        )
+        clean, lines = FZ.fit_clean_heights(dsm, zone, readable, xx.astype(float), zz.astype(float), 0.0, regions, 'a')
+        deck = readable & ~gable
+        self.assertLess(float(np.ptp(clean[deck])), 0.01)                       # noise gone: one level
+        self.assertAlmostEqual(float(clean[deck][0]), 26.0, delta=0.3)
+        ridge = float(clean[readable & gable].max())
+        self.assertAlmostEqual(ridge, 34.0, delta=0.5)
+        self.assertEqual(len(lines), 2)
+        self.assertIn('gable ridge across the axis', lines[0])
+        self.assertIn('flat', lines[1])
+        outside = ~readable
+        self.assertTrue(np.array_equal(clean[outside], dsm[outside]))           # untouched
+
+    def test_surface_fit_keeps_raw_heights_when_no_shape_fits_and_says_so(self):
+        # A stepped roof (30 m, then 33 m) inside one region: no flat/plane/gable explains it.
+        outline = np.ones((8, 12), dtype=bool)
+        zz, xx = np.mgrid[0:8, 0:12]
+        dsm = np.where(xx < 7, 30.0, 33.0)
+        regions = [[(0, 0), (12, 0), (12, 8), (0, 8)]]
+        readable, zone, _levels, _axis, _dropped = FZ.assign_roof_zones(
+            dsm, outline, 'auto', xx, zz, bucket=4, axis_deg=0.0, regions=regions,
+        )
+        clean, lines = FZ.fit_clean_heights(dsm, zone, readable, xx.astype(float), zz.astype(float), 0.0, regions, 'a')
+        self.assertTrue(np.array_equal(clean, dsm))
+        self.assertIn('surface fit skipped', lines[0])
+        self.assertIn('no flat, plane or gable fits', lines[0])
+        self.assertNotIn('readable columns', lines[0])
+
+    def test_surface_fit_skip_line_names_too_few_columns(self):
+        outline = np.ones((2, 2), dtype=bool)
+        zz, xx = np.mgrid[0:2, 0:2]
+        dsm = np.full((2, 2), 30.0)
+        readable = outline
+        zone = np.full((2, 2), 30.0)
+        clean, lines = FZ.fit_clean_heights(dsm, zone, readable, xx.astype(float), zz.astype(float), 0.0, None, 'a')
+        self.assertIn('under 6 readable columns', lines[0])
+
+    def test_surface_fit_ignores_nan_columns_in_a_group(self):
+        outline = np.ones((8, 12), dtype=bool)
+        zz, xx = np.mgrid[0:8, 0:12]
+        dsm = np.full((8, 12), 28.0)
+        regions = [[(0, 0), (12, 0), (12, 8), (0, 8)]]
+        readable, zone, _levels, _axis, _dropped = FZ.assign_roof_zones(
+            dsm, outline, 'auto', xx, zz, bucket=4, axis_deg=0.0, regions=regions,
+        )
+        dsm[2:4, 3:6] = np.nan
+        clean, lines = FZ.fit_clean_heights(dsm, zone, readable, xx.astype(float), zz.astype(float), 0.0, regions, 'a')
+        self.assertTrue(np.allclose(clean[readable], 28.0))
+        self.assertIn('flat', lines[0])
+
+    def test_surface_fit_without_regions_fits_each_zone_level(self):
+        outline = np.ones((6, 12), dtype=bool)
+        zz, xx = np.mgrid[0:6, 0:12]
+        rng = np.random.default_rng(2)
+        dsm = np.where(xx < 6, 41.0, 50.0).astype(float) + rng.normal(0, 0.2, xx.shape)
+        readable, zone, _levels, _axis, _dropped = FZ.assign_roof_zones(
+            dsm, outline, [41, 50], xx, zz, bucket=3, axis_deg=0.0,
+        )
+        clean, lines = FZ.fit_clean_heights(dsm, zone, readable, xx.astype(float), zz.astype(float), 0.0, None, 'a')
+        self.assertEqual(len(lines), 2)
+        self.assertLess(float(np.ptp(clean[readable & (xx < 6)])), 0.01)      # noise replaced by one level
+        self.assertLess(float(np.ptp(clean[readable & (xx >= 6)])), 0.01)
+        self.assertAlmostEqual(float(clean[readable & (xx < 6)][0]), 41.0, delta=0.3)
+
     def test_region_levels_are_whole_metres_and_merge_when_equal(self):
         # Two regions whose lidar eaves are 30.3 and 29.8 are the same 30 m zone, not a fractional step.
         outline = np.ones((8, 16), dtype=bool)

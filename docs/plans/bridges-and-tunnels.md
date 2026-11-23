@@ -64,9 +64,18 @@ and 7, which link to the accepted [layered-pass decisions](../adr/010-layered-pa
 and their structure-volume exception from ADR 009.
 Implementation of the decisions is the follow-up work below.
 
-## Draft follow-up A: bridge and tunnel evidence
+## Follow-up A: bridge and tunnel evidence (#450, implemented)
 
-**builderTask: false.** Depends on #380. Do not file yet.
+**builderTask: false.** Implemented in `lib/sources/structure_evidence.py`:
+`build_structures(ways, ground)` returns one record per mapped bridge or tunnel
+(id, kind, form, carrier, layer, centre line and ends, deck columns, touched
+cells, crossed ways, evidence refs and a `DeckHeight`). A deck height is
+`measured` (at least 8 lidar structure columns agreeing within 2 blocks),
+`inferred` (some, but too few or conflicting; the lowest is used) or `unknown`
+(none, no lidar, only a higher deck visible, or a tunnel bore). Tree and roof
+columns and the terrain beneath are never read as a deck. The underside assumes
+a 1-block deck. The footbridge (way 28019377) near MC 6872,-4194 is a recorded
+fixture: lidar shows no deck, so it is `unknown`. Original draft text follows.
 
 **Goal:** a deterministic evidence list for mapped bridges and tunnels, independent
 of route carrier. Read this design, the railway evidence types, vector-map provider

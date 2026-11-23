@@ -119,7 +119,7 @@ ground stale (task 285) until the ground is redone.
    python3 scripts/cell_registry.py --world <world> prepare --cell <neighbour> --apply --evidence-only
    ```
 
-   for every neighbour the feature touches. A plan stamped before raise can still refuse with `stale plan: journal geometry or planning assumptions changed` (re-plan); that is planning-revision staleness, not an evidence-facts bug.
+   for every neighbour the feature touches (a railway feature, which needs no aerial, adds `--feature railway_<tx>_<tz>`, also on the home cell's `prepare`). A plan stamped before raise can still refuse with `stale plan: journal geometry or planning assumptions changed` (re-plan); that is planning-revision staleness, not an evidence-facts bug.
 2. **Build roles** (features, trees, decor — not ghosts): resolve designer + builder before spawning anyone:
 
    ```bash

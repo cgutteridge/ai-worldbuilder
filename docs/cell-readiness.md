@@ -50,6 +50,14 @@ current evidence: `prepare --cell TX,TZ --apply --evidence-only` runs the same c
 terrain repairs, then journals a `readiness_evidence` note (policy and evidence identity, no
 plans). It records no feature plans, and a full validation whose evidence still matches also
 counts. The neighbour's own builds still need full validation.
+Evidence needs depend on the feature kind. Map query coverage and the lidar cache are always
+required. Aerial coverage is required except for a railway feature (`railway_<tx>_<tz>`,
+which reads no aerial imagery): its apply gate waives aerial in every cell it touches, the
+home cell included, and `prepare --cell TX,TZ --apply [--evidence-only] --feature railway_<tx>_<tz>`
+does the same for preparation (no early stop on aerial; the extract still runs). The waiver
+applies only when the build records `kind: railway` and the plan id is `railway_<tx>_<tz>` for
+a plan on that cell's journalled plan; ground, trees, decor, every other feature and a cell's
+own full builds keep requiring aerial. The table is `FEATURE_EVIDENCE` in `cell_readiness.py`.
 Every touched cell is checked, including neighbouring cells of a feature, except
 for leaf-only tree canopy overhang: that needs readiness only in the trunk-owning
 cell. All touched cells remain tracked for ownership, in-flight exclusion and undo.

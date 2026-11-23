@@ -93,7 +93,7 @@ A structure feature carrying a route through the ground, including its bore and 
 _Avoid_: buried road surface, tunnel ground pass
 
 **Crossing**:
-A feature where a road or path crosses a railway at the same level, including the shared surface and any evidenced crossing equipment.
+A feature where a mapped road crosses a railway at the same level, or where the crossing has a barrier, light or bell tag. It includes the shared surface and any evidenced equipment. A footpath or private crossing with none of those tags is not its own feature: the line keeps continuous rails and lays the path surface across them.
 _Avoid_: crossing layer, default-style crossing
 
 **Join**:

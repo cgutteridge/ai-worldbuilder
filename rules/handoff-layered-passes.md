@@ -141,6 +141,12 @@ LIDAR OBJECTS IN DECOR (#173)
     permanent furniture. Unknown kinds never authorize a build. Keep uncertain
     observations unresolved with unresolved_reason; do not guess a label from
     lidar shape or colour samples alone.
+  - The owner can mark a decor item as not real in the cell's
+    `reference/decor-furniture.json`. `rejected_items` is a list of
+    `{"cell": [x, z], "note": "..."}`. Each entry names one column inside the
+    false item (a shed, garage, table, bin, bench, or any later furniture or
+    outbuilding kind). The match is that column. The item is listed unresolved
+    with reason `owner: not real` and builds nothing.
   - One classified object places its kind's recipe at the observed column (the
     anchor) on the actual ground, subject to the usual paving, ownership, mask
     and clearance guards. A multi-block kind (`picnic_table`, `picnic_table_round`;
@@ -150,6 +156,11 @@ LIDAR OBJECTS IN DECOR (#173)
     must pass the guards and stand on one level (spread 0). If uneven, try the eight anchors within one block, then fill low columns at the original anchor with local surface material, never cutting and at most 2 blocks per column. Separate per-cell caps are ceil(30%) for 1-block fills and ceil(10%) for 2-block fills, each at least one, using final placed items as denominator and keeping smallest fills first. Report shifts, every fill, shares and refusals; hedges, fences and walls continue to follow terrain. See `docs/specs/decor-furniture-footprints.md` for the shared #444/#446 helper. The plan retains lidar_cells and lidar_height for
     inspection, and map, designer and photo furniture standing on a lump carries
     the same two hints; DSM height does not raise the ground or become a vehicle mesh.
+  - Sheds and garages use that same shift-and-fill helper, including a shed taken from a
+    mapped building outline. A move recomputes the cells, the door, the evidence cells and
+    the plot share. Fills stay at most 2 blocks under a column and use the local surface
+    block. Their 30% / 10% caps are a separate share from furniture: the two placers do not
+    keep one list. Steeper than 2 blocks is refused. Hedges, fences and walls are unchanged.
   - Barriers (map, designer, border) whose height is only the kind's default take
     it from lidar when at least half their columns stand 1-3 blocks above bare
     terrain (tree, roof and structure columns excluded): height_source 'lidar'.

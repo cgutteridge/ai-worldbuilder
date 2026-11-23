@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 import cellmath
-from cell_readiness import ReadinessPolicy
+from cell_readiness import ReadinessPolicy, feature_evidence_kind, needs_aerial
 
 
 def prepared_place_slug(cell: tuple[int, int]) -> str:
@@ -139,12 +139,17 @@ class LocalPreparation:
             lidar_ghost.ensure_cells(reg, [cell], apply=writer)
 
 
-def prepare_cell(reg, evidence, cell, *, apply=False, repairs=None, check_lock=None, evidence_only=False):
+def prepare_cell(reg, evidence, cell, *, apply=False, repairs=None, check_lock=None, evidence_only=False,
+                 feature=None):
     """Report or perform idempotent local preparation; re-read actual results after every step.
 
     ``evidence_only`` prepares a cross-cell feature's neighbour (task 292): the same coverage and
     terrain repairs, then a ``readiness_evidence`` note; it records no feature plans and validates
     none, so the cell's own builds still need a full prepare.
+
+    ``feature`` names a journalled railway feature this preparation serves (task 454): aerial
+    coverage is then neither required nor a reason to stop early, the same rule the apply gate
+    uses (``ReadinessPolicy.check``). Any other value leaves the default rule.
 
     Tests inject synthetic provider evidence/repairs and a lock assertion. Production
     callers use the existing site lock; the CLI claims/releases it around this call.
@@ -152,10 +157,11 @@ def prepare_cell(reg, evidence, cell, *, apply=False, repairs=None, check_lock=N
     from cell_registry import record_feature_candidates
     cell = tuple(cell)
     policy = ReadinessPolicy(reg, evidence)
+    aerial = needs_aerial(feature_evidence_kind(reg, feature))
     repairs = repairs or LocalPreparation(reg.root)
 
     def report():
-        result = policy.check(cell, require_validation=False, neighbour=evidence_only)
+        result = policy.check(cell, require_validation=False, neighbour=evidence_only, feature=feature)
         result['prepare_actions'] = []
         if result.get('clip_coverage', 1) < 1 and not reg.clip_coverage_dismissed(cell):
             result['prepare_actions'].append('extract full cell from local PBF (no download)')
@@ -181,7 +187,7 @@ def prepare_cell(reg, evidence, cell, *, apply=False, repairs=None, check_lock=N
     # Fail cheaply on missing downloads, holds, recovery or provider errors. A missing
     # map tree may be repaired by the local extractor, so its candidate error can wait.
     if ('clip_coverage' not in result or result.get('lidar_missing') or result['preflight_blockers']
-            or result.get('aerial_coverage', 0) < 1 or reg.cell(cell).hold or reg.cell(cell).in_flight):
+            or (aerial and result.get('aerial_coverage', 0) < 1) or reg.cell(cell).hold or reg.cell(cell).in_flight):
         return result
 
     def refresh():
@@ -209,7 +215,8 @@ def prepare_cell(reg, evidence, cell, *, apply=False, repairs=None, check_lock=N
             refresh()
         result = report()
         if result['ready']:
-            result = policy.validate_evidence(cell) if evidence_only else policy.validate(cell)
+            result = (policy.validate_evidence(cell, feature=feature) if evidence_only
+                      else policy.validate(cell, feature=feature))
             result['prepare_actions'] = []
         return result
     except (OSError, ValueError, LookupError, RuntimeError, ImportError) as exc:

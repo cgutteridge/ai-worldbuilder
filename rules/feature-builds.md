@@ -79,7 +79,7 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   block and slab) and one to three alternates, from the catalogue's `types`
   section. Types are generic, never tied to a place:
   `red_clay_tile` (cinnabar_brick, chosen by look; alt cut_copper, brick, mud_brick), `grey_slate`
-  (tuff_brick, chosen by look; alt deepslate_tile, deepslate_brick,
+  (deepslate_brick, chosen by look; alt deepslate_tile, tuff_brick,
   polished_deepslate), `grey_tile` (stone_brick; alt andesite,
   tuff), `brown_tile` (mud_brick; alt spruce, dark_oak), `weathered_copper`
   (weathered_cut_copper; alt oxidized_cut_copper, cut_copper) and `flat_deck`
@@ -224,7 +224,20 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   eave and a flat plateau stays flat (`roofs[label].flat_tol_m` sets the rise below which
   a zone stays flat; default 1.5, lower it for a low hip). Columns outside every region
   keep their lidar zone. An empty polygon (no readable columns) or overlapping polygons
-  refuse. `material_regions[].level` must name a declared or auto plateau.
+  refuse. `material_regions[].level` must name a declared or auto plateau. With `levels: auto` plus `regions`, auto plateaus no region-resolved zone uses are left out of the
+  ridge clip (the rise is limited to the gap to the next used level) so they cannot flatten a ridge; `material_regions`
+  may still name them.
+
+  Optional `zones[label].surface: "fit"` (pitched roofs only): replace the noisy lidar heights of each roof
+  zone with a fitted clean surface before the ridge logic, so noise, edge cells and canopy stop turning into
+  stairs and slabs. Each zone is fitted by the simplest of three shapes that explains its heights (RMS up to
+  0.4 m) without discarding more than 30% of its columns: `flat`, `plane` (one slope) or `gable` (two slopes
+  at a ridge across or along the axis). Edge columns more than 1 m off the fit are trimmed from the fit but
+  still take the fitted height. A zone is a `regions` polygon when regions are given (recommended: one region
+  per roof volume), otherwise the columns of one zone level, which can cut one roof into strips. A zone no
+  shape explains (a hip, a stepped roof) or with under 6 readable columns keeps its raw lidar heights and the
+  dry run says so. Shallow, noisy gables (about 0.2 m/m) can come out `flat`. Off by default. Dry run prints
+  one line per zone: `<label> region <i>: surface <shape>, rms <m> m, kept <n> of <m> columns`.
 
   Pipeline: 1-block-stair squaring (close then open, no fixed halo) → 5×5
   median DSM → snap to `levels` (or `"auto"` plateaus) → mode-filter →
@@ -296,7 +309,8 @@ is shared) and re-apply the same build name. Never stack `_b`/`_c` patch builds.
 A through railway is a named feature, `railway_<tx>_<tz>` (negative cell coordinates
 use the usual `m` prefix), containing its rails, ballast, formation, side slopes
 and low planting. It uses the ordinary feature journal, backup, ownership and
-undo paths. Junctions and service/decor lines remain outside this mechanism.
+undo paths. Service/decor lines remain outside this mechanism; junctions between
+through lines are laid by rule (below) and finished by a person.
 
 The per-cell proposal and preparation paths check the smallest complete railway
 cell extract first. They return immediately when it has no through line or when
@@ -304,7 +318,11 @@ a landed railway box already covers the whole cell. A partially covered boundary
 cell can start the next box. Planning uses whole, unclipped ways for a 2048 by
 2048 box centred on the starting cell, the explicit point and road extracts,
 cached lidar terrain/surface arrays and applicable joins from earlier features.
-There are no implicit downloads or live planning reads.
+There are no implicit downloads or live planning reads. Readiness for a railway
+needs map query coverage, the lidar cache and the terrain baseline in every cell it
+touches, but not aerial coverage (the planner reads no aerial); prepare a touched cell
+for it with `prepare --cell TX,TZ --apply --evidence-only --feature railway_<tx>_<tz>`
+(see `docs/cell-readiness.md`).
 
 Create a spec from those explicit local inputs:
 
@@ -338,10 +356,39 @@ on the feature's build entry. A join records rail Y, direction and track index;
 box cuts also record the next cell, constituent track way ids and step-spacing
 history. Continuations match those members and the directed boundary segment,
 because an extract can add member ways and change the aggregate line id or track
-ordering. The first uncovered rail must retain the recorded boundary level. The line leaves
-crossing/bridge/tunnel gaps empty for their own features. A road/path bridge over
+ordering. The first uncovered rail must retain the recorded boundary level. The line leaves a gap for a mapped-road level crossing, for any crossing with a
+barrier, light or bell tag, and for a bridge or tunnel that carries the rail.
+A footpath or private crossing with none of those tags is not a gap: the rails
+stay continuous and the line lays that path's surface across them
+(`railway_plan.crossing_is_feature`). A road/path bridge over
 the line is overhead evidence, not a railway gap; its deck is preserved and does
-not become planting.
+not become planting. Deck heights come from `lib/sources/structure_evidence.py`
+(`measured`, `inferred` or `unknown`; never the terrain beneath or tree columns
+over a deck); see `docs/plans/bridges-and-tunnels.md`. The planner takes them as
+`structures=` (`structure_evidence.by_osm_id`; `railway_build.py` builds them from the
+road and rail extracts). A measured underside replaces the lidar surface as the
+clearance ceiling. An unknown height, or an inferred one while
+`railway_plan.INFERRED_DECK_USABLE` is false, becomes an `overhead` gap (end records,
+`where` and `reason` for a human) and the rest of the corridor still plans. A usable
+height under 5 blocks of clearance still fails.
+
+**Junctions (#452).** Where line plans in one feature share rail columns, the planner
+(`railway_feature.plan_feature`, using `railway_plan.junction_gaps`) keeps the main
+line's rails: main is the plan with more tracks, then more rail columns, then the
+lowest `line_id`. Every other claimant of a column loses it, including a column that
+three lines share (the best ranked of them keeps it). Each side track's lost rail
+columns, plus any surviving rail run shorter than `railway_plan.JUNCTION_MIN_RUN`
+columns that has nothing to connect to (junction gaps or a dead end on both sides;
+runs beside a box join or a structure gap are kept), become a `junction` gap: `source`
+is the main line's id (joined with `+` if several), `where` is its first column, and
+`ends` carry rail Y, direction and track index like every other gap. The side line is
+re-planned with these gaps, so its profile, ground and planting already leave them
+empty. Columns that corridors write differently go to one owner (`share_footprints`):
+the plan with a rail there, else the main line. Fails loudly, with coordinates, when
+an overlap covers a box join or a line lies wholly inside the others. `build()` keeps
+refusing hand-made specs whose plans still share a rail column or write a shared column
+differently. Metadata lists each junction gap under `junctions` (side line, main line,
+`where`, `last`, ends) so a person can find and finish it.
 
 The feature reserves every written footprint column from later ground, trees
 and decor, including cuts below the old terrain. Ground must not refill above
@@ -357,3 +404,49 @@ rescans the plan and retries only mismatches, at most twice within the same begu
 entry and original backup. A persistent miss fails and leaves the entry available
 for normal recovery. `element_undo.py` and recorded-builder `reapply_feature.py`
 use the same feature paths.
+
+## Crossing, bridge and tunnel features
+
+A level crossing, a bridge and a tunnel share one spec header. The saved file
+is `site/builds/<kind>_<tx>_<tz>_<n>.json` (a negative cell coordinate uses the
+usual `m` prefix). `n` numbers the features that start in one cell. The schema
+and the builder live in `lib/builds/crossing_feature.py`.
+
+```sh
+python3 scripts/crossing_build.py --world WORLD PATH
+python3 scripts/crossing_build.py --world WORLD PATH --apply
+```
+
+The header is `kind` (`crossing`, `bridge` or `tunnel`), `name`, `cell`, `n`,
+exactly two `abutments`, and `evidence`. Each abutment names one landed line
+feature and the join records it must already hold: `line_id`, `source` (the
+crossing node or the bridge/tunnel ref), and `ends` with track index, the rail
+cell `at`, rail `level` and `direction` into the gap. The evidence map holds
+the tags the flags are checked against. `evidence.frames` holds the Street View
+frame ids for a later design; it may be empty in a synthetic spec.
+
+The builder reads those ends from the landed line features
+(`crossing_feature.read_joins`). It refuses, exit non-zero, and writes nothing
+while either abutment's feature is missing or undone (`NotReady`). A present
+feature whose recorded end does not match the spec is rejected the same way:
+nothing is written. Both ends may belong to one line feature. Bridge and tunnel
+stop there. Their geometry is not built.
+
+A crossing spec also carries `road` (way ids, a ground surface kind, and the
+columns to pave), `tracks` (ordered columns that connect the two ends of each
+track), and equipment only where the evidence tags say so. `barrier`, `light`
+and `bell` each repeat the tag value as `flag`. Barrier block ids are `blocks`
+(`bar`, `post`, or any part a position names). Light and bell each carry one
+`block`. Positions are explicit. Block ids are checked with
+`block_reference.known_block`; a barrier-vocabulary kind such as `iron_bars` or
+`plank_fence` resolves through `barrier_vocab` instead of a private table.
+There is no default style: a missing flag places nothing, and a flag that
+disagrees with the recorded map tag is rejected.
+
+The crossing lays the road surface across the rails at the recorded level, then
+places rails with `railway_plan.rail_rows` and `railway_feature.place_rails`
+(powered straight cells, torch two blocks below, plain corners). It journals
+the footprint, asks for a tiled structure backup, read-back with retry, and
+undoes as one feature. Only a mapped road, or a crossing with a barrier, light
+or bell tag, is this feature. A plain footpath crossing is the line's job, as
+above.

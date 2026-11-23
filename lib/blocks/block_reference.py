@@ -33,7 +33,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from script_env import ROOT  # noqa: E402
+from script_env import ROOT, TOOL_ROOT  # noqa: E402
 from surface_probe import PLANTS, short_id
 
 JAR = Path.home() / 'Library/Application Support/minecraft/versions/1.21.11/1.21.11.jar'
@@ -55,6 +55,31 @@ def is_partial(block: str) -> bool:
     """Whether a block is a plant or one of the reference's partial shapes."""
     name = short_id(block)
     return name in PLANTS or any(k in name for k in PARTIAL)
+
+
+_BLOCK_IDS = TOOL_ROOT / 'config' / 'minecraft-block-ids-26.2.txt'
+_known_ids: set[str] | None = None
+
+
+def known_block(block: str) -> bool:
+    """Whether ``block`` is in the vendored 26.2 blockstates list.
+
+    The list is ``config/minecraft-block-ids-26.2.txt``, the ids ``build_index``
+    describes. A ``minecraft:`` prefix and a ``[state]`` suffix are ignored.
+    This does not need the client jar.
+
+    @param block: block id
+    @returns: True when the id is in the vendored list
+    """
+    global _known_ids
+    if _known_ids is None:
+        _known_ids = {
+            line.removeprefix('minecraft:').strip()
+            for line in _BLOCK_IDS.read_text(encoding='utf-8').splitlines()
+            if line and not line.startswith('#')
+        }
+    name = str(block).strip().removeprefix('minecraft:').split('[', 1)[0]
+    return name in _known_ids
 
 
 def extract(jar: Path = JAR) -> int:

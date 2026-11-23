@@ -372,6 +372,7 @@ class OSMGround:
         self.marks: set = set()       # centre-line dash columns
         self.water: set = set()       # polygon natural=water only (pond candidates; #163)
         self.water_line: set = set()  # waterway line columns (streams); not pond candidates
+        self.open_paved: set = set()  # pedestrian-area and area:highway columns (plaza / paved open ground)
         self.water_refs: dict = {}    # (x, z) -> 'w<way id>' for polygon water (#163)
         self.bridge: set = set()      # columns of every mapped bridge, tunnel and layer!=0 way (deck | tunnel)
         self.deck: set = set()        # columns under a mapped bridge or raised way: the ground below is ground's (#298)
@@ -382,7 +383,7 @@ class OSMGround:
         self.fence: set = set()
         self.soft: set = set()        # mapped surface car park columns: only a sharp registered aerial lawn overrides tarmac (#338)
         self.parking_areas: list = []  # one column set per surface car park polygon (#336, bay lines)
-        self.parking_aisles: list = []  # {'points', 'half'} per service=parking_aisle centreline (#336)
+        self.parking_aisles: list = []  # mapped service=parking_aisle centrelines; bay lines (#449) do not read them
         self.trees: list = []         # (x, z) natural=tree points
         self.tree_rows: list = []     # natural=tree_row polylines as [(x, z), ...] in MC (#157)
         self.furniture: list = []     # (x, z, kind) street furniture from Point features (#127)
@@ -428,7 +429,9 @@ class OSMGround:
                 for q in cells:
                     self.water_refs[q] = ref
         elif t.get('highway') == 'pedestrian' or t.get('area:highway'):
-            self._put(poly_cells(polys), SURFACE_KIND.get(t.get('surface'), 'paving'), PRI['pedestrian'])
+            cells = poly_cells(polys)
+            self.open_paved |= cells
+            self._put(cells, SURFACE_KIND.get(t.get('surface'), 'paving'), PRI['pedestrian'])
         elif t.get('amenity') == 'parking' and t.get('parking') not in ('underground', 'multi-storey', 'rooftop'):
             # surface car park: tarmac (#338; a narrow exception to #158, which keeps land use out of ground paint)
             cs = poly_cells(polys)

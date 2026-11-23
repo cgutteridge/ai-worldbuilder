@@ -304,9 +304,9 @@
     },
     "grey_slate": {
       "slope": "pitched",
-      "family": "tuff_brick",
-      "alternates": ["deepslate_tile", "deepslate_brick", "polished_deepslate"],
-      "note": "Dark blue-grey natural or fibre-cement slate in neat courses, shown as tuff brick for its cool grey brick-course look (owner choice: by look, not by name); deepslate_tile or deepslate_brick for a darker slate."
+      "family": "deepslate_brick",
+      "alternates": ["deepslate_tile", "tuff_brick", "polished_deepslate"],
+      "note": "Dark blue-grey natural or fibre-cement slate in neat courses, shown as deepslate brick for its dark brick-course look (owner choice: by look, not by name); deepslate_tile, tuff_brick or polished_deepslate for a paler slate."
     },
     "grey_tile": {
       "slope": "pitched",

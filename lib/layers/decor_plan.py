@@ -14,6 +14,8 @@ Sources (cheapest first; later still listed when they add something new):
   * aerial dark-green thin strips standing free of buildings (lidar-confirmed when given)
   * designer ``reference/decor-furniture.json`` (and optional observations)
   * photo observations that name a kind but no coordinate → unresolved
+  * owner ``rejected_items`` in that file: a column inside a false furniture or
+    outbuilding item lists it unresolved (``owner: not real``) and it is not built
 """
 from __future__ import annotations
 
@@ -416,6 +418,33 @@ def _lidar_hints(items, hm, components) -> None:
                 item['lidar_height'] = _group_height(hm, group)
 
 
+def _apply_owner_rejections(items: Sequence[dict[str, Any]], rejected) -> None:
+    """Mark furniture and outbuildings that contain an owner veto column.
+
+    Barriers are left alone. The reason replaces any earlier unresolved reason:
+    the owner has said the item is not real.
+
+    @param items: decor plan items, mutated in place
+    @param rejected: owner veto entries (:func:`street_furniture.rejected_items`)
+    """
+    import street_furniture as sf
+
+    if not rejected:
+        return
+    for item in items:
+        if item.get('role') not in ('furniture', ob.KIND):
+            continue
+        reason = sf.owner_veto_reason(item, rejected)
+        if not reason:
+            continue
+        provenance = item.get(prov.PROVENANCE_KEY)
+        if isinstance(provenance, dict):
+            provenance['unresolved_reason'] = reason
+        else:
+            prov.attach_provenance(
+                item, source='inference', confidence='low', unresolved_reason=reason)
+
+
 def build_decor_plan(
     cell: tuple[int, int],
     *,
@@ -442,6 +471,7 @@ def build_decor_plan(
     furniture_avoid: set[tuple[int, int]] | None = None,
     water: set[tuple[int, int]] | None = None,
     district_profile: Mapping[str, Any] | None = None,
+    rejected_items: Sequence = (),
     evidence_ids: Sequence[str] = (),
     root=None,
 ) -> dict[str, Any]:
@@ -475,6 +505,8 @@ def build_decor_plan(
     @param carriageway: road columns no inferred furniture may stand on
     @param furniture_avoid: further columns inferred furniture skips (buildings, paths, water)
     @param water: mapped water columns; no lidar outbuilding candidate is proposed on them (#324)
+    @param rejected_items: owner vetoes (:func:`street_furniture.rejected_items`); a column inside
+        a furniture or outbuilding item lists it unresolved (``owner: not real``)
     @param district_profile: district profile for the cell; loaded from the world when omitted and
         any ways are given
     @param evidence_ids: default evidence ids for aerial-derived rows
@@ -660,11 +692,13 @@ def build_decor_plan(
     # A raised column already planned as a barrier is that barrier, not an unknown object.
     items.extend(o for o in object_items
                  if not all(tuple(c) in seen_barrier for c in o['lidar_cells']))
-    items.extend(_outbuilding_items(
+    outbuilding_items, door_targets = _outbuilding_items(
         cell, footprints=outbuilding_footprints, designer=designer_items, rise=lidar_rise,
         building_columns=building_columns if building_columns is not None else footprint,
         taken=object_columns, canopy=canopy, rgb=rgb, route=route,
-        plot_owner=plot_owner, evidence_ids=evidence_ids, root=root, water=water or set()))
+        plot_owner=plot_owner, evidence_ids=evidence_ids, root=root, water=water or set(),
+        rejected=rejected_items)
+    items.extend(outbuilding_items)
     for i, obs in enumerate(photo_observations):
         if obs.get('cell') and tuple(obs['cell']) in object_columns:
             continue
@@ -732,10 +766,16 @@ def build_decor_plan(
                 'building, path or water column': set(furniture_avoid or ()) | object_columns,
             })
         reserved['items'] = list(reserved['items']) + inferred
+    _apply_owner_rejections(reserved['items'], rejected_items)
     plan = {'cell': [int(cell[0]), int(cell[1])], 'items': reserved['items'],
             'reserved': {'openings': sorted([int(x), int(z)] for x, z in keep_clear),
                          'conflicts': reserved['conflicts']},
-            'frontages': [compact_frontage(f) for f in frontages or ()]}
+            'frontages': [compact_frontage(f) for f in frontages or ()],
+            # Dropped before the dry-run report: tuple keys are not written out.
+            'outbuilding_shift': {
+                'plot_owner': dict(plot_owner or {}),
+                'targets': [tuple(t) for t in door_targets],
+            }}
     if inference is not None:
         plan['furniture_inference'] = inference
     return plan
@@ -992,11 +1032,17 @@ def _outbuilding_items(
     evidence_ids: Sequence[str],
     root=None,
     water: set[tuple[int, int]] = frozenset(),
-) -> list[dict[str, Any]]:
+    rejected=(),
+) -> tuple[list[dict[str, Any]], list]:
     """Outbuilding plan items in evidence order: mapped, lidar blob, designer trace (#251).
 
     Mapped water columns never take a lidar blob (#324): the placer refuses them, so a blob
     there (a boat or pontoon on a river) would only show as an unresolved item.
+    ``rejected`` is the owner's veto list: a column inside an item lists that item unresolved.
+
+    @param rejected: owner veto entries (:func:`street_furniture.rejected_items`)
+    @returns: ``(items, door targets)``; the targets are the house and route columns a
+        shifted footprint uses to recompute its door
     """
 
     mapped_cols = {tuple(c) for f in footprints for c in f['cells']}
@@ -1004,14 +1050,14 @@ def _outbuilding_items(
     targets = sorted(houses | set(route))
     common = {'rise': rise, 'targets': targets, 'plot_owner': plot_owner}
     ring = {(x + a, z + b) for x, z in building_columns for a in (-1, 0, 1) for b in (-1, 0, 1)}
-    mapped = ob.mapped_items(footprints, evidence_ids=evidence_ids, root=root, **common)
+    mapped = ob.mapped_items(footprints, evidence_ids=evidence_ids, root=root, rejected=rejected, **common)
     lidar = ob.lidar_items(
         rise, exclude=ring | taken | set(water), canopy=canopy, rgb=rgb, cell_box=cellmath.bounds(cell),
-        evidence_ids=evidence_ids, root=root, targets=targets, plot_owner=plot_owner)
+        evidence_ids=evidence_ids, root=root, targets=targets, plot_owner=plot_owner, rejected=rejected)
     traced = ob.designer_items(
         [r for r in designer if r.get('kind') in ob.DESIGNER_KINDS],
-        default_evidence=evidence_ids, root=root, **common)
-    return ob.merge_sources(mapped, lidar, traced)
+        default_evidence=evidence_ids, root=root, rejected=rejected, **common)
+    return ob.merge_sources(mapped, lidar, traced), targets
 
 
 def reserve_openings(items: Sequence[dict[str, Any]], openings) -> dict[str, Any]:
