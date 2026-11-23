@@ -17,6 +17,7 @@ import numpy as np
 import feature_build as F
 import feature_spec as FS
 import house_build as H
+import land_use
 import typology_spec as T
 
 
@@ -95,7 +96,7 @@ def tearDownModule():
 class TypologySpecs(unittest.TestCase):
     """The three shapes the ticket names, plus a building the rules will not guess."""
 
-    def test_terrace_row_is_one_pitched_house_spec(self):
+    def test_terrace_row_uses_pair_roofs_and_party_wall_chimneys(self):
         for tag in ('house', 'terrace'):
             with self.subTest(tag=tag):
                 report = T.generate(house_row(tag, 3), STREET)
@@ -104,8 +105,15 @@ class TypologySpecs(unittest.TestCase):
                 spec = item['spec']
                 self.assertEqual(item['builder'], 'house_build')
                 self.assertEqual(set(spec['ways']), {'1', '2', '3'})
-                self.assertEqual(spec['groups'], [{'nos': ['a', 'b', 'c'], 'mode': 'group', 'front': 'S'}])
-                self.assertEqual(spec['roofs'], {'a': 'brick', 'b': 'brick', 'c': 'brick'})
+                self.assertEqual(spec['groups'], [
+                    {'nos': ['a', 'b'], 'mode': 'group', 'front': 'S'},
+                    {'nos': ['c'], 'mode': 'each', 'front': 'S'},
+                ])
+                self.assertEqual(spec['chimneys'], {
+                    'a': 'party_walls', 'b': 'party_walls', 'c': 'per_house',
+                })
+                self.assertEqual(spec['roofs']['a'], spec['roofs']['b'])
+                self.assertNotEqual(spec['roofs']['a'], spec['roofs']['c'])
                 self.assertEqual(
                     spec['roof_pitch'],
                     {'a': T.PITCHED_RISE, 'b': T.PITCHED_RISE, 'c': T.PITCHED_RISE},
@@ -113,7 +121,50 @@ class TypologySpecs(unittest.TestCase):
                 self.assertGreater(T.PITCHED_RISE, 0.5)
                 plan = plan_house(spec, {row['way_id']: row['cells'] for row in house_row(tag, 3)})
                 self.assertTrue(any('_stairs[' in state for state in plan.cells.values()))
+                pots = [s for s in plan.cells.values() if 'flower_pot' in s]
+                self.assertEqual(len(pots), 2)
 
+    def test_long_terrace_alternates_pair_roofs(self):
+        houses = house_row('house', 20)
+        report = T.generate(houses, STREET)
+        self.assertEqual(report['needs_designer'], [])
+        self.assertEqual(len(report['specs']), 1)
+        spec = report['specs'][0]['spec']
+        self.assertEqual(len(spec['groups']), 10)
+        self.assertTrue(all(g['mode'] == 'group' and len(g['nos']) == 2 for g in spec['groups']))
+        self.assertTrue(all(opt == 'party_walls' for opt in spec['chimneys'].values()))
+        families = land_use.terrace_roof_families('residential')
+        self.assertEqual(len(families), 2)
+        for i, group in enumerate(spec['groups']):
+            want = families[i % 2]
+            for no in group['nos']:
+                self.assertEqual(spec['roofs'][no], want, (i, no))
+            if i > 0:
+                prev = families[(i - 1) % 2]
+                self.assertNotEqual(want, prev)
+        footprints = {row['way_id']: row['cells'] for row in houses}
+        plan = plan_house(spec, footprints)
+        pots = [s for s in plan.cells.values() if 'flower_pot' in s]
+        self.assertEqual(len(pots), 10)
+
+    def test_rotated_terrace_row_keeps_the_recipe(self):
+        houses = [
+            building(
+                i + 1, rect(0, i * 5, 8, 5),
+                {'building': 'house', 'building:levels': '2'},
+            )
+            for i in range(4)
+        ]
+        street = [[(20.0, -10.0), (20.0, 40.0)]]
+        report = T.generate(houses, street)
+        self.assertEqual(report['needs_designer'], [])
+        spec = report['specs'][0]['spec']
+        self.assertEqual(len(spec['groups']), 2)
+        self.assertEqual(spec['groups'][0]['mode'], 'group')
+        self.assertIn(spec['groups'][0]['front'], 'NSEW')
+        plan = plan_house(spec, {row['way_id']: row['cells'] for row in houses})
+        pots = [s for s in plan.cells.values() if 'flower_pot' in s]
+        self.assertEqual(len(pots), 2)
     def test_semi_detached_pair_keeps_separate_roofs(self):
         for tag in ('house', 'semidetached_house'):
             with self.subTest(tag=tag):

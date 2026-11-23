@@ -5,6 +5,10 @@ No model chooses a design. A footprint of any orientation is taken as drawn
 (the builder fits it); a sliver or a multi-part shape comes back as needs-designer.
 House tags (terrace, semi-detached, detached, or a plain
 house whose shared walls make the row obvious) become one house_build spec.
+A terrace row uses the terrace recipe (#441): roof units per consecutive pair
+(mode group), a leftover house alone (mode each), ``chimneys`` party_walls on
+each pair (per_house on a leftover), and roof families alternating from the
+class ``terrace_roofs`` palette when set. Semi and detached keep mode each.
 Any other class the building's own tags name becomes a minimal feature_build
 spec, for example a shop with flats above. Missing tags, an odd footprint, or
 a class the tags do not name is reported with a reason and not guessed.
@@ -36,7 +40,6 @@ from pathlib import Path
 import land_use
 import terrace_body
 from roof_material import load_catalogue, normalise_material, roof_blocks
-
 # house_build walls run six blocks, two storeys of three. It cannot say otherwise.
 HOUSE_STOREYS = 2
 STOREY_M = 3.0
@@ -698,13 +701,16 @@ def _emit(group: list[dict], axis: str | None, streets) -> dict:
     note = _note(ordered, phrase)
     if ordered[0]['path'] == 'house':
         pitch = PITCHED_RISE if ordered[0]['form'] in PITCHED_FORMS else FLAT_RISE
+        if kind == 'terrace':
+            return {'builder': 'house_build', 'spec': _terrace_spec(
+                name, note, ordered, ways, labels, front, pitch)}
         spec = {
             'name': name,
             'notes': note,
             'ways': ways,
             'roofs': {row['label']: row['family'] for row in ordered},
             'roof_pitch': {row['label']: pitch for row in ordered},
-            'groups': [{'nos': labels, 'mode': 'group' if kind == 'terrace' else 'each', 'front': front}],
+            'groups': [{'nos': labels, 'mode': 'each', 'front': front}],
         }
         return {'builder': 'house_build', 'spec': spec}
     if ordered[0]['path'] == 'body':
@@ -722,6 +728,44 @@ def _emit(group: list[dict], axis: str | None, streets) -> dict:
         'wall': ordered[0]['wall'],
     }
     return {'builder': 'feature_build', 'spec': spec}
+
+
+def _terrace_spec(
+        name: str, note: str, ordered: list[dict], ways: dict, labels: list[str],
+        front: str, pitch: float) -> dict:
+    """House_build terrace recipe: pair roof units, party-wall chimneys, alternating colours (#441).
+
+    Consecutive houses share one group roof (mode ``group``) with ``chimneys``
+    ``party_walls``. A leftover odd house is mode ``each`` with ``per_house``.
+    Roof families cycle the class ``terrace_roofs`` palette per pair; when that
+    field is absent every house keeps the row's ordinary family.
+    """
+    families = land_use.terrace_roof_families(ordered[0]['cls']) or [ordered[0]['family']]
+    groups = []
+    roofs = {}
+    chimneys = {}
+    for pair_i, start in enumerate(range(0, len(ordered), 2)):
+        pair = ordered[start:start + 2]
+        nos = [row['label'] for row in pair]
+        family = families[pair_i % len(families)]
+        for row in pair:
+            roofs[row['label']] = family
+        if len(pair) == 2:
+            groups.append({'nos': nos, 'mode': 'group', 'front': front})
+            for no in nos:
+                chimneys[no] = 'party_walls'
+        else:
+            groups.append({'nos': nos, 'mode': 'each', 'front': front})
+            chimneys[nos[0]] = 'per_house'
+    return {
+        'name': name,
+        'notes': note,
+        'ways': ways,
+        'roofs': roofs,
+        'roof_pitch': {label: pitch for label in labels},
+        'groups': groups,
+        'chimneys': chimneys,
+    }
 
 
 def _body_spec(name: str, note: str, ordered: list[dict], ways: dict, front: str) -> dict:
