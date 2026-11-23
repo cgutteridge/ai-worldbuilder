@@ -213,6 +213,54 @@ class TestPlaceFurniture(unittest.TestCase):
         for dy, block in sf.recipe('street_lamp'):
             self.assertEqual(found[(10, self.surface_y + dy, 20)], block)
 
+    def test_owner_veto_builds_nothing_for_each_furniture_kind(self):
+        kinds = list(sf.KINDS)
+        anchors = [(20 + i * 4, 24) for i in range(len(kinds))]
+        paving = {(x + dx, z + dz) for x, z in anchors for dx in range(-1, 2) for dz in range(-1, 2)}
+        live = {}
+        for x, z in paving:
+            live[(x, self.surface_y, z)] = 'minecraft:light_gray_concrete'
+            for dy in range(1, 5):
+                live[(x, self.surface_y + dy, z)] = 'minecraft:air'
+        world = mock.Mock()
+        world.block = lambda x, y, z: live.get((x, y, z), 'minecraft:air')
+
+        def surface_y(world, x, z):
+            if (x, z) not in paving:
+                return None
+            return (self.surface_y, 'light_gray_concrete')
+
+        def place(items, rejected):
+            with mock.patch('decor_layer.column_ground_kind',
+                            side_effect=lambda w, x, z, hm=None: 'paving' if (x, z) in paving else None), \
+                    mock.patch('surface_probe.surface_y', surface_y):
+                return dl.place_furniture(
+                    (0, 0), items, world, way=set(), near1=set(), owned=set(), masked=set(),
+                    rejected_items=rejected)
+
+        items = [{'x': x, 'z': z, 'kind': kind, 'source': 'map'}
+                 for (x, z), kind in zip(anchors, kinds)]
+        found, report, unplaced = place(items, [])
+        self.assertEqual(unplaced, [])
+        self.assertEqual({r['kind'] for r in report}, set(kinds))
+        self.assertTrue(found)
+
+        outside = [{'cell': [x + 2, z], 'note': 'outside'} for (x, z), kind in zip(anchors, kinds)]
+        found, report, unplaced = place(items, outside)
+        self.assertEqual(unplaced, [])
+        self.assertEqual({r['kind'] for r in report}, set(kinds))
+
+        rejected = []
+        for (x, z), kind in zip(anchors, kinds):
+            column = [x + 1, z] if kind in sf.FOOTPRINTS else [x, z]
+            rejected.append({'cell': column, 'note': kind})
+        found, report, unplaced = place(items, rejected)
+        self.assertEqual(found, {})
+        self.assertEqual(report, [])
+        self.assertEqual(
+            {(u['kind'], u['provenance']['unresolved_reason']) for u in unplaced},
+            {(kind, sf.OWNER_NOT_REAL) for kind in kinds})
+
 
 class TestFurnitureByProvenance(unittest.TestCase):
     """#260: the decor report counts furniture by provenance source; inferred never reads as mapped."""
