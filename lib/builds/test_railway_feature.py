@@ -10,8 +10,12 @@ from unittest import mock
 
 import numpy as np
 
+import cellmath
 import railway_feature as F
-from railway_evidence import Line, LevelCrossing
+import railway_plan as R
+import structure_evidence as se
+import structure_fixtures as fixtures
+from railway_evidence import Line, LevelCrossing, Way, build_lines, classify
 from journal_testkit import FakePaced, JournalWorld, LiveApplyCase
 from site_kit import Plan
 
@@ -218,6 +222,81 @@ class TestRailwaySpec(unittest.TestCase):
             raw['plans'][0]['rails'][0][4] = 'minecraft:air'
             (folder/(raw['name']+'.json')).write_text(json.dumps(raw))
             self.assertTrue(any(r['id'] == 'invalid-spec:'+raw['name'] for r in check_feature_specs(jw.reg, jw.root)))
+
+
+class TestRailwayDeckGap(unittest.TestCase):
+    """The footbridge near MC 6872,-4194 (way 28019377): lidar gives no deck height (#451)."""
+
+    def setUp(self):
+        data = fixtures.load_footbridge()
+        self.ground, self.roads = data['ground'], data['roads']
+        self.ways = [Way(w['osm_id'], classify(w['tags']), tuple(map(tuple, w['points'])),
+                         tuple(w['tags'].items())) for w in data['rail_ways']]
+        self.lines = build_lines(self.ways, overhead=self.roads)
+        self.cell = cellmath.cell_of(6875, -4195)
+        rails = [{'osm_id': w.osm_id, 'tags': dict(w.tags), 'points': list(w.points)}
+                 for w in self.ways]
+        self.structures = se.by_osm_id(se.build_structures(self.roads + rails, self.ground))
+
+    def test_both_lines_pass_under_the_footbridge(self):
+        self.assertEqual(len(self.lines), 2)
+        for line in self.lines:
+            self.assertEqual([o.osm_id for o in line.overhead], [fixtures.FOOTBRIDGE_ID])
+
+    def test_without_deck_evidence_the_corridor_is_refused_as_in_the_trial(self):
+        for line in self.lines:
+            with self.assertRaisesRegex(ValueError, 'less than 5 blocks rail clearance'):
+                F.plan_feature([line], self.ground, self.cell)
+
+    def test_unknown_footbridge_deck_is_a_gap_and_the_rest_of_the_corridor_plans(self):
+        raw = F.plan_feature(self.lines, self.ground, self.cell, structures=self.structures)
+        self.assertEqual(len(raw['plans']), 2)
+        for plan in raw['plans']:
+            self.assertEqual(plan['failures'], [])
+            self.assertGreater(len(plan['rails']), 200)
+            self.assertEqual([d['status'] for d in plan['decks']], ['unknown'])
+            self.assertEqual(sorted(g['track_index'] for g in plan['gaps']), [0, 1])
+            for gap in plan['gaps']:
+                self.assertEqual((gap['kind'], gap['source']), ('overhead', fixtures.FOOTBRIDGE_ID))
+                self.assertEqual(len(gap['ends']), 2)
+                self.assertEqual(len({e['level'] for e in gap['ends']}), 1)
+                self.assertTrue(abs(gap['where'][0] - 6866) <= 12 and abs(gap['where'][1] + 4196) <= 6)
+        wanted = {(6872, -4194), (6875, -4193)}
+        gap_columns = {tuple(c) for plan in raw['plans'] for g in plan['gaps'] for c in g['columns']}
+        self.assertTrue(wanted <= gap_columns)
+        placed = {(r[0], r[2]) for plan in raw['plans'] for r in plan['rails']}
+        self.assertFalse(placed & gap_columns)
+
+    def test_spec_with_deck_gaps_round_trips_and_builds_nothing_in_the_gap(self):
+        raw = json.loads(json.dumps(
+            F.plan_feature(self.lines, self.ground, self.cell, structures=self.structures)))
+        spec = F.load_spec_dict(raw)
+        plan = F.build(spec)
+        gap_columns = {tuple(c) for p in spec['plans'] for g in p['gaps'] for c in g['columns']}
+        self.assertFalse({(x, z) for x, _y, z in plan.cells} & gap_columns)
+        meta = F.metadata(spec)
+        self.assertEqual({g['source'] for g in meta['gaps']}, {fixtures.FOOTBRIDGE_ID})
+        self.assertTrue(all(len(g['ends']) == 2 for g in meta['gaps']))
+
+    def test_measured_footbridge_deck_would_plan_through_with_its_clearance(self):
+        columns = {tuple(p) for line in self.lines for o in line.overhead for p in o.deck}
+        ground = {**self.ground, 'h': self.ground['h'].copy(), 'kind': self.ground['kind'].copy()}
+        for x, z in columns:
+            ground['h'][x - ground['x0'], z - ground['z0']] = 30
+            ground['kind'][x - ground['x0'], z - ground['z0']] = 4
+        rails = [{'osm_id': w.osm_id, 'tags': dict(w.tags), 'points': list(w.points)} for w in self.ways]
+        evidence = se.by_osm_id(se.build_structures(self.roads + rails, ground))
+        self.assertEqual(evidence[fixtures.FOOTBRIDGE_ID].height.status, 'measured')
+        raw = F.plan_feature(self.lines, ground, self.cell, structures=evidence)
+        self.assertTrue(all(p['gaps'] == [] and p['failures'] == [] for p in raw['plans']))
+        low = {k: v for k, v in ground.items()}
+        low['h'] = ground['h'].copy()
+        for x, z in columns:
+            low['h'][x - ground['x0'], z - ground['z0']] = 19
+        evidence = se.by_osm_id(se.build_structures(self.roads + rails, low))
+        self.assertEqual(evidence[fixtures.FOOTBRIDGE_ID].height.status, 'measured')
+        with self.assertRaisesRegex(ValueError, 'less than 5 blocks rail clearance'):
+            F.plan_feature(self.lines, low, self.cell, structures=evidence)
 
 
 class TestRailwayApply(LiveApplyCase):

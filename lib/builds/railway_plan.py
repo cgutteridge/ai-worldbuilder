@@ -6,7 +6,11 @@ indexed [x, z]: ``terrain`` (DTM block Y), ``h`` (surface block Y), optional
 ``have``, ``kind`` (4 means structure), ``supports`` (structure piers), and
 ``solid`` (solid material below terrain; defaults true). ``deck_y`` may give
 an overhead deck's underside; otherwise h is the available height evidence.
-All arrays cover the same rectangle. Missing/NaN terrain is a reported failure.
+``structures`` (optional, ``structure_evidence.by_osm_id``) is the deck
+evidence for the line's overhead spans: a measured underside replaces h as
+the clearance ceiling, and a span whose deck height is unknown (or inferred
+while :data:`INFERRED_DECK_USABLE` is false) becomes an ``overhead`` gap with
+end records for a human, never a failure. All arrays cover the same rectangle. Missing/NaN terrain is a reported failure.
 
 Rail tuples are [x, rail_y, z, shape, full_block_state]; columns are
 [x, z, original_ground_y, formation_y, bed|slope]. ``surfaces`` gives
@@ -41,6 +45,12 @@ BED_RADIUS = 2.3
 SLOPE_RATIO = 2.0
 SLOPE_MAX = 40
 RAIL_CLEARANCE = 5
+# Deck-height policy for an overhead span whose lidar height is only inferred
+# (too few or conflicting structure columns). False: leave a gap for a human.
+# True: trust the inferred underside; if it leaves under RAIL_CLEARANCE the
+# corridor still fails loudly. A measured height is always trusted, and an
+# unknown height is always a gap.
+INFERRED_DECK_USABLE = False
 
 
 def snap_track(points: Sequence[Sequence[float]]) -> list[tuple[int, int]]:
@@ -176,9 +186,69 @@ def _clip(path, box, entry, centre):
     return path[a:b], before, after, None
 
 
-def _gaps(line, paths, roads):
-    """Gap intervals in snapped path indices, with source ids for integration."""
+def deck_evidence(line, structures, inferred_usable=None):
+    """Clearance ceilings and unknown decks for a line's overhead spans.
+
+    @param line: line whose ``overhead`` spans are looked up by way id
+    @param structures: ``structure_evidence.by_osm_id`` mapping, or None for no evidence
+    @param inferred_usable: trust an inferred height; defaults to :data:`INFERRED_DECK_USABLE`
+    @returns: ``(undersides, decks)``: ``{(x, z): underside Y}`` over usable decks, and a
+        JSON-able report per span with ``osm_id``, ``status``, ``underside``, ``usable`` and ``reason``
+    """
+    usable_inferred = INFERRED_DECK_USABLE if inferred_usable is None else inferred_usable
+    undersides, report = {}, []
+    if structures is None:
+        return undersides, report
+    for span in line.overhead:
+        record = structures.get(span.osm_id)
+        if record is None:
+            status, under, usable, reason = 'unknown', None, False, 'no structure evidence for this deck'
+        else:
+            height = record.height
+            status, under, reason = height.status, height.underside, height.reason
+            usable = under is not None and (status == 'measured' or (status == 'inferred' and usable_inferred))
+            if status == 'inferred' and not usable:
+                reason = 'inferred height is not trusted (INFERRED_DECK_USABLE): ' + reason
+        report.append({'osm_id': span.osm_id, 'status': status, 'underside': under,
+                       'usable': usable, 'reason': reason})
+        if usable:
+            for p in span.deck:
+                undersides[p] = min(under, undersides.get(p, under))
+    return undersides, report
+
+
+def _overhead_gaps(line, paths, decks):
+    """Gaps under overhead decks whose height cannot be used, merged when they touch."""
     result = [[] for _ in paths]
+    for deck in decks:
+        if deck['usable']:
+            continue
+        for span in (s for s in line.overhead if s.osm_id == deck['osm_id']):
+            for ti, path in enumerate(paths):
+                inside = [i for i, p in enumerate(path) if p in span.deck]
+                for i in inside:
+                    last = result[ti][-1] if result[ti] else None
+                    if last and last['source'] == deck['osm_id'] and i <= last['end'] + 2:
+                        last['end'] = i
+                    else:
+                        result[ti].append({'kind': 'overhead', 'source': deck['osm_id'], 'start': i,
+                                           'end': i, 'deck': deck['status'], 'reason': deck['reason']})
+    for ti, intervals in enumerate(result):
+        merged = []
+        for gap in sorted(intervals, key=lambda g: (g['start'], g['end'])):
+            if merged and gap['start'] <= merged[-1]['end'] + 2:
+                merged[-1]['end'] = max(merged[-1]['end'], gap['end'])
+                if gap['source'] not in merged[-1]['source'].split('+'):
+                    merged[-1]['source'] += '+' + gap['source']
+            else:
+                merged.append(gap)
+        result[ti] = merged
+    return result
+
+
+def _gaps(line, paths, roads, decks=()):
+    """Gap intervals in snapped path indices, with source ids for integration."""
+    result = _overhead_gaps(line, paths, decks)
     for crossing in line.crossings:
         ti = crossing.track_index
         if ti >= len(paths) or not paths[ti]:
@@ -356,6 +426,7 @@ def plan_line(
     road_surfaces: Mapping[tuple[int, int], str] | None = None,
     min_step_run: int = RAIL_MIN_STEP_RUN, max_deviation: int = RAIL_MAX_DEVIATION,
     cell_size: int | None = None,
+    structures: Mapping | None = None, inferred_deck_usable: bool | None = None,
 ) -> dict:
     """Plan one box of a single/paired through line; report unbuildable tracks.
 
@@ -368,6 +439,8 @@ def plan_line(
     @param min_step_run: positive minimum number of rail cells between unit steps
     @param max_deviation: maximum formation-height departure from DTM under a track
     @param cell_size: explicit coverage-grid size, or cellmath's configured size
+    @param structures: deck evidence by way id (see :func:`deck_evidence`); None keeps the lidar surface as ceiling
+    @param inferred_deck_usable: trust an inferred deck height; defaults to :data:`INFERRED_DECK_USABLE`
     @returns: JSON-able placement lists, profiles, gaps, joins and explicit failures
     """
     if (not isinstance(min_step_run, int) or isinstance(min_step_run, bool) or min_step_run < 1
@@ -380,7 +453,7 @@ def plan_line(
            centre[0] + PLANNER_BOX // 2 - 1, centre[1] + PLANNER_BOX // 2 - 1]
     plan = dict(line_id=line.id, box=box, min_step_run=min_step_run, max_deviation=max_deviation,
                 rails=[], torches=[], torch_supports=[], columns=[], surfaces=[], planting=[],
-                tracks=[], gaps=[], joins=[], failures=[])
+                tracks=[], gaps=[], joins=[], failures=[], decks=[])
 
     def fail(where, reason):
         plan['failures'].append({'where': list(where), 'reason': reason})
@@ -413,7 +486,8 @@ def plan_line(
         paths.append(path)
         previous_cells.append(before)
         next_cells.append(nxt)
-    gaps = _gaps(line, paths, crossing_roads or {})
+    under, plan['decks'] = deck_evidence(line, structures, inferred_deck_usable)
+    gaps = _gaps(line, paths, crossing_roads or {}, plan['decks'])
     heights = []
     for ti, path in enumerate(paths):
         samples = [_ground(ground, p) for p in path]
@@ -478,7 +552,7 @@ def plan_line(
             structure = _sample(ground, 'kind', p, 0) == 4
             if p in deck or structure:
                 deck.add(p)
-                ceiling = _sample(ground, 'deck_y', p, _sample(ground, 'h', p))
+                ceiling = under[p] if p in under else _sample(ground, 'deck_y', p, _sample(ground, 'h', p))
                 if ceiling is None or ceiling - (level + 1) < RAIL_CLEARANCE:
                     blocked = (p, 'overhead deck leaves less than 5 blocks rail clearance')
                     break
@@ -516,6 +590,7 @@ def plan_line(
                     ends.append({'track_index': ti, 'at': list(path[index]), 'level': levels[index] + 1,
                                  'direction': _direction(path[index], neighbour)})
             plan['gaps'].append({**gap, 'track_index': ti, 'ends': ends,
+                                 'where': list(path[gap['start']]),
                                  'columns': [list(p) for p in path[gap['start']:gap['end'] + 1]]})
         steps = [i for i in range(1, len(path)) if levels[i] != levels[i - 1]]
         for side, index, nxt in (('end', len(path) - 1, after), ('start', 0, before)):

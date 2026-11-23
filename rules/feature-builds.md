@@ -341,7 +341,15 @@ because an extract can add member ways and change the aggregate line id or track
 ordering. The first uncovered rail must retain the recorded boundary level. The line leaves
 crossing/bridge/tunnel gaps empty for their own features. A road/path bridge over
 the line is overhead evidence, not a railway gap; its deck is preserved and does
-not become planting.
+not become planting. Deck heights come from `lib/sources/structure_evidence.py`
+(`measured`, `inferred` or `unknown`; never the terrain beneath or tree columns
+over a deck); see `docs/plans/bridges-and-tunnels.md`. The planner takes them as
+`structures=` (`structure_evidence.by_osm_id`; `railway_build.py` builds them from the
+road and rail extracts). A measured underside replaces the lidar surface as the
+clearance ceiling. An unknown height, or an inferred one while
+`railway_plan.INFERRED_DECK_USABLE` is false, becomes an `overhead` gap (end records,
+`where` and `reason` for a human) and the rest of the corridor still plans. A usable
+height under 5 blocks of clearance still fails.
 
 The feature reserves every written footprint column from later ground, trees
 and decor, including cuts below the old terrain. Ground must not refill above
