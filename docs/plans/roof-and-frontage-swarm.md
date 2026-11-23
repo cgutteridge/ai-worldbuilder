@@ -50,15 +50,14 @@ The tracker records the hard order as blockers: #431 after #457; #459 after #455
 #436, #455, #456 and #457; #460 after #434. It does **not** record the wave 2 file overlaps, so `tasks.mjs list
 --ready` shows #455 and #456 as ready now. Dispatch from this table, not from `list --ready`.
 
-## Owner decision before dispatching #434
+## #434 scope (owner decision, 2026-11-23)
 
 `pitched_roof_states` and `align_stair_shapes` also serve `house_build` (`lib/builds/house_build.py` about lines
-772, 778 and 871), and the owner says the house rim rule (`roof_octant.RIM_OPTIONS`) over-applies too. Ask the owner
-which scope #434 takes, and put the answer in its brief:
-
-- **Feature roofs only, opt-in**: a new rule behind a spec key; houses unchanged; a house fix becomes its own task.
-- **Default for feature and house roofs**: existing builds change; the worker also dry-runs a house plan and runs the
-  `house_build` tests, and the change needs the owner's in-game check on a house as well as Papa John's.
+772, 778 and 871), and the owner says the house rim rule (`roof_octant.RIM_OPTIONS`) over-applies too. Decided:
+**#434 is feature roofs only, opt-in** — the new rule sits behind a spec key, and house roofs and existing feature
+builds do not change. Put this in the #434 brief. Making the rule the default, house roofs included, is task #462
+("Roof stairs and blocks: make the #434 feature-roof rule the default, house roofs included"), blocked by #434; it
+is not part of this swarm.
 
 ## Owner steers (apply to every task)
 
@@ -90,16 +89,15 @@ Commits run the full suite, which is single-flight under the git common dir: if 
 wait for no `scripts/run_tests.py` process and retry (a small retry loop works). Do not run `git merge main` on a
 branch when `main` changed `tasks/`: the hook refuses a merge commit carrying tracker edits; `git rebase main` instead.
 Document every new spec key in `rules/feature-builds.md`; add a test through `Build` (`feature_build`) and not only
-the pure function; keep new options opt-in so existing builds do not change (unless the owner chose otherwise for
-#434). Linked worktrees read the main checkout's `worlds/`, so world specs resolve as usual. Run the task's dry run
+the pure function; keep new options opt-in so existing builds do not change. Linked worktrees read the main checkout's `worlds/`, so world specs resolve as usual. Run the task's dry run
 below and report counts; no live apply from a worker.
 
 Dry run per task (add it to that task's brief):
 
 - #434: `python3 scripts/feature_build.py --world southampton-build site/builds/w149814013.json` (Papa John's) and
   the same for `site/builds/w122706803.json` (Xionqi Hotpot, the task's original case), then `scripts/roof_lint.py`
-  on both; report shape and facing mismatches and isolated interior steps before and after. If the house path
-  changes, also a house plan dry run and the `house_build` tests.
+  on both; report shape and facing mismatches and isolated interior steps before and after. Also run the
+  `house_build` tests to show house roofs are unchanged.
 - #436: the Papa John's spec above and two or three rule-built parade shops in cell 51,-37; report door floor Y
   against the pavement and footprint ground.
 - #457: `python3 scripts/typology_spec.py --world southampton-build --ways 149814018` (front and body storeys), and
@@ -118,7 +116,7 @@ Dry run per task (add it to that task's brief):
 2. Check the model gate (`docs/agents/model-and-effort.md`) before each dispatch. #434 (complexity `l`) and #436's
    diagnosis are stretch tasks: ask the owner before raising model or effort. #459 is a builder task and needs an
    eligible runner (`tasks.mjs check-run 459`).
-3. Settle the #434 scope with the owner (section above) before dispatching it.
+3. Copy the #434 scope (section above) into its brief.
 4. Claim with `scripts/tasks.mjs status <id> doing ...` on `main`; commit tracker changes immediately.
 5. For each returned branch run the ship-branch loop (tests, Sonnet read-only review, fix blockers, cap 3, then
    `python3 scripts/ship_branch.py merge <branch>`). Reviewers keep catching the same things: a new option breaking a
