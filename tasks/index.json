@@ -153,18 +153,7 @@
     
     
     
-    {
-      "id": 402,
-      "title": "Split ground_layer into a layer-common module and ground dressing",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [
-        
-      ],
-      "builderTask": false,
-      "notes": "Housekeeping review ticket T12. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T12' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: medium; complexity: m\n- Scope: 1.12 rows (a) and (b). Retarget the test patches of `neighbour_owned_states`, `load_masked_positions`, `owned_air_ceilings` and `ignored_builds`. Sequence against 318 and 360.\n- Check: golden ground plans for fixture cells are byte-identical. No other module imports helpers from `ground_layer`.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process.\nBlocked by: T10 (#400) because it moves plan_name, which the place-names ticket rewrites."
-    },
+    
     
     
     
