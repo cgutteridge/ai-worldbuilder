@@ -31,7 +31,7 @@ PRIVATE_SURFACES = ('grass', 'paving', 'keep')
 OPENINGS = ('door_route', 'street_gate', 'none')
 # Optional row columns beyond the required ones. Add a new per-class key here (and its checks in
 # validate_table) so an unknown key is still refused; absent or null means "infer nothing".
-OPTIONAL_COLUMNS = ('surface', 'street_face', 'trees', 'ground_texture', 'woodland_decor')
+OPTIONAL_COLUMNS = ('surface', 'street_face', 'trees', 'ground_texture', 'woodland_decor', 'body')
 SURFACE_KEYS = ('unmapped_paving', 'path_widen')
 # Standing height, in metres, for the lidar source and the lines source (#317, #368).
 # The gate and the hedge/belt reader share this one value.
@@ -157,6 +157,7 @@ def validate_table(doc: dict) -> dict:
                     seen_area[(key, value)] = cid
         fr = row['frontage']
         _validate_street_face(cid, row.get('street_face'))
+        _validate_body(cid, row.get('body'))
         for col in ('inference', 'requires', 'boundary', 'private_surface', 'opening'):
             if col not in fr:
                 raise TableError(f'{cid}: frontage is missing {col!r}')
@@ -625,6 +626,41 @@ def classify_column(hit: tuple | None, *, checked: bool) -> dict:
     if hit:
         return {'class': hit[0], 'reason': f'{hit[2]}_polygon', 'ref': hit[1]}
     return _unknown('unmapped' if checked else 'not_checked')
+
+
+BODY_KEYS = ('front_depth', 'attic_rise_m', 'min_rise_m')
+
+
+def _validate_body(cid: str, body) -> None:
+    """Check a class's optional ``body`` recipe (the terrace-house body of ``lib/builds/terrace_body.py``).
+
+    Null or absent means the class builds no pitched body from lidar. A map sets how deep the one-storey
+    front strip is (columns), how far the lidar ridge must stand above the eave to leave room for dormers,
+    how far above it to read as pitched at all.
+    """
+    if body is None:
+        return
+    if not isinstance(body, dict) or set(body) - set(BODY_KEYS):
+        raise TableError(f'{cid}: body must be null or a map with keys from {BODY_KEYS}')
+    depth = body.get('front_depth', 0)
+    if isinstance(depth, bool) or not isinstance(depth, int) or not 0 <= depth <= 8:
+        raise TableError(f'{cid}: body.front_depth must be a whole number of columns 0..8')
+    for key in ('attic_rise_m', 'min_rise_m'):
+        value = body.get(key, 0)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 20:
+            raise TableError(f'{cid}: body.{key} must be a height in metres 0..20')
+
+
+def body_recipe(cls: str) -> dict | None:
+    """The class's terrace-house body recipe with defaults filled, or None when it has none.
+
+    @param cls: class id; unknown ids use the ``unknown`` row
+    @returns: ``{front_depth, attic_rise_m, min_rise_m}`` or None
+    """
+    body = defaults(cls).get('body')
+    if body is None:
+        return None
+    return {'front_depth': 0, 'attic_rise_m': 3.0, 'min_rise_m': 1.5, **body}
 
 
 def _validate_street_face(cid: str, face) -> None:

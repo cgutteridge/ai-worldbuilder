@@ -298,3 +298,27 @@ roofs. The district profile file for Southampton is world work, not a tool task:
 - Dismissed feature plans w149855650 and w167071535 on cell 51,-37 (see Cell edges).
 - A first terrace apply aborted because a parallel `site_lock.py run` with the same owner name released the
   lock; use a distinct owner per command when running two at once.
+
+## Task 333: terrace-house body from lidar and a class recipe (code landed, not yet judged in game)
+
+One mechanism, no per-street or per-side code. `house_build` takes an optional per-label `body` block;
+`lib/builds/terrace_body.py` derives it from lidar eave and ridge and the class's `body` recipe in
+`config/land-use-classes.json`; `typology_spec` emits it for any class that has a recipe, when lidar reads pitched.
+
+- **Recipe is data:** `body` on a land-use class row sets `front_depth` (columns of one-storey flat front range),
+  `attic_rise_m` (ridge above eave that leaves room for dormers) and `min_rise_m` (below it the lidar reads flat).
+  Only `commercial` ships one. A new class gains the typology by adding a row; the table validator
+  refuses a bad row.
+- **Body:** wall storeys from the lidar eave, read over the body columns only (the lower front strip would pull a
+  whole-footprint eave down to one storey); `roof_pitch` reproduces the lidar ridge, clamped to 0.6 to 1.0 because
+  `house_build` reads 0.5 and below as slab rings.
+- **Front range:** the front `front_depth` columns are one storey under a flat bottom-slab roof, with the body's upper
+  front wall over it. The ground floor keeps the builder's ordinary windows and door; the glazing recipe is task 431
+  and fascia and signs are task 437.
+- **Dormer or bay, by evidence:** roof room gives flush wall dormers (one per five front columns, one to three);
+  none gives a square glass bay on a solid base, and only when there are two storeys to stand it on. Streets that differ side to side differ by their own lidar.
+- **Degrades, never crashes:** no recipe, no lidar, a `roof:shape=flat` tag or a low ridge keeps the old path; a
+  dormer with no room under the ridge, or a bay whose columns a neighbour owns, is dropped with a log line.
+- **Not done:** rotated footprints and rows by adjacency (427), glazing recipe (431), fascia and signs (437). The lidar
+  percentiles (eave 15th, ridge 95th) and the recipe numbers are first guesses; judge them on the Portswood Road
+  parades (cell 50,-36) before trusting them.

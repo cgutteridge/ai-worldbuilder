@@ -113,7 +113,7 @@ class TestConfiguredPlace(unittest.TestCase):
         with _patched_world({'base_y': 35}):
             house = SimpleNamespace(
                 owner={(0, 0)},
-                houses=[SimpleNamespace(b=40, cells=[(0, 0)])],
+                houses=[SimpleNamespace(b=40, cells=[(0, 0)], storeys=2)],
                 foreign=set(),
                 shared=set(),
                 set=remember,
