@@ -9,6 +9,7 @@ import math
 from cellmath import DIRS
 from chimney import validate_chimney
 import facade_plan as facade_plan_mod
+import sign_options as sign_options_mod
 
 
 STOREY_H = 3
@@ -57,6 +58,7 @@ def load_spec(path) -> dict:
     spec.setdefault('floor', 'smooth_stone')
     spec.setdefault('facade_plan', {})
     spec.setdefault('details', {})
+    spec.setdefault('signs', {})
     spec.setdefault('zones', {})
     spec.setdefault('exclude', {})
     if 'facades' in spec:
@@ -90,10 +92,33 @@ def load_spec(path) -> dict:
                 raise SystemExit(f'{path}: label {no} needs a way, storeys and roof')
     _validate_facade_plan(path, spec, labels)
     _validate_details(path, spec, labels)
+    _validate_signs(path, spec, labels)
     _validate_zones(path, spec, labels)
     _validate_exclude(path, spec, labels)
     _validate_material_regions(path, spec)
     return spec
+
+
+def _validate_signs(path, spec: dict, labels: set) -> None:
+    """Validate optional per-label sign wood, fascia and text colour.
+
+    @param path: spec path (for error text)
+    @param spec: feature spec being loaded
+    @param labels: known way labels
+    @raises SystemExit: on invalid signs entries
+    """
+    signs = spec.get('signs') or {}
+    if not isinstance(signs, dict):
+        raise SystemExit(f'{path}: signs must be an object')
+    for lab, row in signs.items():
+        if lab not in labels:
+            raise SystemExit(f'{path}: signs label {lab} has no way')
+        try:
+            sign_options_mod.validate_sign_row(
+                row, context=f'{path}: signs[{lab}]', strict_keys=True,
+            )
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
 
 
 def _validate_facade_plan(path, spec: dict, labels: set) -> None:
@@ -387,3 +412,12 @@ def _validate_details(path, spec: dict, labels: set) -> None:
                 face = row.get('face')
                 if face not in DIRS:
                     raise SystemExit(f'{pref} face must be one of N/S/E/W')
+            if kind in ('sign', 'fascia_band'):
+                try:
+                    sign_options_mod.validate_sign_row(
+                        {k: row[k] for k in ('wood', 'fascia_colour', 'text_colour')
+                         if k in row},
+                        context=pref,
+                    )
+                except ValueError as exc:
+                    raise SystemExit(str(exc)) from exc

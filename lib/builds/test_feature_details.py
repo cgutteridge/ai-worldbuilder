@@ -122,6 +122,35 @@ class DetailsBuildTest(unittest.TestCase):
         ):
             self.assertRegex(out, rf'detail {kind}.*source={re.escape(src)}')
 
+    def test_detail_sign_and_fascia_emit_the_label_options(self):
+        """A detail sign uses the label wood; a fascia band uses the label colour."""
+        details = {
+            'A': [
+                {
+                    'kind': 'sign',
+                    'at': [12, 52, 24],
+                    'size': [1, 1, 1],
+                    'face': 'S',
+                    'source': 'street photo sign',
+                },
+                {
+                    'kind': 'fascia_band',
+                    'at': [14, 54, 24],
+                    'size': [2, 1, 1],
+                    'face': 'S',
+                    'source': 'street photo fascia',
+                },
+            ],
+        }
+        spec = self.spec(details)
+        spec['signs'] = {'A': {'wood': 'dark_oak', 'fascia_colour': 'black', 'text_colour': 'white'}}
+        with redirect_stdout(io.StringIO()):
+            plan = F.build(spec, footprints={'A': self.cells}, world=_StoneWorld())
+        sign = plan.cells.get((12, 52, 25), '')
+        self.assertIn('dark_oak_wall_sign[facing=south]', sign)
+        self.assertEqual(plan.cells.get((14, 54, 24)), 'minecraft:black_concrete')
+        self.assertEqual(plan.cells.get((15, 54, 24)), 'minecraft:black_concrete')
+
 
     def detail_plan(self, rows, supports):
         """Plan only details over explicit MemoryBlocks roof fixtures."""

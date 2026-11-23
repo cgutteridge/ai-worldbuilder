@@ -13,6 +13,7 @@ from site_kit import AIR_IDS, bid
 from stoop import FACE
 import facade_plan as facade_plan_mod
 import land_use
+import sign_options
 
 
 if TYPE_CHECKING:
@@ -22,7 +23,7 @@ if TYPE_CHECKING:
 FASCIA_COLOURS = ('blue', 'green', 'red', 'cyan', 'orange', 'purple')
 
 
-# Light bands need black lettering so names remain legible.
+# Light concrete bands. Name lettering is chosen against the sign board.
 LIGHT_FASCIA = frozenset({'cyan', 'orange', 'lime', 'yellow', 'white', 'pink'})
 
 
@@ -46,13 +47,17 @@ def fascia_colour(key: str) -> str:
     return FASCIA_COLOURS[int.from_bytes(digest[:4], 'big') % len(FASCIA_COLOURS)]
 
 
-def contrasting_sign_colour(fascia: str) -> str:
-    """Dye colour that reads against a fascia band.
+def contrasting_sign_colour(fascia: str = '', *, wood: str = 'oak') -> str:
+    """Dye colour that reads on the sign board (map-colour contrast).
 
-    @param fascia: concrete colour name from :func:`fascia_colour`
-    @returns: ``black`` on a light band, otherwise ``white``
+    Text is judged against the board, not the fascia band. ``fascia`` is
+    accepted for older call sites and ignored.
+
+    @param fascia: unused (legacy)
+    @param wood: sign wood family (default oak)
+    @returns: dye name with enough contrast on that board
     """
-    return 'black' if fascia in LIGHT_FASCIA else 'white'
+    return sign_options.resolve_text_colour(wood or sign_options.default_wood(), None)
 
 
 # A one-step notch is filled; deeper recesses begin a separate facade run.
@@ -515,7 +520,10 @@ class FacadePlanning:
             jambs.update(
                 (cell[0] + lateral[0] * side, cell[1] + lateral[1] * side) for side in (1, -1)
             )
-        colour = fascia_colour(name or f.no)
+        sign = sign_options.resolve_label_sign(
+            self.spec, f.no, hash_key=name or f.no, hash_colour=fascia_colour,
+        )
+        colour = sign['fascia_colour']
         fascia = f'{colour}_concrete'
         glass_h = rule['glass_height']
         rows = {}
@@ -576,10 +584,13 @@ class FacadePlanning:
                     outside = self.live.block(*pos)
                 wall = self.p.cells.get((cell[0], sign_y, cell[1]))
                 if wall == bid(fascia) and outside in _OUTSIDE_AIRS:
-                    self.set(*pos, f'oak_wall_sign[facing={FACE[face_of[cell]]}]')
+                    self.set(
+                        *pos,
+                        f"{sign['wall_sign']}[facing={FACE[face_of[cell]]}]",
+                    )
                     self.p.sign(
                         pos, textwrap.wrap(name, width=rule['sign_wrap'])[:4],
-                        colour=contrasting_sign_colour(colour), glow=False,
+                        colour=sign['text_colour'], glow=False,
                     )
                     break
         if rule['awning']:
@@ -625,7 +636,10 @@ class FacadePlanning:
                 f'kind={rule.get("shop_kind")}; awning={rule["awning"]}; name={name}'
             )
             return
-        colour = fascia_colour(name or f.no)
+        sign = sign_options.resolve_label_sign(
+            self.spec, f.no, hash_key=name or f.no, hash_colour=fascia_colour,
+        )
+        colour = sign['fascia_colour']
         fascia = f'{colour}_concrete'
         doors = self._door_keepout(f)
         protected = set(self.keep)
@@ -693,8 +707,14 @@ class FacadePlanning:
                     outside = self.live.block(*pos)
                 if (self.p.cells.get((c[0], y, c[1])) == bid(fascia) and
                         outside in _OUTSIDE_AIRS):
-                    self.set(*pos, f'oak_wall_sign[facing={FACE[fronts[c]]}]')
-                    self.p.sign(pos, textwrap.wrap(name, width=15)[:4], colour='white', glow=True)
+                    self.set(
+                        *pos,
+                        f"{sign['wall_sign']}[facing={FACE[fronts[c]]}]",
+                    )
+                    self.p.sign(
+                        pos, textwrap.wrap(name, width=15)[:4],
+                        colour=sign['text_colour'], glow=True,
+                    )
                     break
         print(f'{f.no} street face {rule["kind"]}: {len(fronts)} columns; name={name}')
 
