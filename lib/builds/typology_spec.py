@@ -271,11 +271,12 @@ def _prepare(raw: dict, way_id: str, streets=()) -> dict:
             levels_source = source
         else:
             levels_source = 'tag'
-            # An observed count outside a district range is refused. The class default is only a fallback.
-            if level_reason is None and source == 'district' and _outside_storeys(section, levels):
-                level_reason = 'storeys outside the district range'
         if level_reason is None:
             lidar_note = _lidar_agrees(raw.get('lidar_m'), levels)
+    # An eave count, a tag, or a pinned district default is refused when it sits
+    # outside the district range. The class default is only a fallback.
+    if level_reason is None and source == 'district' and _outside_storeys(section, levels):
+        level_reason = 'storeys outside the district range'
     if level_reason:
         base['reason'] = level_reason
         return base
@@ -455,7 +456,7 @@ def _lidar_agrees(lidar_m, levels: int) -> str | None:
 
 
 def _outside_storeys(section: dict, levels: int) -> bool:
-    """True when the profile states a storey range and the tag sits outside it."""
+    """True when the district section states a storey range and the count sits outside it."""
     storeys = section.get('storeys')
     if storeys is None:
         return False
