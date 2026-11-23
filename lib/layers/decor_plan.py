@@ -692,12 +692,13 @@ def build_decor_plan(
     # A raised column already planned as a barrier is that barrier, not an unknown object.
     items.extend(o for o in object_items
                  if not all(tuple(c) in seen_barrier for c in o['lidar_cells']))
-    items.extend(_outbuilding_items(
+    outbuilding_items, door_targets = _outbuilding_items(
         cell, footprints=outbuilding_footprints, designer=designer_items, rise=lidar_rise,
         building_columns=building_columns if building_columns is not None else footprint,
         taken=object_columns, canopy=canopy, rgb=rgb, route=route,
         plot_owner=plot_owner, evidence_ids=evidence_ids, root=root, water=water or set(),
-        rejected=rejected_items))
+        rejected=rejected_items)
+    items.extend(outbuilding_items)
     for i, obs in enumerate(photo_observations):
         if obs.get('cell') and tuple(obs['cell']) in object_columns:
             continue
@@ -769,7 +770,12 @@ def build_decor_plan(
     plan = {'cell': [int(cell[0]), int(cell[1])], 'items': reserved['items'],
             'reserved': {'openings': sorted([int(x), int(z)] for x, z in keep_clear),
                          'conflicts': reserved['conflicts']},
-            'frontages': [compact_frontage(f) for f in frontages or ()]}
+            'frontages': [compact_frontage(f) for f in frontages or ()],
+            # Dropped before the dry-run report: tuple keys are not written out.
+            'outbuilding_shift': {
+                'plot_owner': dict(plot_owner or {}),
+                'targets': [tuple(t) for t in door_targets],
+            }}
     if inference is not None:
         plan['furniture_inference'] = inference
     return plan
@@ -1027,7 +1033,7 @@ def _outbuilding_items(
     root=None,
     water: set[tuple[int, int]] = frozenset(),
     rejected=(),
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], list]:
     """Outbuilding plan items in evidence order: mapped, lidar blob, designer trace (#251).
 
     Mapped water columns never take a lidar blob (#324): the placer refuses them, so a blob
@@ -1035,6 +1041,8 @@ def _outbuilding_items(
     ``rejected`` is the owner's veto list: a column inside an item lists that item unresolved.
 
     @param rejected: owner veto entries (:func:`street_furniture.rejected_items`)
+    @returns: ``(items, door targets)``; the targets are the house and route columns a
+        shifted footprint uses to recompute its door
     """
 
     mapped_cols = {tuple(c) for f in footprints for c in f['cells']}
@@ -1049,7 +1057,7 @@ def _outbuilding_items(
     traced = ob.designer_items(
         [r for r in designer if r.get('kind') in ob.DESIGNER_KINDS],
         default_evidence=evidence_ids, root=root, rejected=rejected, **common)
-    return ob.merge_sources(mapped, lidar, traced)
+    return ob.merge_sources(mapped, lidar, traced), targets
 
 
 def reserve_openings(items: Sequence[dict[str, Any]], openings) -> dict[str, Any]:

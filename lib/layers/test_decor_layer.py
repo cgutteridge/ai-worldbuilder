@@ -1535,6 +1535,56 @@ class TestWoodlandDecorTable(unittest.TestCase):
         self.assertIsNone(got['residential'])
         self.assertIsNone(land_use.woodland_decor('banana'))
 
+
+class TestOutbuildingLevel(unittest.TestCase):
+    """Sheds reuse the furniture level helper (#446)."""
+
+    GROUND = 64
+
+    def setUp(self):
+        self.live = {}
+        self.hm = {'x0': 0, 'z0': 0, 'terrain': np.full((80, 80), self.GROUND)}
+        self.world = mock.Mock()
+        self.world.block = lambda x, y, z: self.live.get(
+            (x, y, z), 'minecraft:grass_block' if y <= self.GROUND else 'minecraft:air')
+
+    def shed(self, x=30, z=30):
+        cells = [[x + dx, z + dz] for dx in range(3) for dz in range(3)]
+        return {'role': 'outbuilding', 'kind': 'outbuilding', 'type': 'shed', 'id': f'shed-{x}-{z}',
+                'cells': cells, 'evidence_cells': [list(c) for c in cells], 'walls': 2, 'roof': 'pitched',
+                'size': [3, 3], 'provenance': {'source': 'lidar', 'confidence': 'medium'}}
+
+    def place(self, items):
+        return dl.place_outbuildings(
+            (0, 0), items, self.world, way=set(), houses=set(), keep_clear=set(),
+            owned=set(), masked=set(), lidar_hm=self.hm)
+
+    def test_shed_shifts_one_block_onto_level_ground(self):
+        self.hm['terrain'][30, 30] = self.GROUND - 1
+        self.live[(30, self.GROUND, 30)] = 'minecraft:air'
+        item = self.shed()
+        found, report, unplaced = self.place([item])
+        self.assertEqual(unplaced, [])
+        self.assertEqual(report[0]['placed_at'], [30, 31])
+        self.assertEqual(report[0]['ground_spread'], 0)
+        self.assertEqual(report[0]['original_ground_spread'], 1)
+        self.assertNotIn((30, 30), {tuple(c) for c in report[0]['footprint']})
+        self.assertTrue({tuple(c) for c in report[0]['footprint']} <= dl.decor_columns([item], []))
+        self.assertTrue(found)
+        self.assertTrue(all(y >= self.GROUND + 1 for _x, y, _z in found))
+
+    def test_no_level_neighbour_steeper_than_two_blocks_is_refused(self):
+        item = self.shed(30, 40)
+        for x in range(0, 70, 2):
+            for z in range(36, 52):
+                self.hm['terrain'][x, z] = self.GROUND + 3
+                for y in range(self.GROUND + 1, self.GROUND + 4):
+                    self.live[(x, y, z)] = 'minecraft:grass_block'
+        found, report, unplaced = self.place([item])
+        self.assertEqual((found, report), ({}, []))
+        self.assertEqual(unplaced[0]['provenance']['unresolved_reason'], 'uneven ground')
+        self.assertEqual(unplaced[0]['ground_spread'], 3)
+
     def test_schema_checked(self):
         import copy
         import json
