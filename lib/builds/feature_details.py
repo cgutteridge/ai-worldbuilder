@@ -12,6 +12,7 @@ from feature_spec import ROOF_DETAIL_KINDS
 from roof_geometry import align_stair_shapes
 from roof_material import family_variants
 from site_kit import AIR_IDS, bid
+from sign_options import default_wood, label_sign_options, resolve_fascia_colour, sign_blocks
 from stoop import FACE
 from world_frame import metres_aod_to_y
 
@@ -195,10 +196,12 @@ class DetailPlanning:
                 place(ax, ay + dy, az, 'iron_bars')
         elif kind == 'sign':
             dx, dz = DIRS[face]
+            opts = label_sign_options(self.spec, f.no)
+            wood = row.get('wood') or opts.get('wood') or default_wood()
             place(ax, ay, az, 'smooth_stone')
             place(
                 ax + dx, ay, az + dz,
-                f'oak_wall_sign[facing={FACE[face]}]',
+                f"{sign_blocks(wood)['wall_sign']}[facing={FACE[face]}]",
             )
         elif kind == 'awning_like':
             dx, dz = DIRS[face]
@@ -212,8 +215,14 @@ class DetailPlanning:
             for x, y, z in self._detail_box(at, (sx, 1, sz)):
                 place(x, y, z, _bottom_slab_or_full(rm))
         elif kind == 'fascia_band':
+            opts = label_sign_options(self.spec, f.no)
+            colour = row.get('fascia_colour') or opts.get('fascia_colour')
+            block = (
+                f'{resolve_fascia_colour(f.no, colour)}_concrete'
+                if colour is not None else 'terracotta'
+            )
             for x, y, z in self._detail_box(at, size):
-                place(x, y, z, 'terracotta')
+                place(x, y, z, block)
 
     def pv_rows(self) -> None:
         """Place ``roofs[label].pv_arrays`` as daylight_detector rows on the finished deck.
