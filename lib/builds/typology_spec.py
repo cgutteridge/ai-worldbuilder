@@ -27,6 +27,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import land_use
+import shop_body
 from roof_material import load_catalogue, normalise_material, roof_blocks
 
 # house_build walls run six blocks, two storeys of three. It cannot say otherwise.
@@ -57,6 +58,8 @@ ROOF_SHAPES = {
     'skillion': 'shed',
 }
 SHOP_BUILDINGS = frozenset({'retail', 'supermarket', 'kiosk', 'commercial'})
+# Lidar ridge above eave that reads as a pitched body behind the shopfront, not a flat box.
+MIN_BODY_RISE_M = 1.5
 
 
 def generate(buildings, streets=()) -> dict:
@@ -110,7 +113,7 @@ def generate(buildings, streets=()) -> dict:
     }
 
 
-def load_buildings(index, *, way_ids=None, bbox=None, lidar=None, profile_at=None):
+def load_buildings(index, *, way_ids=None, bbox=None, lidar=None, profile_at=None, eave_ridge=None):
     """Read the footprints a request needs, including a row that crosses the edge.
 
     Pass way ids or an inclusive block box, not both. A selected footprint pulls
@@ -124,6 +127,8 @@ def load_buildings(index, *, way_ids=None, bbox=None, lidar=None, profile_at=Non
     @param bbox: inclusive ``(x0, z0, x1, z1)``, or None
     @param lidar: optional ``cells -> metres or None`` (tests); default reads the cache
     @param profile_at: optional ``(tx, tz) -> profile or None`` (tests)
+    @param eave_ridge: optional ``cells -> (eave_m, ridge_m) or None`` (tests); sampled for shop-like
+        buildings only, default reads the lidar cache
     @returns: ``(building mappings, street polylines)`` for :func:`generate`
     @raises ValueError: when the request is not exactly one of way ids or a box
     """
@@ -148,6 +153,7 @@ def load_buildings(index, *, way_ids=None, bbox=None, lidar=None, profile_at=Non
                   for way in way_ids if str(way) not in present]
     lidar_fn = lidar or _lidar_median
     profile_fn = profile_at or _profile_at
+    eave_fn = eave_ridge or _lidar_eave_ridge
     profiles = {}
     buildings = []
     for row in chosen:
@@ -162,6 +168,10 @@ def load_buildings(index, *, way_ids=None, bbox=None, lidar=None, profile_at=Non
             'lidar_m': sample,
             'profile': profiles[cell],
         })
+        if _shop_like(row['tags']):
+            heights = eave_fn(row['cells'])
+            if heights:
+                buildings[-1]['eave_m'], buildings[-1]['ridge_m'] = heights
     buildings.extend(absent)
     streets = _nearby_streets(getattr(index, 'streets', ()) or (), chosen)
     return buildings, streets
@@ -248,11 +258,16 @@ def _prepare(raw: dict, way_id: str) -> dict:
     if not isinstance(section, dict):
         base['reason'] = 'no district palette'
         return base
-    levels, level_reason = _levels(tags)
+    shop = _shop_evidence(cls, tags, raw)
+    if shop:
+        # lidar eave and ridge are the shop's height truth; building:levels is not needed and does not veto
+        levels, level_reason, lidar_reason = shop_body.storeys_from_eave(shop[0]), None, None
+    else:
+        levels, level_reason = _levels(tags)
+        lidar_reason = None if level_reason else _lidar_agrees(raw.get('lidar_m'), levels)
     if level_reason:
         base['reason'] = level_reason
         return base
-    lidar_reason = _lidar_agrees(raw.get('lidar_m'), levels)
     if lidar_reason:
         base['reason'] = lidar_reason
         return base
@@ -271,6 +286,8 @@ def _prepare(raw: dict, way_id: str) -> dict:
     if material_reason:
         base['reason'] = material_reason
         return base
+    if shop and form not in PITCHED_FORMS:
+        form = 'gable'   # the lidar ridge says pitched; a district default of flat does not override it
     slope = 'pitched' if form in PITCHED_FORMS else 'flatish'
     resolved = roof_blocks(family, slope)
     if not resolved.get('known') or not resolved.get('ok'):
@@ -278,7 +295,8 @@ def _prepare(raw: dict, way_id: str) -> dict:
         return base
     base.update(
         cls=cls, levels=levels, form=form, roof_source=roof_source, family=family, wall=wall,
-        path='house' if house else 'feature',
+        path='house' if house else 'shop' if shop else 'feature',
+        eave_m=shop[0] if shop else None, ridge_m=shop[1] if shop else None,
         profile_name=str(profile.get('name') or '').strip() or 'district',
     )
     return base
@@ -297,6 +315,26 @@ def _as_cells(raw) -> set[tuple[int, int]] | None:
             return None
         cells.add((x, z))
     return cells
+
+
+def _shop_like(tags: dict) -> bool:
+    """A building the tags call a shop (a ``shop=*`` tag or a retail-type ``building=*``)."""
+    return bool(tags.get('shop')) or tags.get('building') in SHOP_BUILDINGS
+
+
+def _shop_evidence(cls, tags: dict, raw: dict):
+    """``(eave_m, ridge_m)`` when a commercial shop has lidar that reads as a pitched terrace body, else None.
+
+    A building tagged ``roof:shape=flat``, or whose lidar ridge stands less than ``MIN_BODY_RISE_M`` above
+    its eave, is a flat commercial box and keeps the feature path. Keyed on the land-use class and the
+    shop tags, so any street with the same lidar reading gets the same body, not just one town.
+    """
+    if cls != 'commercial' or not _shop_like(tags) or tags.get('roof:shape') == 'flat':
+        return None
+    eave, ridge = raw.get('eave_m'), raw.get('ridge_m')
+    if not shop_body.finite(eave, ridge) or ridge - eave < MIN_BODY_RISE_M:
+        return None
+    return float(eave), float(ridge)
 
 
 def _box(cells: set[tuple[int, int]]) -> tuple[int, int, int, int] | None:
@@ -576,6 +614,8 @@ def _emit(group: list[dict], axis: str | None, streets) -> dict:
             'groups': [{'nos': labels, 'mode': 'group' if kind == 'terrace' else 'each', 'front': front}],
         }
         return {'builder': 'house_build', 'spec': spec}
+    if ordered[0]['path'] == 'shop':
+        return {'builder': 'house_build', 'spec': _shop_spec(name, note, ordered, ways, front)}
     spec = {
         'name': name,
         'notes': note,
@@ -589,6 +629,21 @@ def _emit(group: list[dict], axis: str | None, streets) -> dict:
         'wall': ordered[0]['wall'],
     }
     return {'builder': 'feature_build', 'spec': spec}
+
+
+def _shop_spec(name: str, note: str, ordered: list[dict], ways: dict, front: str) -> dict:
+    """A house_build spec for shops: terrace-house body over a shopfront, one roof per shop (#333)."""
+    block = {row['label']: shop_body.recipe(row['eave_m'], row['ridge_m'], row['cells'], front)
+             for row in ordered}
+    return {
+        'name': name,
+        'notes': note + ' Shop body from lidar eave and ridge (lib/builds/shop_body.py).',
+        'ways': ways,
+        'roofs': {row['label']: row['family'] for row in ordered},
+        'roof_pitch': {label: item.pop('roof_pitch') for label, item in block.items()},
+        'shopfront': block,
+        'groups': [{'nos': [row['label'] for row in ordered], 'mode': 'each', 'front': front}],
+    }
 
 
 def _order(group: list[dict], axis: str | None) -> list[dict]:
@@ -713,6 +768,23 @@ def _nearby_streets(streets, chosen: list[dict]) -> list[list[tuple[float, float
 
 def _lidar_median(cells: set[tuple[int, int]]) -> float | None:
     """Median DSM minus DTM over the footprint, or None when the cache cannot say."""
+    values = _lidar_rises(cells)
+    return float(statistics.median(values)) if values else None
+
+
+def _lidar_eave_ridge(cells: set[tuple[int, int]]) -> tuple[float, float] | None:
+    """Eave and ridge height above ground (metres): the 15th and 95th percentile of DSM minus DTM.
+
+    The low percentile ignores low rear extensions and the blurred rim; the high one ignores chimneys.
+    """
+    values = sorted(_lidar_rises(cells))
+    if len(values) < 6:
+        return None
+    return values[int(0.15 * (len(values) - 1))], values[int(0.95 * (len(values) - 1))]
+
+
+def _lidar_rises(cells: set[tuple[int, int]]) -> list[float]:
+    """DSM minus DTM at each footprint column the cache covers, or an empty list."""
     import numpy as np
     import lidar_provider as lp
     xs = [x for x, _z in cells]
@@ -723,10 +795,10 @@ def _lidar_median(cells: set[tuple[int, int]]) -> float | None:
         east0, north0, east1, north1 = lp.mc_box_en(x0, z0, x1, z1)
         if client.missing('DTM', east0, north0, east1, north1) \
                 or client.missing('DSM', east0, north0, east1, north1):
-            return None
+            return []
         heights = lp.mc_heights_float(client, x0, z0, x1, z1)
     except (LookupError, FileNotFoundError, OSError, RuntimeError):
-        return None
+        return []
     dsm = np.asarray(heights['dsm'], dtype=float)
     dtm = np.asarray(heights['dtm'], dtype=float)
     values = []
@@ -738,8 +810,8 @@ def _lidar_median(cells: set[tuple[int, int]]) -> float | None:
         if math.isfinite(rise):
             values.append(rise)
     if len(values) * 2 < len(cells):
-        return None
-    return float(statistics.median(values))
+        return []
+    return values
 
 
 def _profile_at(cell: tuple[int, int]):

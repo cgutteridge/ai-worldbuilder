@@ -298,3 +298,26 @@ roofs. The district profile file for Southampton is world work, not a tool task:
 - Dismissed feature plans w149855650 and w167071535 on cell 51,-37 (see Cell edges).
 - A first terrace apply aborted because a parallel `site_lock.py run` with the same owner name released the
   lock; use a distinct owner per command when running two at once.
+
+## Task 333: terrace-house body over a shopfront (code landed, not yet judged in game)
+
+`house_build` gains an optional per-label `shopfront` block, and `lib/builds/shop_body.py` derives it from lidar.
+`typology_spec` emits it for a shop whose lidar reads as a pitched body.
+
+- **Body:** wall storeys from the lidar eave (`eave_m`, a low percentile of DSM minus DTM); a pitched roof whose
+  `roof_pitch` reproduces the lidar ridge (clamped to 0.6 to 1.0, since `house_build` reads 0.5 and below as slab rings).
+- **Shopfront:** the front `front_depth` (default 3) columns are one storey under a flat bottom-slab roof; the body's
+  upper front wall stands over it. The strip is glazed between piers with the door framed. Pane width, piers and the
+  facade rhythm are the glazing recipe of task 431; fascia and sign colour are task 437.
+- **Per-side difference by evidence, not compass side:** where the ridge stands at least 3 m above the eave the roof
+  has room for a dormer top floor (flush wall dormers, one per five front columns, one to three); where it does not
+  the upper storey gets a square glass bay window on a solid base. The west parade (three storeys with a dormer top
+  floor) and the east parade (two storeys, upper bay, pitched roof) should fall out of their own lidar. Any street
+  with the same reading gets the same body; a `shopfront` block in a hand spec, or the recipe's `override`, replaces
+  any derived value.
+- **Keyed by class:** the generator takes a building of class `commercial` with a `shop=*` tag or a retail-type
+  `building=*`, with no town-specific data. A `roof:shape=flat` tag, a ridge under 1.5 m above the eave, or no
+  lidar keeps the old `feature_build` flat-box path.
+- **Not done:** rotated footprints and rows by adjacency (task 427), glazing recipe (431), fascia and signs (437).
+  The lidar percentiles (eave 15th, ridge 95th) and the dormer and bay thresholds are first guesses; judge them on the
+  Portswood Road parades (cell 50,-36) before trusting them.

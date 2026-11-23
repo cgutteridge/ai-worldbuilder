@@ -25,6 +25,11 @@ instead of a script copy:
   ledge_stair    true: ground that ends at a 1-block ledge beyond 4 columns gets a rising stair (default false)
   door_frame     true (default): doors only where the wall has a wall cell each side, so they are framed on angled walls
   keep_edits     true: stoop/step cells survive the earlier-build clash filter (needed when `modifies` a ground build)
+  shopfront      optional {"<label>": {...}} terrace-house body over a shopfront ground floor (task #333):
+                 storeys (wall storeys, default 2), front_depth (columns of one-storey flat shopfront roof in front of
+                 the body, default 0), dormers (flush wall dormers on the front slope, 0-3), bay (upper-storey bay
+                 window on the front wall), bay_storey (default 1). Needs roof_pitch above 0.5 and mode each.
+                 lib/builds/shop_body.py derives the numbers from lidar eave and ridge for the typology generator
 
 Usage: python3 scripts/house_build.py --world <world> site/builds/<name>.json [--apply [--overwrite]]
 Direct apply refuses an existing landed build unless --overwrite is explicit; undo first to remove old blocks.
@@ -44,12 +49,14 @@ from roof_geometry import (edge_distance_field, pitched_roof_states, roof_block_
                            align_stair_shapes, rotated_hip_depth, stair_effect_lines, stair_shape_from_neighbours)
 from roof_octant import block_states, fit_octant_roof  # noqa: E402
 from roof_material import family_variants, roof_blocks, roof_class  # noqa: E402
+import shop_body  # noqa: E402
 import stoop  # noqa: E402
 from stoop import FACE, GROUND, TOWARD, stair  # noqa: E402
 from site_kit import Plan, apply, fresh_planning_world, guard_door_frames, guard_roof_jogs, preview  # noqa: E402
 
 WALL, FLOOR = 'bricks', 'spruce_planks'
 TOP = 20
+STOREY = shop_body.STOREY_H
 from cellmath import DIRS, N8, OPP  # noqa: E402
 
 
@@ -99,10 +106,26 @@ def load_spec(path):
             raise SystemExit(f'{path}: roof_fit[{no!r}] must be "columns" or "octant"')
         if fit == 'octant' and roof_class(pitches.get(no, 0.5), 1) != 'pitched':
             raise SystemExit(f'{path}: roof_fit[{no!r}] octant needs a roof_pitch above 0.5')
+    shops = spec.setdefault('shopfront', {})
+    if not isinstance(shops, dict):
+        raise SystemExit(f'{path}: shopfront must be a label-to-block object')
+    for no, block in shops.items():
+        if no not in labels or no not in roofs:
+            raise SystemExit(f'{path}: shopfront label {no!r} needs a way and a roof')
+        if not isinstance(block, dict):
+            raise SystemExit(f'{path}: shopfront[{no!r}] must be an object')
+        try:
+            shop_body.validate_block(no, block)
+        except ValueError as exc:
+            raise SystemExit(f'{path}: {exc}') from exc
+        if roof_class(pitches.get(no, 0.5), 1) != 'pitched':
+            raise SystemExit(f'{path}: shopfront[{no!r}] needs a roof_pitch above 0.5 (a pitched body)')
     for g in spec['groups']:
         if g['front'] not in DIRS or g.get('mode', 'each') not in ('each', 'group'):
             raise SystemExit(f'{path}: bad group {g}')
         g.setdefault('mode', 'each')
+        if g['mode'] == 'group' and any(no in shops for no in g['nos']):
+            raise SystemExit(f'{path}: shopfront needs mode "each": each shop keeps its own roof')
         if g['mode'] == 'group' and any(fits.get(no) == 'octant' for no in g['nos']):
             raise SystemExit(f'{path}: roof_fit octant needs mode "each", not a group roof')
         if g['mode'] == 'group' and len({pitches.get(no, 0.5) for no in g['nos']}) > 1:
@@ -114,9 +137,17 @@ def load_spec(path):
 
 
 class House:
-    def __init__(self, no, cells, group):
+    def __init__(self, no, cells, group, shop=None):
         self.no, self.cells, self.group = no, cells, group
         self.front = group['front']
+        # A shop is a terrace-house body (wall storeys, pitched roof) over a one-storey shopfront strip.
+        self.shop = shop
+        self.storeys = shop.get('storeys', 2) if shop else 2
+        self.strip = (shop_body.front_strip(cells, self.front, shop.get('front_depth', 0))
+                      if shop else set())
+        self.body = cells - self.strip
+        # body columns above the strip: the upper front wall the street sees over the shopfront roof
+        self.upper_row = shop_body.front_row(self.body, self.front) if self.strip else set()
 
 
 class Build:
@@ -138,7 +169,7 @@ class Build:
         self.houses = []
         for g in self.groups:
             for no in g['nos']:
-                self.houses.append(House(no, by_no[no], g))
+                self.houses.append(House(no, by_no[no], g, self.spec.get('shopfront', {}).get(no)))
         self.owner = {}
         for k, h in enumerate(self.houses):
             for c in h.cells:
@@ -179,18 +210,20 @@ class Build:
             cols.update((x + dx, z + dz) for dx in (-2, -1, 0, 1, 2) for dz in (-2, -1, 0, 1, 2))
         self.cols = cols
         for x, z in cols:
-            b = min(self.houses, key=lambda h: min(max(abs(x - c[0]), abs(z - c[1])) for c in h.cells)).b
+            near = min(self.houses, key=lambda h: min(max(abs(x - c[0]), abs(z - c[1])) for c in h.cells))
+            b = near.b
+            height = max(TOP, near.storeys * STOREY + 14)
             if (x, z) in self.foreign or (x, z) in self.shared:
                 continue
             own = (x, z) in self.owner
             for y in range(place_config.base_y(), b):
                 self.set(x, y, z, 'stone')
             if own:
-                top = b + TOP
+                top = b + height
                 rng = range(b, top + 1)
             else:
                 # Margin: clear only, no stone shelf at floor level (#115); door stoops come from step_out.
-                rng = range(b + 1, b + TOP + 1)
+                rng = range(b + 1, b + height + 1)
             for y in rng:
                 if own or (self.live.block(x, y, z) or 'minecraft:air').split('[')[0] not in GROUND:
                     self.set(x, y, z, 'air')
@@ -214,14 +247,22 @@ class Build:
         for x, z in own:
             for y in range(b - 4, b):
                 self.set(x, y, z, 'stone')
+        top = b + STOREY * h.storeys
         for x, z in h.walls:
-            for y in range(b, b + 6):
+            # a shopfront strip's walls stop under its flat roof; the body's rise to the eave
+            for y in range(b, top if (x, z) in h.body else b + STOREY):
                 self.set(x, y, z, WALL)
         for x, z in h.inner:
             self.set(x, b, z, FLOOR)
-            for y in range(b + 1, b + 6):
+            storeys = 1 if (x, z) in h.strip else h.storeys
+            for y in range(b + 1, b + STOREY * storeys):
                 self.set(x, y, z, 'air')
-            self.set(x, b + 3, z, FLOOR)
+            for s in range(1, storeys):
+                self.set(x, b + STOREY * s, z, FLOOR)
+        for x, z in h.upper_row:
+            # upper front wall over the shopfront roof; the ground storey stays open to the strip
+            for y in range(b + STOREY, top):
+                self.set(x, y, z, WALL)
 
     def with_jamb_walls(self, h, cand, d):
         """Door candidates with a wall cell on both sides along the wall, exposed the same way.
@@ -284,7 +325,7 @@ class Build:
         # stair inward from the door, ascending away from the front
         ix, iz = -fx, -fz
         cells = [(c0[0] + ix * d, c0[1] + iz * d) for d in (2, 3, 4)]
-        if all(c in h.inner for c in cells):
+        if h.storeys > 1 and all(c in h.inner and c in h.body for c in cells):
             for i, c in enumerate(cells):
                 self.set(c[0], b + 1 + i, c[1], stair('spruce', TOWARD[f]))
             for c in cells[:2]:
@@ -352,9 +393,16 @@ class Build:
         from window_openings import Window, choose_windows, report_lines
         del k
         door = {q for q in (getattr(h, 'door', None), getattr(h, 'rear', None)) if q}
+        # a shop's body wall above its shopfront roof is not a shell wall but is exposed to the front
+        walls = h.walls | h.upper_row
+
+        def exposed(c, d):
+            return self.exposed(c, d) or (c in h.upper_row and d == h.front)
+
+        rows = tuple(STOREY * s + 2 for s in range(h.storeys))
         candidates = []
         for face in ('N', 'S', 'E', 'W'):
-            cols = [c for c in h.walls if self.exposed(c, face)]
+            cols = [c for c in walls if exposed(c, face)]
             edge = 1 if face in 'NS' else 0
             stepped = len({c[edge] for c in cols}) > 1
             for c in sorted(cols):
@@ -362,19 +410,140 @@ class Build:
                     continue
                 if (c[0] if face in 'NS' else c[1]) % 2:
                     continue
-                for dy in (2, 5):
+                for dy in rows:
+                    # the shopfront glazing owns the front ground storey (shop_details)
+                    if h.shop and face == h.front and dy < STOREY:
+                        continue
+                    if c in h.upper_row and face == h.front and dy < STOREY:
+                        continue
                     candidates.append(Window((c[0], h.b + dy, c[1]), face, stepped))
         positions = {(w.pos[0] + DIRS[w.face][0], w.pos[2] + DIRS[w.face][1])
                      for w in candidates}
         ground = outside_ground(positions)
         def block(x, y, z):
             return self.p.cells.get((x, y, z), 'minecraft:air')
-        writes, report = choose_windows(candidates, block=block, walls=h.walls,
-            exposed=self.exposed, outside_ground=ground)
+        writes, report = choose_windows(candidates, block=block, walls=walls,
+            exposed=exposed, outside_ground=ground)
         for pos, state in writes.items():
             self.set(*pos, state)
         for line in report_lines(h.no, report):
             print(line)
+
+    def shop_details(self, h):
+        """Shopfront roof and glazing, upper bay window and roof dormers of a terrace-house shop (#333)."""
+        from shop_body import centres, lateral_runs
+        b, front = h.b, h.front
+        rm = self.spec['roofs'][h.no]
+        variants = family_variants(rm)
+        deck = f'{variants["slab"]}[type=bottom]' if 'slab' in variants else variants['full']
+        for x, z in h.strip:
+            self.set(x, b + STOREY, z, deck)
+            if 'slab' in variants:
+                self.p.keep_slab_cells.add((x, b + STOREY, z))
+        self.shopfront_glazing(h)
+        runs = lateral_runs(shop_body.front_row(h.body, front), front)
+        if h.shop.get('bay') and runs:
+            for centre in centres(runs[0], 1):
+                self.bay_window(h, centre, h.shop.get('bay_storey', 1))
+        if h.shop.get('dormers') and runs:
+            for centre in centres(runs[0], h.shop['dormers']):
+                self.dormer(h, centre, variants['full'])
+
+    def shopfront_glazing(self, h):
+        """Glass the ground storey of the front wall between piers, leaving the door framed.
+
+        Pane width, piers and the facade rhythm are the glazing recipe of task 431; this is the
+        minimal default so a shop does not read as a house with a front door.
+        """
+        from floor_reference import outside_ground
+        from window_openings import Window, choose_windows, report_lines
+        front = h.front
+        lat = 0 if front in 'NS' else 1
+        door = getattr(h, 'door', None)
+        candidates = []
+        for c in sorted(h.walls):
+            if not self.exposed(c, front) or c not in (h.strip or h.body):
+                continue
+            # piers frame the door, then fall every fourth column out from it (every fourth without a door)
+            if door:
+                offset = abs(c[lat] - door[lat])
+                if offset < 2 or (offset - 2) % 4 == 3:
+                    continue
+            elif c[lat] % 4 == 0:
+                continue
+            for dy in (1, 2):
+                candidates.append(Window((c[0], h.b + dy, c[1]), front, False))
+        positions = {(w.pos[0] + DIRS[front][0], w.pos[2] + DIRS[front][1]) for w in candidates}
+        ground = outside_ground(positions)
+        writes, report = choose_windows(
+            candidates, block=lambda x, y, z: self.p.cells.get((x, y, z), 'minecraft:air'),
+            walls=h.walls, exposed=self.exposed, outside_ground=ground,
+            protected={(door[0], h.b + dy, door[1]) for dy in (1, 2)} if door else ())
+        for pos, state in writes.items():
+            self.set(*pos, state)
+        for line in report_lines(f'{h.no} shopfront', report):
+            print(line)
+
+    def skin_y(self, x, z, low):
+        """Highest planned block in a column at or above ``low`` (the roof skin), or None."""
+        ys = [y for (xx, y, zz), st in self.p.cells.items()
+              if xx == x and zz == z and y >= low and not st.endswith('air')]
+        return max(ys) if ys else None
+
+    def bay_window(self, h, centre, storey):
+        """A square glass bay one block proud of the upper front wall, on a solid base.
+
+        The base is a full block (the strip's flat roof carries it, or it corbels out over the
+        pavement), the glass is two blocks high, and the roof above comes from the eave. The
+        wall behind the centre column is opened so the room looks out through the bay.
+        """
+        from shop_body import bay_cells
+        cells = bay_cells(centre, h.front)
+        sill = h.b + STOREY * storey
+        outside = cells['outside']
+        if any((c in self.foreign or c in self.shared or (self.owner.get(c) not in (None, self.owner.get(centre))))
+               for c in outside):
+            print(f'{h.no} bay window: columns in front belong to a neighbour; dropped')
+            return
+        for c in outside:
+            self.set(c[0], sill, c[1], WALL)
+            self.set(c[0], sill + 1, c[1], 'glass')
+            self.set(c[0], sill + 2, c[1], 'glass')
+        cap = family_variants(self.spec['roofs'][h.no])['full']
+        for c in outside:
+            if self.skin_y(c[0], c[1], sill + 3) is None:
+                self.set(c[0], sill + 3, c[1], cap)
+        self.set(centre[0], sill + 1, centre[1], 'air')
+        self.set(centre[0], sill + 2, centre[1], 'air')
+        print(f'{h.no} bay window at {centre}, storey {storey}')
+
+    def dormer(self, h, centre, cap):
+        """A flush wall dormer on the front slope: sill, two panes between piers, a flat cap.
+
+        It sits on the front wall row where the roof starts, and is dropped when its cap would stand
+        above the ridge (the roof has no room for a top floor there).
+        """
+        from shop_body import dormer_cells
+        cells = dormer_cells(centre, h.front)
+        top = h.b + STOREY * h.storeys
+        base = self.skin_y(centre[0], centre[1], top - 2)
+        ridge = max((self.skin_y(x, z, top - 2) or 0) for x, z in h.body)
+        if base is None or base + 3 > ridge:
+            print(f'{h.no} dormer at {centre}: no room under the ridge; dropped')
+            return
+        axis = 'east=true,west=true' if h.front in 'NS' else 'north=true,south=true'
+        for i, c in enumerate(cells['front']):
+            self.set(c[0], base, c[1], WALL)
+            for dy in (1, 2):
+                self.set(c[0], base + dy, c[1], f'glass_pane[{axis}]' if i == 1 else WALL)
+            self.set(c[0], base + 3, c[1], cap)
+        for c in cells['back']:
+            skin = self.skin_y(c[0], c[1], top - 2) or base
+            for y in range(skin + 1, base + 3):
+                self.set(c[0], y, c[1], WALL)
+            if base + 3 > skin:
+                self.set(c[0], base + 3, c[1], cap)
+        print(f'{h.no} dormer at {centre}, sill y {base}')
 
     @classmethod
     def _ridge_jogs(cls, half_heights, states):
@@ -401,11 +570,12 @@ class Build:
             if g['mode'] == 'group':
                 todo.append((hs, set().union(*[h.cells for h in hs])))
             else:
-                todo.extend(([h], h.cells) for h in hs)
+                todo.extend(([h], h.body) for h in hs)
         chim = []
         for hs, own in todo:
             dist = edge_distance_field(own, set(self.owner) | self.foreign | self.shared)
-            b = hs[0].b
+            # b + 6 is the eave everywhere below: shift b for a body of more or fewer than two storeys
+            b = hs[0].b + STOREY * (hs[0].storeys - 2)
             rm = self.spec['roofs'][hs[0].no]
             pitch = self.spec.get('roof_pitch', {}).get(hs[0].no, 0.5)
             pitched = roof_class(pitch, 1) == 'pitched'
@@ -528,6 +698,9 @@ class Build:
         self.roof()
         for k, h in enumerate(self.houses):
             self.windows(k, h)
+        for h in self.houses:
+            if h.shop:
+                self.shop_details(h)
         for q, v in osm_footprints.guard(self.p.cells)['outside'].items():
             if 'slab' in v[0]:
                 del self.p.cells[q]
