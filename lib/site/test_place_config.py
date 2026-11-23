@@ -80,6 +80,22 @@ class TestNeutralDefaults(unittest.TestCase):
         self.assertEqual(place_config.reverted_builds(), frozenset())
         self.assertNotIn('highfield_q051_ur', layer_common.ignored_builds((48, -44)))
 
+    def test_missing_structure_namespace_names_the_key(self):
+        """A blank structure_namespace is refused and is not replaced with another place."""
+        path = Path(script_env.ROOT) / 'config' / 'world.json'
+        original = path.read_text(encoding='utf-8')
+        data = json.loads(original)
+        data.pop('structure_namespace', None)
+        path.write_text(json.dumps(data), encoding='utf-8')
+        script_env.clear_world_caches()
+        try:
+            self.assertIsNone(site_kit.STRUCTURE_NS)
+            with self.assertRaisesRegex(ValueError, 'structure_namespace'):
+                place_config.structure_namespace()
+        finally:
+            path.write_text(original, encoding='utf-8')
+            script_env.clear_world_caches()
+
 
 class TestConfiguredPlace(unittest.TestCase):
     """Southampton-shaped config keeps the names and floor that world already uses."""

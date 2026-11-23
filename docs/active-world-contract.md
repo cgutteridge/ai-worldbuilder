@@ -35,7 +35,7 @@ tree is `.gitignore`d; each subdirectory is its own git repo.
 
 | Path | Role |
 | --- | --- |
-| `config/world.json` | **Gameworld identity** + the save reference. Required: `gameworld_id`. `save_path` points at the save in the standalone Minecraft instance (absolute, or relative to the world root); the region folder is derived. The tool treats the save as read-only; see `docs/minecraft-instance-setup.md`. Also `structure_namespace` (default `worldbuilder`), `player_uuid`, `plan_prefix` (default `cell`), `base_y` (stone-fill floor; default 37), `retired_ground_passes`, `reverted_builds`, `ledger_aliases`, `fetch_hosts`, `fetch_probe`. |
+| `config/world.json` | **Gameworld identity** + the save reference. Required: `gameworld_id`. `save_path` points at the save in the standalone Minecraft instance (absolute, or relative to the world root); the region folder is derived. The tool treats the save as read-only; see `docs/minecraft-instance-setup.md`. Also required, with no default: `structure_namespace` and `player_uuid` (fill `player_uuid` from `player_list_online` once that player is in the world). Also `plan_prefix` (default `cell`), `base_y` (stone-fill floor; default 37), `retired_ground_passes`, `reverted_builds`, `ledger_aliases`, `fetch_hosts`, `fetch_probe`. |
 | `config/world-frame.json` | **World frame**: CRS, horizontal offsets, bounds, cell grid, Y offset. The only home for offsets and projection; nothing of this lives in the Minecraft save. |
 | `config/local-providers.json` | Below-national feeds for this place only. Entries with code set `package` to `providers/<id>`. |
 | `providers/<id>/` | Local provider fetch/CLI modules (see that world’s `providers/README.md`). |
