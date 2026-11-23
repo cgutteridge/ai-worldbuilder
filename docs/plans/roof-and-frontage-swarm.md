@@ -29,7 +29,7 @@ Talk to the owner by task **title** first, number second.
 | 1 | #457 | Typology generator: row front direction wrong on a rotated parade | no | `lib/builds/typology_spec.py`, its tests |
 | 1 | #458 | reapply_feature --apply loses the world lock between undo and rebuild | no | `lib/builds/feature_reapply.py`, `lib/site/site_lock.py`, `scripts/reapply_feature.py`, `rules/slow-commands.md` |
 | 2 | #455 | feature_build flat roofs: carpet finish (different roof material, no extra height) | no | `lib/builds/feature_build.py` (flat deck), `feature_facade.py` (fascia band), `feature_spec.py`, `roof_material.py`, `config/roof-materials.json`, `rules/feature-builds.md` |
-| 2 | #456 | feature_build: add flat volumes outside the OSM way (bin store, rear extensions) | no | `feature_roof_zones.py`, `feature_build.py` footprints, `feature_spec.py`, `rules/feature-builds.md` |
+| 2 | #456 | feature_build: add flat volumes outside the mapped way (bin store, rear extensions) | no | `feature_roof_zones.py`, `feature_build.py` footprints, `feature_spec.py`, `rules/feature-builds.md` |
 | 2 | #431 | Typology generator: glazing and facade detail as a class recipe | no | `lib/builds/typology_spec.py`, `config/land-use-classes.json`, tests |
 | 2 | #460 | Pitched roof edges on noisy lidar: measure the remaining full-block rises and flat stairs on West and Kiddle | no | none (read-only report under `docs/plans/`) |
 | 3 | #459 | Read step: label roof volumes from image and lidar profile, with cross-source trust checks | **yes** | new module(s), `typology_spec.py` or a read script; uses a model on an image |
