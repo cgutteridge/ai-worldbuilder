@@ -267,16 +267,7 @@
       "builderTask": false,
       "notes": "From trial #257 parade snag S-107 (issue I-017 doors at the wrong height; earlier fixes #145, #146, #204, #243, #407). The owner saw shop doors \"one level too low\" on the Portswood Road parade (rule-built and hand-specced shops, cell 51,-37): door bottoms sit one block below the pavement. Shop doors on the street-face path take their floor from _column_floor(f, cell) in lib/builds/feature_facade.py (about lines 358 and 498), which is not the facade-plan _outside_door_floor of #145/#146/#204; that is the first suspect, with the stoop helper from #407. Cause NOT verified.\n\nStep 1, diagnose read-only: for several parade shops compare the door floor Y, the stoop or entrance step, the outside ground (lidar terrain and the live surface) and the footprint's ground level, and say which input is one block off. Step 2: fix it in the builder and add a fixture that catches it. Stop rule: if the cause is data (the lidar or ground height at the shopfront) and not code, report it with the numbers instead of patching the builder. Stretch (diagnosis): ask before raising model or effort. Non-builder: no live apply, a read-only world check is allowed. Acceptance: a stated cause with numbers, a fix or the data report, tests, and the owner confirms S-107 in game after a rebuild (a separate world step).\n"
     },
-    {
-      "id": 437,
-      "title": "Builder sign options: wood, text colour, fascia colour and a contrast rule",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "From trial #257 parade snags S-108 (signs always default oak), S-109 (sign text colour clashes with its background) and S-112 (fascia colours not the real ones); issue I-059. Checked 2026-11-22: the sign block is hard-coded oak_wall_sign in lib/builds/feature_facade.py (about lines 579 and 696) and lib/builds/feature_details.py:201. Fascia colour comes from FASCIA_COLOURS, six bright colours picked by hash (fascia_colour), with no black, grey or teal and no per-building override. Text colour is chosen against the fascia by contrasting_sign_colour (black or white), but the board is always pale oak, so grey text on the oak board clashes (the owner's \"Tidal vape\" sign); one sign path (about line 697) forces white glowing text. Not verified: the contrast on every parade sign.\n\nDeliverable: (1) a spec key for sign wood (the wall-sign and hanging-sign families), default oak as today; (2) a spec key for fascia colour that overrides the hash, default unchanged; (3) text colour computed against the sign board, not only the fascia, using block map colours, and a refusal of low-contrast pairs (reuse the catalogue pattern of I-057); (4) the second sign path honours the same keys. No palette values here: task 431 (the class recipe) and world data supply the values, so land this before 431. Non-builder: fixtures that the keys validate and emit the chosen blocks, and that the \"Tidal vape\" case (grey text on pale oak) is refused or recoloured. Acceptance: tests, a note in rules/feature-builds.md, a spec example, and the owner reviews S-108, S-109 and S-112 in game after a rebuild.\n"
-    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/437-builder-sign-options"},
+    
     
     {
       "id": 440,
