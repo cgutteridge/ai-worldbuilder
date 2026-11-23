@@ -124,16 +124,7 @@
       "builderTask": false,
       "notes": "From the Papa John's review (2026-11-23, #447 session). typology_spec.py gave the whole parade row (ways 149814017, 149814006, 149814010, 149814011, 149814013, 149814018, 149814014, 149814007, 149814016, 149814008, 149814012) one front: E, but for way 149814018 alone the same code gives W (the road is at the west). With E the 3-block front strip is cut from the rear end and the body eave reads 4.0 m (1 storey) instead of 5.7 m (2 storeys) with W.\n\nReproduce: python3 scripts/typology_spec.py --world southampton-build --ways 149814018 (dry run; prints front E and body storeys 1). Diagnose why the row group picks E (_row_axis / _front on a group, the road bending along the row at about 34 degrees from the grid) and fix it generally; the front should come from the street each footprint faces, not one cardinal for a rotated row. Do not special-case this street.\n\nNon-builder: fixtures from this row's footprints and a dry run, no live apply. Acceptance: the reproduction before and after, a test for a row on a rotated street, and the generator giving W for this way.\n\n\nWave handoff (files, order, worker brief, live-world protocol): docs/plans/roof-and-frontage-swarm.md."
     , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/457-row-front-direction"},
-    {
-      "id": 458,
-      "title": "reapply_feature --apply loses the world lock between undo and rebuild",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "From the Papa John's rebuild (2026-11-23, #447 session). reapply_feature.py --world southampton-build w149814013 --apply undid the old build (entry 2167 landed, 879 blocks) and then stopped: \"World lock not held by claude: None\"; the rebuild did not complete. site_recover.py status was clean and the lock was free, so the plot was left undone. It was re-laid with python3 scripts/site_lock.py --world southampton-build run claude \"<task>\" -- python3 scripts/feature_build.py <spec> --apply (exit 0, 0 mismatches). Several sessions share the world and take turns on the site lock, and several use the owner name claude.\n\nDiagnose how the lock was lost between the undo step and the rebuild subprocess (heartbeat refresh, another session claiming or releasing under the same owner name, STALE_MIN of 90 minutes in lib/site/site_lock.py, the sequence lock in reapply_feature). Make the wrapper safe: hold or re-claim the lock across both steps, and never leave an undone plot without a clear recovery message that names the exact re-lay command. Also say in the failure text which gate stopped it when the registry blocks a rebuild on a neighbouring cell (here cell 51,-36: needs-prep, plus feature plans unaccounted).\n\nNon-builder: fixtures for the lock sequence and a dry run, no live apply on a real build. Acceptance: a test that reproduces the lapse, the fix, and a documented recovery path in rules/slow-commands.md.\n\n\nWave handoff (files, order, worker brief, live-world protocol): docs/plans/roof-and-frontage-swarm.md."
-    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/458-reapply-lock"},
+    
     {
       "id": 459,
       "title": "Read step: label roof volumes from image and lidar profile, with cross-source trust checks (trees)",
