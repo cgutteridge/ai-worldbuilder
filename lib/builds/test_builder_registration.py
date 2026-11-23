@@ -201,6 +201,8 @@ class RegisteredReapplyTest(LiveApplyCase):
         with mock.patch.object(feature_reapply, 'activate_world_from_args'), \
                 mock.patch('world_discovery.require_running_world'), mock.patch('site_lock.check'), \
                 mock.patch('readiness_evidence.require_feature_ready'), \
+                mock.patch('element_undo.require_rebuild_ready'), \
+                mock.patch('site_lock.hold', return_value='held'), \
                 mock.patch('builder_provenance.tool_sha', return_value='1' * 40), \
                 mock.patch.object(house_build, 'build', return_value=new), \
                 mock.patch.object(house_build, 'preview'), \

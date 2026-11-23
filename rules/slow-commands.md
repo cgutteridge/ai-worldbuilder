@@ -13,6 +13,30 @@ success, failure or interrupt. A fresh lock held by another owner is a stop.
 `redo_layer.py --apply` and `reapply_feature.py --apply` own their sequence
 locks: call those wrappers directly, without another outer lock runner.
 
+Lock owner names are the whole identity: two sessions that both use `claude` share one lock,
+so one session's release (or claim) removes or replaces the other's, and a long sequence then
+stops with `World lock not held by claude: None`. `reapply_feature.py --apply` therefore locks as
+`<owner>-<pid>` (default `reapply-<pid>`), checks the same registry gate as undo on every touched
+cell before it undoes anything, and re-claims the lock between the undo and the rebuild. Give
+your own long `site_lock.py run` an owner name no other session uses.
+
+### Recovery: `reapply_feature --apply` stopped after the undo
+
+The stop message says `Undo completed; rebuild did not complete cleanly` and ends with the exact
+re-lay command. The plot stays undone until it is run. A lapsed lock is claimed again by the
+wrapper; it stops only when another owner holds a fresh lock (the message then says
+`Held by <owner> ...`: wait for them to release, then re-lay). Steps:
+
+1. `python3 scripts/site_recover.py --world <world> status` and
+   `python3 scripts/site_lock.py --world <world> status`: no unfinished write, lock free.
+2. Run the printed line, which has this shape (builder argv as the wrapper resolved it):
+   `python3 scripts/site_lock.py --world <world> run <owner> "re-lay <feature>" -- python3 scripts/feature_build.py <spec> --world <world> --apply`
+3. Read back: exit 0 and zero mismatches; if not, `cell_registry.py --world <world> reconcile <cell>`.
+
+A stop before the undo (`stopped during registry readiness gate ...`) names the gate and the
+blocked cell (for example `needs-prep 51,-36: feature plans: 2 eligible groups unaccounted for`,
+each with its `[clear: ...]` command) and has changed nothing: clear that, then retry.
+
 Launch slow commands in the background from the start (or use a tool session
 that can be polled); foreground shell calls may time out before they finish.
 Keep the whole command's log and final exit status. Wait for completion and

@@ -17,6 +17,8 @@ With ``--budget-min N`` it prints one OVER-BUDGET line at N minutes, kills the
 process group at N times ``--kill-factor`` (default 1.5) and exits 124, and
 appends a verdict to site/run-budget.jsonl. Without ``--budget-min`` nothing
 about the wait, the status or the lock changes, and no verdict is written.
+Owner names are the whole identity: two sessions that both use one name share a lock, so one
+session's release (or claim) removes or replaces the other's. Give a long sequence its own name.
 By hand instead:  SITE_OWNER=<owner> python3 scripts/<build>.py --apply
 """
 import json
@@ -70,6 +72,26 @@ def check(owner=None):
     lk['heartbeat'] = time.time()
     lk['heartbeat_at'] = time.strftime('%Y-%m-%d %H:%M:%S')
     write_json(LOCK, lk)
+
+
+def hold(owner, task):
+    """Make sure ``owner`` holds a fresh lock, re-claiming one that lapsed (#458).
+
+    A long sequence (undo then rebuild) calls this between steps. A lock that is still ours has
+    its heartbeat refreshed; a missing or stale lock is claimed again; a fresh lock held by another
+    owner is never taken and raises as ``claim`` does.
+
+    @param owner: lock owner id
+    @param task: what the lock is for (used only when the lock is claimed again)
+    @returns: ``'held'`` when the lock was still ours, ``'reclaimed'`` when it had lapsed
+    @raises SystemExit: another owner holds a fresh lock
+    """
+    lk = read()
+    if fresh(lk) and lk['owner'] == owner:
+        check(owner)
+        return 'held'
+    claim(owner, task)
+    return 'reclaimed'
 
 
 def claim(owner, task):
