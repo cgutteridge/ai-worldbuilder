@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the worldbuilder-tasks skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 459,
+  "nextTaskId": 460,
   "tasks": [
     
     
@@ -151,6 +151,16 @@
       "blockedBy": [],
       "builderTask": false,
       "notes": "From the Papa John's rebuild (2026-11-23, #447 session). reapply_feature.py --world southampton-build w149814013 --apply undid the old build (entry 2167 landed, 879 blocks) and then stopped: \"World lock not held by claude: None\"; the rebuild did not complete. site_recover.py status was clean and the lock was free, so the plot was left undone. It was re-laid with python3 scripts/site_lock.py --world southampton-build run claude \"<task>\" -- python3 scripts/feature_build.py <spec> --apply (exit 0, 0 mismatches). Several sessions share the world and take turns on the site lock, and several use the owner name claude.\n\nDiagnose how the lock was lost between the undo step and the rebuild subprocess (heartbeat refresh, another session claiming or releasing under the same owner name, STALE_MIN of 90 minutes in lib/site/site_lock.py, the sequence lock in reapply_feature). Make the wrapper safe: hold or re-claim the lock across both steps, and never leave an undone plot without a clear recovery message that names the exact re-lay command. Also say in the failure text which gate stopped it when the registry blocks a rebuild on a neighbouring cell (here cell 51,-36: needs-prep, plus feature plans unaccounted).\n\nNon-builder: fixtures for the lock sequence and a dry run, no live apply on a real build. Acceptance: a test that reproduces the lapse, the fix, and a documented recovery path in rules/slow-commands.md.\n"
+    },
+    {
+      "id": 459,
+      "title": "Read step: label roof volumes from image and lidar profile, with cross-source trust checks (trees)",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "l",
+      "blockedBy": [],
+      "builderTask": true,
+      "notes": "From the Papa John's review (2026-11-23, #447 session). Evidence and prototypes: world site/task-447-papa-johns-read-vs-build.md and site/task-447-papa-johns-staged-test/ (staged.py, reconcile_proto.py, smooth_roof.py).\n\nOwner steer: the image identifies zones, lidar gives heights, flats and lows, a model makes a small per-building decision from the image with tokens used sparingly, and no single source is always right (trees can hide lidar and the overhead image).\n\nPapa John's read-step findings: lidar in the plot frame shows four volumes (flat front 24.4 m; main range with the ridge parallel to the road at 30.26 m; a perpendicular rear wing falling about 0.6 m/m to the south; a flat bin store beyond the way). Tags give nothing about roof parts, no street view exists for the cell, and the shadowed street end hides the front in the aerial.\n\nNeeded: (1) segment the lidar profile along the plot axis into volumes (flat, ridge across the plot, slope along it); (2) one model call per building with the rotated aerial crop and the profile table to label each volume's roof form and colour (and dormer or bay at the front); (3) per-attribute trust checks: lidar roughness against a 3x3 median (clean real roofs: median 0.13, 90th percentile 0.21 over 150 houses; staged threshold 0.45; one real outlier of 0.58 at 6744,-5516 sits outside aerial coverage and is unverified), comparison with the row neighbours at the same position, aerial green or deep shadow; record agree, disagree or silent per source on each volume and fall back to the row or the class default when both sources are degraded; (4) test on a real canopy case.\n\nKnown limits: no real canopy case exists yet (the hand-read crowns in reference/trees-aerial-crowns.json never overlap footprints; the highest aerial green share inside any of 155 houses is 9%); the staged damage tests caught 7 of 7 cases but the thresholds are tuned on one building and a uniform canopy over a whole volume would pass the roughness check; the model-labelling step has not been exercised. The aerial mean over Papa John's footprint is blue-grey (hue about 266 deg, saturation 0.22), not red: roof type grey_tile or grey_slate.\n\nBuilder task: uses a model on an image. Acceptance: a recorded run on Papa John's and one other building, with token cost, the labels, the trust flags and an owner review of the result.\n"
     }
   ]
 }
