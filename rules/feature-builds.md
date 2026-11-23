@@ -107,7 +107,7 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   (`provenance.unresolved_reason` non-empty). Provenance is shared
   (`lib/site/provenance.py`). No register → still add photo-read entrances.
   Build places doors from placed entrances only (unresolved are listed, not
-  built); door floor y follows outside ground + `floor_offset` for the transition, capped below the roof so both leaves and lintel fit. Missing outside ground falls back to lidar floor. The live rim never sets shell height. The old
+  built); door floor y follows outside ground + `floor_offset` for the transition, capped below the roof so both leaves and lintel fit. Missing outside ground falls back to lidar floor. A rule-built shopfront (glass, door, fascia) stands on the outside ground when that is above the column floor and the band still fits, so a footprint whose median ground sits under the pavement no longer sinks its door (#436). The live rim never sets shell height. The old
   per-portal `doors` map is refused. Face slots `roof_edge` / `detail` are
   reserved; real roof edge and greeblies stay on `roofs.edge` / `details`.
   Window frames are checked against completed openings at build time.

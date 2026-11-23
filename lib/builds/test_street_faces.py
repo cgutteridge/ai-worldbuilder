@@ -552,6 +552,47 @@ class StreetFaceBuildTest(unittest.TestCase):
             self.assertIn('bricks', plan.cells[(jx, 51, 20)])
             self.assertIn('bricks', plan.cells[(jx, 52, 20)])
 
+    def _raised_pavement(self, **kwargs):
+        """Shop whose footprint ground (49) sits one block under the pavement (50) (#436)."""
+        ground = np.full((60, 60), 49)
+        ground[:30, :] = 50  # z <= 19: the street side of the front wall at z = 20
+
+        class PavedWorld:
+            def block(self, x, y, z):
+                top = 50 if z <= 19 else 49
+                return 'minecraft:stone' if y <= top else 'minecraft:air'
+
+        spec = kwargs.pop('spec', None) or fixtures.build_spec(storeys=2, floor_y=None)
+        return self._shop(
+            shop='books', spec=spec, world=PavedWorld(),
+            zone_data={'A': {'ground_y': ground, 'x0': -10, 'z0': -10}}, **kwargs,
+        )
+
+    def test_shop_door_stands_on_the_pavement_not_the_footprint_floor(self):
+        builder, plan = self._raised_pavement()
+        self.assertEqual(builder.features[0].b, 49)
+        doors = [(x, y, z) for (x, y, z), state in plan.cells.items()
+                 if '_door[' in state and 'half=lower' in state]
+        self.assertEqual(len(doors), 1)
+        (dx, dy, dz), = doors
+        self.assertEqual((dy, dz), (51, 20))
+        self.assertEqual(plan.cells[(dx, 50, 19)], 'minecraft:smooth_stone')
+        self.assertNotEqual(plan.cells.get((dx, 50, 19)), 'minecraft:air')
+        glass_y = {y for (x, y, z), state in plan.cells.items() if state == 'minecraft:glass'}
+        self.assertEqual(glass_y, {51, 52})
+        self.assertIn('_concrete', plan.cells[(10, 53, 20)])
+
+    def test_a_moved_door_takes_the_pavement_floor_too(self):
+        cells = {(x, z) for x in range(10, 21) for z in range(20, 30)}
+        cells.remove((15, 20))
+        spec = fixtures.build_spec(storeys=2, floor_y=None)
+        spec['facade_plan'] = {'A': {'entrances': [facade_fixtures._entrance(
+            face='N', at=[15, 21], floor_offset=0)]}}
+        _, plan = self._raised_pavement(cells=cells, spec=spec)
+        lowers = [(x, y, z) for (x, y, z), state in plan.cells.items()
+                  if '_door[' in state and 'half=lower' in state]
+        self.assertEqual(lowers, [(15, 51, 20)])
+
     def test_explicit_facade_rows_skip_shop_dressing(self):
         spec = fixtures.build_spec( storeys=2)
         spec['facade_plan'] = {'A': {'faces': {'N': {'glazing': [
