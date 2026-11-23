@@ -298,7 +298,8 @@ is shared) and re-apply the same build name. Never stack `_b`/`_c` patch builds.
 A through railway is a named feature, `railway_<tx>_<tz>` (negative cell coordinates
 use the usual `m` prefix), containing its rails, ballast, formation, side slopes
 and low planting. It uses the ordinary feature journal, backup, ownership and
-undo paths. Junctions and service/decor lines remain outside this mechanism.
+undo paths. Service/decor lines remain outside this mechanism; junctions between
+through lines are laid by rule (below) and finished by a person.
 
 The per-cell proposal and preparation paths check the smallest complete railway
 cell extract first. They return immediately when it has no through line or when
@@ -352,6 +353,24 @@ clearance ceiling. An unknown height, or an inferred one while
 `railway_plan.INFERRED_DECK_USABLE` is false, becomes an `overhead` gap (end records,
 `where` and `reason` for a human) and the rest of the corridor still plans. A usable
 height under 5 blocks of clearance still fails.
+
+**Junctions (#452).** Where line plans in one feature share rail columns, the planner
+(`railway_feature.plan_feature`, using `railway_plan.junction_gaps`) keeps the main
+line's rails: main is the plan with more tracks, then more rail columns, then the
+lowest `line_id`. Every other claimant of a column loses it, including a column that
+three lines share (the best ranked of them keeps it). Each side track's lost rail
+columns, plus any surviving rail run shorter than `railway_plan.JUNCTION_MIN_RUN`
+columns that has nothing to connect to (junction gaps or a dead end on both sides;
+runs beside a box join or a structure gap are kept), become a `junction` gap: `source`
+is the main line's id (joined with `+` if several), `where` is its first column, and
+`ends` carry rail Y, direction and track index like every other gap. The side line is
+re-planned with these gaps, so its profile, ground and planting already leave them
+empty. Columns that corridors write differently go to one owner (`share_footprints`):
+the plan with a rail there, else the main line. Fails loudly, with coordinates, when
+an overlap covers a box join or a line lies wholly inside the others. `build()` keeps
+refusing hand-made specs whose plans still share a rail column or write a shared column
+differently. Metadata lists each junction gap under `junctions` (side line, main line,
+`where`, `last`, ends) so a person can find and finish it.
 
 The feature reserves every written footprint column from later ground, trees
 and decor, including cuts below the old terrain. Ground must not refill above

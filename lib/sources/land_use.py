@@ -32,7 +32,7 @@ OPENINGS = ('door_route', 'street_gate', 'none')
 # Optional row columns beyond the required ones. Add a new per-class key here (and its checks in
 # validate_table) so an unknown key is still refused; absent or null means "infer nothing".
 OPTIONAL_COLUMNS = ('surface', 'street_face', 'trees', 'ground_texture', 'woodland_decor', 'body',
-                    'palette', 'roofs', 'storeys')
+                    'palette', 'roofs', 'storeys', 'terrace_roofs')
 # Building appearance under a district profile (ADR 006, read by typology_spec). Absent means no default.
 TYPOLOGY_ROOFS = ('flat', 'gable', 'hip', 'mansard', 'shed')
 SURFACE_KEYS = ('unmapped_paving', 'path_widen')
@@ -264,6 +264,7 @@ def typology_defaults(cls: str) -> dict | None:
     ADR 006 puts this table under the district profile. A row that sets none of
     these keys has no building-appearance default. ``unknown`` is not a fallback
     here: a class the table does not list, and ``unknown`` itself, return None.
+    ``terrace_roofs`` is a terrace-recipe field, not a district appearance default.
 
     @param cls: class id
     @returns: the keys the row sets among palette, roofs and storeys, or None
@@ -275,8 +276,28 @@ def typology_defaults(cls: str) -> dict | None:
     return section or None
 
 
+def terrace_roof_families(cls: str) -> list[str] | None:
+    """Catalogue roof families for alternating terrace pair colours, or None when unset.
+
+    Reads ``terrace_roofs`` on the class row: a nonempty list of roof-type names
+    from ``config/roof-materials.json``. Each type resolves to its recommended
+    pitched family. Used by the typology terrace recipe (#441); absent means the
+    generator keeps one family for the whole row.
+
+    @param cls: class id
+    @returns: family ids in palette order, or None
+    """
+    if cls not in CLASSES or cls == 'unknown':
+        return None
+    names = defaults(cls).get('terrace_roofs')
+    if not isinstance(names, list) or not names:
+        return None
+    from roof_material import roof_type_blocks
+    return [roof_type_blocks(name)['family'] for name in names]
+
+
 def _validate_typology(cid: str, row: dict) -> None:
-    """Refuse a bad palette, roof list or storey range on a class row.
+    """Refuse a bad palette, roof list, storey range or terrace roof palette on a class row.
 
     Null or absent means the class states no building-appearance default.
     ``unknown`` may not set one: that class does not infer a building.
@@ -284,7 +305,8 @@ def _validate_typology(cid: str, row: dict) -> None:
     @param cid: class id
     @param row: table row
     """
-    if cid == 'unknown' and any(row.get(key) is not None for key in ('palette', 'roofs', 'storeys')):
+    typology_keys = ('palette', 'roofs', 'storeys', 'terrace_roofs')
+    if cid == 'unknown' and any(row.get(key) is not None for key in typology_keys):
         raise TableError(f'{cid}: typology defaults are inference')
     palette = row.get('palette')
     if palette is not None and (not isinstance(palette, list) or not palette
@@ -294,6 +316,18 @@ def _validate_typology(cid: str, row: dict) -> None:
     if roofs is not None and (not isinstance(roofs, list) or not roofs
                               or any(item not in TYPOLOGY_ROOFS for item in roofs)):
         raise TableError(f'{cid}: roofs must be a nonempty list of {TYPOLOGY_ROOFS}')
+    terrace = row.get('terrace_roofs')
+    if terrace is not None:
+        if not isinstance(terrace, list) or not terrace or any(
+                not isinstance(item, str) or not item.strip() for item in terrace):
+            raise TableError(f'{cid}: terrace_roofs must be a nonempty list of roof type names')
+        from roof_material import roof_type_blocks, roof_type_names
+        known = set(roof_type_names())
+        for name in terrace:
+            if name not in known:
+                raise TableError(f'{cid}: terrace_roofs names unknown type {name!r}')
+            if roof_type_blocks(name)['slope'] != 'pitched':
+                raise TableError(f'{cid}: terrace_roofs type {name!r} must be pitched')
     storeys = row.get('storeys')
     if storeys is None:
         return

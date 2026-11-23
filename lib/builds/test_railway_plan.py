@@ -419,5 +419,68 @@ class DeckEvidenceTest(RailwayPlannerTest):
         self.assertFalse({(c[0], c[2]) for c in p['planting']} & gap)
 
 
+class JunctionGapsTest(unittest.TestCase):
+    """:func:`railway_plan.junction_gaps` on hand-made first-pass plans (#452)."""
+
+    @staticmethod
+    def plan(line_id, path, gap=None, before=None, after=None, tracks=1):
+        mask = gap or [False] * len(path)
+        track = {'track_index': 0, 'path': [list(p) for p in path], 'gap': list(mask),
+                 'before': before, 'after': after}
+        rails = [[x, 31, z, 'east_west', ''] for (x, z), g in zip(path, mask) if not g]
+        return {'line_id': line_id, 'tracks': [track] * tracks, 'rails': rails}
+
+    @staticmethod
+    def row(z, x0, x1):
+        return [(x, z) for x in range(x0, x1 + 1)]
+
+    @classmethod
+    def dipping(cls, line_id, hits, length, **kwargs):
+        """A side line along z=5 that touches the main line (z=0) at the given x values."""
+        return cls.plan(line_id, [(x, 0 if x in hits else 5) for x in range(length)], **kwargs)
+
+    def spans(self, out, index):
+        return [(g['start'], g['end'], g['source']) for g in out[index][0]]
+
+    def test_short_runs_cut_off_by_the_overlap_are_absorbed_and_long_ones_kept(self):
+        main = self.plan('main', self.row(0, 0, 200), tracks=2)
+        side = self.dipping('side', {10, 14, 40}, 60)
+        out = R.junction_gaps([side, main])
+        self.assertEqual(sorted(out), [0])
+        # 11..13 is a three-cell stub between two overlaps (absorbed); 0..9, 15..39 and
+        # 41..59 are long enough to join something and stay.
+        self.assertEqual(self.spans(out, 0), [(10, 14, 'main'), (40, 40, 'main')])
+
+    def test_runs_next_to_a_structure_gap_or_a_box_join_are_not_orphans(self):
+        main = self.plan('main', self.row(0, 0, 100), tracks=2)
+        gap = [True, True] + [False] * 28
+        side = self.dipping('side', {4, 8, 20, 28}, 30, gap=gap, after=(30, 5))
+        out = R.junction_gaps([main, side])
+        # 2..3 touches the structure gap and 29 the box join, so both stay; 5..7 is cut off
+        # on both sides and goes.
+        self.assertEqual(self.spans(out, 1), [(4, 8, 'main'), (20, 20, 'main'), (28, 28, 'main')])
+
+    def test_an_overlap_on_a_box_join_fails_with_both_line_ids_and_the_coordinates(self):
+        main = self.plan('main', self.row(0, 0, 100), tracks=2)
+        side = self.plan('side', self.row(0, 50, 80), before=(49, 0))
+        with self.assertRaisesRegex(ValueError, r'junction with main covers the box join of side at \[50, 0\]'):
+            R.junction_gaps([main, side])
+
+    def test_duplicate_line_ids_cannot_choose_a_main_line(self):
+        a = self.plan('same', self.row(0, 0, 10))
+        b = self.plan('same', self.row(0, 5, 20))
+        with self.assertRaisesRegex(ValueError, 'distinct line ids'):
+            R.junction_gaps([a, b])
+
+    def test_no_shared_columns_means_no_gaps(self):
+        self.assertEqual(R.junction_gaps([self.plan('a', self.row(0, 0, 10)),
+                                          self.plan('b', self.row(5, 0, 10))]), {})
+
+    def test_plan_line_rejects_junction_gaps_outside_the_track(self):
+        with self.assertRaisesRegex(ValueError, 'outside track 0'):
+            R.plan_line(line(((0, 0), (50, 0))), ground(), (0, 0), cell_size=128,
+                        junction_gaps={0: [{'source': 'x', 'start': 40, 'end': 90}]})
+
+
 if __name__ == '__main__':
     unittest.main()
