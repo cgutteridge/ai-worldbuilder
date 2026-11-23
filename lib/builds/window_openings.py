@@ -67,7 +67,7 @@ def choose_windows(candidates, *, block, walls, exposed, outside_ground, protect
             reason = 'protected entrance'
         elif not structural(block(*pos)):
             reason = 'non-wall'
-        elif corner and not any(v.corner_evidence for v in choices):
+        elif corner and not any(v.corner_evidence or v.stepped for v in choices):
             reason = 'corner pier / tread too short'
         else:
             heights = [outside_ground.get((x + DIRS[v.face][0], z + DIRS[v.face][1]))
@@ -107,7 +107,10 @@ def choose_windows(candidates, *, block, walls, exposed, outside_ground, protect
                     todo.append(q)
         remaining -= component
         missing_bounds = set()
-        for x, y, z in component:
+        # Full glass blocks need no frame (jamb, sill, lintel); only panes do. A stepped tread or
+        # an evidenced corner is always full glass, so it skips the boundary check.
+        frameless = any(active[p][0].stepped or active[p][1] for p in component)
+        for x, y, z in () if frameless else component:
             current = active[x, y, z][0]
             for ox, oy, oz in offsets_for(current):
                 q = (x + ox, y + oy, z + oz)

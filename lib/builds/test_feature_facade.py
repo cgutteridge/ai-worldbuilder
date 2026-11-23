@@ -132,17 +132,17 @@ class FacadeWindowsTest(unittest.TestCase):
                 else:
                     self.assertIn('no evidence read', line, line)
 
-    def test_stepped_treads_gain_solid_glass_and_corners_stay_wall(self):
+    def test_stepped_treads_gain_solid_glass_including_their_corners(self):
         cells = {(x, z) for x in range(10, 18) for z in range(20, 25 + (x - 10) // 2)}
         spec = self.spec({'A': {'S': [{'storey': 1, 'glazed_h': 2, 'pier': 0, 'rhythm': 'W'}]}})
         spec['storeys'] = {'A': 1}
         with redirect_stdout(io.StringIO()) as output:
             plan = F.build(spec, footprints={'A': cells}, world=_StoneWorld())
-        self.assertIn('solid-glass=6', output.getvalue())
-        self.assertIn('corner pier / tread too short=', output.getvalue())
+        # Full glass blocks need no pier or frame, so every intended tread window lands.
+        self.assertIn('windows intended=16 selected=16', output.getvalue())
+        self.assertIn('solid-glass=16', output.getvalue())
+        self.assertNotIn('corner pier / tread too short', output.getvalue())
         self.assertFalse(any('glass_pane' in state for state in plan.cells.values()))
-        for dy in (1, 2):
-            self.assertEqual(plan.cells[(12, 50 + dy, 25)], 'minecraft:bricks')
         self.assertTrue(any(state == 'minecraft:glass' for state in plan.cells.values()))
 
     def test_one_storey_glazed_h1_gets_glass_under_eave(self):
