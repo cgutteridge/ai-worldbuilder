@@ -216,6 +216,16 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   }
   ```
 
+  Optional `zones[label].regions`: `[[[x, z], ...], ...]`, polygons in MC block
+  coordinates (at least three distinct finite vertices each; a column is inside when
+  its centre is, even-odd). The image says where a roof zone is (a hipped front, a flat
+  rear extension) and lidar says how high: each region's level is the 20th percentile of
+  the median DSM inside it, rounded to whole metres, so a ridge still rises from that
+  eave and a flat plateau stays flat (`roofs[label].flat_tol_m` sets the rise below which
+  a zone stays flat; default 1.5, lower it for a low hip). Columns outside every region
+  keep their lidar zone. An empty polygon (no readable columns) or overlapping polygons
+  refuse. `material_regions[].level` must name a declared or auto plateau.
+
   Pipeline: 1-block-stair squaring (close then open, no fixed halo) → 5×5
   median DSM → snap to `levels` (or `"auto"` plateaus) → mode-filter →
   bucket on the building's rotated grid so zone edges are straight runs.

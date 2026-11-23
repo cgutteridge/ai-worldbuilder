@@ -104,6 +104,29 @@ class ZoneMathTest(unittest.TestCase):
         self.assertIn(26.0, levels)
         self.assertIn(eave, levels)
 
+    def test_region_levels_are_whole_metres_and_merge_when_equal(self):
+        # Two regions whose lidar eaves are 30.3 and 29.8 are the same 30 m zone, not a fractional step.
+        outline = np.ones((8, 16), dtype=bool)
+        zz, xx = np.mgrid[0:8, 0:16]
+        dsm = np.where(xx < 8, 30.3, 29.8)
+        regions = [[(0, 0), (8, 0), (8, 8), (0, 8)], [(8, 0), (16, 0), (16, 8), (8, 8)]]
+        readable, zone, levels, _axis, _dropped = FZ.assign_roof_zones(
+            dsm, outline, 'auto', xx, zz, bucket=4, axis_deg=0.0, regions=regions,
+        )
+        self.assertEqual(set(zone[readable].tolist()), {30.0})
+        self.assertTrue(all(float(level).is_integer() for level in levels))
+
+    def test_cells_outside_every_region_keep_their_lidar_zone(self):
+        outline = np.ones((6, 12), dtype=bool)
+        zz, xx = np.mgrid[0:6, 0:12]
+        dsm = np.where(xx < 6, 41.0, 50.0)
+        regions = [[(0, 0), (6, 0), (6, 6), (0, 6)]]
+        readable, zone, _levels, _axis, _dropped = FZ.assign_roof_zones(
+            dsm, outline, [41, 50], xx, zz, bucket=3, axis_deg=0.0, regions=regions,
+        )
+        self.assertEqual(set(zone[readable & (xx >= 6)].tolist()), {50.0})
+        self.assertEqual(set(zone[readable & (xx < 6)].tolist()), {41.0})
+
     def test_regions_refuse_overlap_and_empty_polygons(self):
         outline = np.ones((6, 6), dtype=bool)
         zz, xx = np.mgrid[0:6, 0:6]

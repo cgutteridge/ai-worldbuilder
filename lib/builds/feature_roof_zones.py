@@ -293,7 +293,7 @@ def assign_roof_zones(
     @param ground_y: optional block-Y DTM grid (same shape as ``dsm``)
     @param mass_m: nDSM threshold in metres (default ``ZONE_LIDAR_MASS_M``)
     @param regions: optional ``[[(x, z), ...], ...]`` polygons from the aerial. Each polygon's
-        readable cells become one zone whose level is read from lidar (see ``region_levels``);
+        readable cells become one zone whose level is read from lidar (see ``apply_regions``);
         cells outside every polygon keep the lidar zone. Overlapping polygons are refused.
     @returns: ``(readable, zone, levels_used, axis_deg_used, dropped)`` where
         ``dropped`` lists small islands removed (see ``drop_small_footprint_pieces``)
@@ -341,7 +341,8 @@ def apply_regions(
     """Let aerial polygons say where the roof zones are; lidar still says how high each is.
 
     The image identifies a zone (a hipped front, a flat rear extension). Its level is the
-    low ``REGION_EAVE_PERCENTILE`` of the median DSM inside it, so the existing ridge logic
+    low ``REGION_EAVE_PERCENTILE`` of the median DSM inside it, rounded to whole metres
+    (downstream keys zones on the integer level), so the existing ridge logic
     can rise from that eave where lidar shows a ridge and leave a flat plateau flat.
 
     @param zone: lidar zone grid (levels, metres AOD)
@@ -369,7 +370,7 @@ def apply_regions(
             raise SystemExit(f'zones regions[{i}]: no roof columns inside polygon')
         if (mask & taken).any():
             raise SystemExit(f'zones regions[{i}]: overlaps an earlier region')
-        level = round(float(np.percentile(med[mask], REGION_EAVE_PERCENTILE)), 1)
+        level = float(round(np.percentile(med[mask], REGION_EAVE_PERCENTILE)))   # whole metres, like every plateau level
         out[mask] = level
         taken |= mask
         if level not in used:
