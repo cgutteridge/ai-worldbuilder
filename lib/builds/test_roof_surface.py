@@ -55,6 +55,28 @@ class ShapeTest(unittest.TestCase):
         self.assertLess(surface.rms, 0.05)
 
 
+class UnmodelledShapeTest(unittest.TestCase):
+    def test_a_hipped_roof_is_not_flattened(self):
+        gx, gz = grid(14, 10)
+        h = 28.0 + 3.0 * np.clip(np.minimum(np.minimum(gz, 9 - gz), np.minimum(gx, 13 - gx)) / 4.5, 0, 1)
+        surface = RS.fit_surface(gx, gz, h)
+        self.assertNotEqual(getattr(surface, 'kind', None), 'flat')
+
+    def test_a_stepped_roof_gives_no_surface_instead_of_deleting_the_high_half(self):
+        xs, zs = grid(10, 8)
+        self.assertIsNone(RS.fit_surface(xs, zs, np.where(xs < 6, 30.0, 33.0)))
+
+    def test_a_pair_of_same_sign_slopes_is_not_a_gable(self):
+        xs, zs = grid(14, 6)
+        h = np.where(xs <= 6, 26.0 + 0.5 * xs, 29.0 + 0.8 * (xs - 6))      # one wide slope with a kink
+        surface = RS.fit_surface(xs, zs, h)
+        self.assertNotEqual(getattr(surface, 'kind', None), 'gable')
+
+    def test_a_three_wide_roof_does_not_crash_the_ridge_search(self):
+        xs, zs = grid(3, 8)
+        RS.fit_surface(xs, zs, 30.0 - 0.6 * np.abs(xs - 1.0))
+
+
 class NoiseTest(unittest.TestCase):
     def test_lidar_noise_does_not_make_a_flat_roof_pitched(self):
         rng = np.random.default_rng(3)

@@ -9,7 +9,9 @@ fitted surface stands in for the raw heights:
 * ``plane`` - one slope, for a monopitch or lean-to;
 * ``gable`` - two slopes meeting at a ridge, which runs along the zone's axis or across it.
 
-The simplest shape that explains the heights within the lidar's own noise wins. This module is
+The simplest shape that explains the heights within the lidar's own noise wins. A shape also has to keep
+most of the cells: one that explains the heights only by dropping a stepped roof's higher half is no fit.
+When nothing qualifies (a hip, a stepped roof) there is no surface and the raw heights stay. This module is
 pure geometry: it places nothing and reads no world.
 """
 from __future__ import annotations
@@ -24,6 +26,8 @@ TRIM_M = 1.0              # cells further than this from the fit (edge cells, sp
 TRIM_PASSES = 3
 NOISE_M = 0.15            # a richer shape must beat the simpler one by more than this (metres RMS) ...
 NOISE_FRACTION = 0.25     # ... and by this fraction of the simpler one's RMS
+ACCEPT_RMS_M = 0.4        # a shape must explain the kept heights this well (lidar noise is about 0.3 m) ...
+MIN_KEPT = 0.7            # ... and without throwing away more than this share of the cells
 MIN_SLOPE = 0.15          # metres per metre: a slope shallower than this is a flat roof
 RIDGE_INSET_M = 1.0       # a ridge needs this much roof on each side of it
 RIDGE_STEP_M = 0.25
@@ -111,10 +115,10 @@ def _trimmed(fit, u, v, h, passes: int = TRIM_PASSES):
         nxt = np.abs(pred - h) <= TRIM_M
         if nxt.sum() < MIN_POINTS or (nxt == keep).all():
             break
-        keep = nxt
-        params, pred = fit(u, v, h, keep)
-        if params is None:
-            return None, math.inf, keep
+        refit, refit_pred = fit(u, v, h, nxt)
+        if refit is None:
+            break                                      # keep the previous pass's fit
+        keep, params, pred = nxt, refit, refit_pred
     rms = float(np.sqrt(np.mean((pred[keep] - h[keep]) ** 2)))
     return params, rms, keep
 
@@ -126,7 +130,8 @@ def fit_surface(xs, zs, heights, axis_deg: float = 0.0) -> Surface | None:
     @param zs: world z of the zone's columns
     @param heights: lidar height per column, metres (NaN is ignored)
     @param axis_deg: the zone's long-axis angle, degrees (atan2 of z over x), as ``footprint_axis_deg``
-    @returns: the fitted surface, or None when fewer than ``MIN_POINTS`` columns have data
+    @returns: the fitted surface, or None when fewer than ``MIN_POINTS`` columns have data or no shape explains
+        the heights (a hip or a stepped roof is not one of the three shapes; the caller keeps the raw heights)
     """
     xs = np.asarray(xs, dtype=float).ravel()
     zs = np.asarray(zs, dtype=float).ravel()
@@ -144,10 +149,11 @@ def fit_surface(xs, zs, heights, axis_deg: float = 0.0) -> Surface | None:
         ('gable', False, lambda *a: _fit_gable(*a, across=False)),
     ):
         params, rms, keep = _trimmed(fit, u, v, h)
-        if params is not None:
-            candidates.append(Surface(kind, rms, int(keep.sum()), ridge_across, params, float(axis_deg)))
+        if params is None or rms > ACCEPT_RMS_M or keep.sum() < MIN_KEPT * len(h):
+            continue                                   # not explained, or only by dropping much of the roof
+        candidates.append(Surface(kind, rms, int(keep.sum()), ridge_across, params, float(axis_deg)))
     if not candidates:
-        return None
+        return None                                    # a hip, a step or clutter: the raw heights stay
     # Simplest wins unless a richer shape beats it by more than the lidar's own noise.
     rank = {'flat': 0, 'plane': 1, 'gable': 2}
     candidates.sort(key=lambda s: (rank[s.kind], s.rms))
