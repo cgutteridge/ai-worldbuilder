@@ -453,6 +453,26 @@ def _roof_pitch_mask(
     return spread(uphill & (rise_m >= flat_tol_m), uphill=False)
 
 
+def ridge_clip_levels(levels_cfg, regions, zone: np.ndarray, readable: np.ndarray, levels_used: list) -> list:
+    """Plateau levels the ridge logic may clip a zone's rise against.
+
+    ``zone_ridge_half_steps`` limits each zone's rise to the gap to the next listed level. With
+    ``levels: "auto"`` plus ``regions`` the regions replace the lidar plateaus, and an auto plateau no
+    zone uses any more would clip a ridge to a gap nothing sits on. In that case only the levels the zone
+    grid uses count. The full list stays the one ``material_regions`` is checked against.
+
+    @param levels_cfg: the spec's ``zones[label].levels`` (a list or ``"auto"``)
+    @param regions: the spec's ``zones[label].regions`` (None or empty when absent)
+    @param zone: zone level grid
+    @param readable: readable footprint mask
+    @param levels_used: every plateau ``assign_roof_zones`` returned
+    @returns: levels for the ridge clip
+    """
+    if regions and levels_cfg == 'auto':
+        return sorted({float(v) for v in zone[readable].tolist()})
+    return levels_used
+
+
 FLAT_TOL_M = 1.5  # default exclusive rise (m above the zone eave) below which a roof stays flat
 
 
@@ -944,7 +964,9 @@ class RoofZonePlanning:
                 fine = dsm.astype(float) if fine is None else np.asarray(fine, dtype=float)
                 half_grid = flatten_half_step_decks(
                     zone_ridge_half_steps(
-                        _win_nanmedian(fine, 3), zone, readable, levels=_levels, flat_out=flat_grid,
+                        _win_nanmedian(fine, 3), zone, readable,
+                        levels=ridge_clip_levels(cfg['levels'], cfg.get('regions'), zone, readable, _levels),
+                        flat_out=flat_grid,
                         flat_tol_m=float(f.roof.get('flat_tol_m', FLAT_TOL_M)),
                     ),
                     zone, readable,

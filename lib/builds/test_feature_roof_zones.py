@@ -104,6 +104,48 @@ class ZoneMathTest(unittest.TestCase):
         self.assertIn(26.0, levels)
         self.assertIn(eave, levels)
 
+    def _hip_with_dead_auto_plateau(self):
+        # A 4 m hip over a 30 m eave. Lidar finds auto plateaus between 30 and 34 m (the hip's flank) that
+        # the region then absorbs into one 30 m zone, beside a flat 26 m deck.
+        outline = np.ones((12, 20), dtype=bool)
+        zz, xx = np.mgrid[0:12, 0:20]
+        dsm = np.full((12, 20), 26.0)
+        front = xx < 10
+        dsm[front] = 30.0 + 4.0 * (1 - np.abs(zz[front] - 5.5) / 6.0)
+        regions = [
+            [(0, 0), (10, 0), (10, 12), (0, 12)],
+            [(10, 0), (20, 0), (20, 12), (10, 12)],
+        ]
+        readable, zone, levels, _axis, _dropped = FZ.assign_roof_zones(
+            dsm, outline, 'auto', xx, zz, bucket=4, axis_deg=0.0, regions=regions,
+        )
+        return dsm, front, regions, readable, zone, levels
+
+    def test_auto_levels_unused_after_regions_do_not_clip_the_ridge(self):
+        dsm, front, regions, readable, zone, levels = self._hip_with_dead_auto_plateau()
+        dead = [v for v in levels if v not in {float(z) for z in zone[readable].tolist()}]
+        self.assertTrue(dead, 'the lidar found plateaus the regions absorbed')
+        eave = float(zone[readable & front][0])
+        want = int(2 * (float(dsm[readable & front].max()) - eave)) - 1
+        clipped = FZ.zone_ridge_half_steps(dsm, zone, readable, flat_tol_m=0.8, levels=levels)
+        self.assertLess(int(clipped[readable & front].max()), want)   # the old behaviour: the dead levels clip
+        used = FZ.ridge_clip_levels('auto', regions, zone, readable, levels)
+        self.assertEqual(used, sorted({float(v) for v in zone[readable].tolist()}))
+        half = FZ.zone_ridge_half_steps(dsm, zone, readable, flat_tol_m=0.8, levels=used)
+        self.assertGreaterEqual(int(half[readable & front].max()), want)
+
+    def test_full_level_list_stays_known_for_material_regions(self):
+        # material_regions[].level may still name an auto plateau a region absorbed.
+        _dsm, _front, regions, readable, zone, levels = self._hip_with_dead_auto_plateau()
+        dead = [v for v in levels if v not in {float(z) for z in zone[readable].tolist()}]
+        self.assertTrue(set(dead) <= set(levels))
+        self.assertNotEqual(FZ.ridge_clip_levels('auto', regions, zone, readable, levels), levels)
+
+    def test_explicit_levels_or_no_regions_keep_the_full_clip_list(self):
+        _dsm, _front, regions, readable, zone, levels = self._hip_with_dead_auto_plateau()
+        self.assertEqual(FZ.ridge_clip_levels([26, 30, 34], regions, zone, readable, levels), levels)
+        self.assertEqual(FZ.ridge_clip_levels('auto', None, zone, readable, levels), levels)
+
     def test_region_levels_are_whole_metres_and_merge_when_equal(self):
         # Two regions whose lidar eaves are 30.3 and 29.8 are the same 30 m zone, not a fractional step.
         outline = np.ones((8, 16), dtype=bool)
