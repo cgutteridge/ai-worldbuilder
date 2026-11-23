@@ -702,7 +702,7 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument('--bbox', help='x0,z0,x1,z1 summary')
     pr.set_defaults(func=cmd_probe)
 
-    v = sub.add_parser('view', help='heading → handoff --view')
+    v = sub.add_parser('view', help='heading → camera position and look-at')
     v.add_argument('--at', required=True, help='x,y,z eye')
     v.add_argument('--heading', type=float, required=True)
     v.add_argument('--distance', type=float, default=25.0)
