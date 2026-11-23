@@ -5,7 +5,7 @@ Original design for task #306; ground support and reporting updated by #444. Wri
 ## 0. What exists
 
 - `place_furniture` (`lib/layers/decor_layer.py`) takes one `ground_at` top per item; every recipe voxel is `(x, top+dy, z)`. Recipes in `lib/sources/street_furniture.py` are `(dy, block)` pairs with no `dx`/`dz`, so a table with a bench each side cannot be written.
-- `lib/layers/outbuildings.py` (#251) and `place_outbuildings` already answer the multi-column questions for sheds: a footprint is all or nothing; it is refused (not halved) when it crosses the cell edge, and when any column is on a route/clearance/opening (`keep_clear`), a mapped way, a house, or the carriageway. Each column's ground is its own lidar terrain. Task #444 adds a shared `level_and_shift` helper for level furniture support; #446 applies it to sheds and garages separately. Hedges, fences and walls continue to follow terrain.
+- `lib/layers/outbuildings.py` (#251) and `place_outbuildings` already answer the multi-column questions for sheds: a footprint is all or nothing; it is refused (not halved) when it crosses the cell edge, and when any column is on a route/clearance/opening (`keep_clear`), a mapped way, a house, or the carriageway. Each column's ground is its own lidar terrain. Task #444 adds a shared `level_and_shift` helper. Task #446 uses it for sheds and garages (section 3a), including a mapped building outline. Hedges, fences and walls continue to follow terrain.
 - Kinds to add: **`picnic_table`** (rectangular, from the map and designer) and **`picnic_table_round`** (designer only; no map tag distinguishes a round one).
 
 ## 1. Footprint format (question 1)
@@ -40,6 +40,30 @@ When the original anchor fails only on level, try all eight adjacent anchors, ne
 If no adjacent anchor is level, fill low columns at the **original anchor** up to the highest ground, using each low column's local surface block. Never cut terrain; never add more than **2 blocks per column**. Support fill and the raised recipe both pass the voxel guards. Steeper spots remain unplaced with `uneven ground` and `blocked_column`. Hedges, fences and walls are excluded.
 
 Separate cell caps allow at most ceil(30% of final placed items) needing a 1-block fill and ceil(10%) needing a 2-block fill, each at least one. Items without fill count in the denominator. Place unfilled items first, then rank filled items by maximum depth and blocks added, smallest first. Recheck both caps whenever rejecting an item changes the denominator; remove rejected support and furniture together, and report `ground fill cell cap`. These are deterministic planning decisions; no builder model is involved.
+
+### 3a. Sheds and garages (#446)
+
+Sheds and garages use the same helper and the same spread limit of 0. A mapped outline may move, the same as a lidar or designer item. A move is one block in any of the eight directions. It recomputes cells, evidence cells, the door (from the same house and route targets) and the plot share. `x` and `z` on the report stay the original corner; `placed_at` is the new corner; `footprint` and `door` are the moved ones.
+
+If no neighbour is level, the item stays and low columns are filled up to the highest ground, at most 2 blocks, with that column's own surface block. Walls and the door then start at that common level. Spread over 2 is refused (`uneven ground`). A fill that would replace a live, owned or masked block is refused too.
+
+The 30% and 10% caps use the same rounding (`ground_fill_cap`), but the share is outbuildings alone, not furniture plus sheds. The two placers run one after the other and do not keep a combined list, so each pass is its own denominator. The dry-run stats key is `outbuilding_ground_fill` (same fields as `furniture_ground_fill`).
+
+Task #446 measurement (2026-11-23), lidar terrain on resolved outbuildings, highest minus lowest. Limit stays 0: spread 1 or 2 can shift or fill, and spread 5 is refused.
+
+Cell 48,-44:
+
+| Item | Kind | Spread | Terrain Y |
+| --- | --- | --- | --- |
+| map 391790374 | shed 5×5 | 5 | 50–55 |
+| map 294963447 | shed 3×5 | 1 | 49–50 |
+| lidar 6166,-5513 | garage | 0 | 45 |
+| lidar 6168,-5584 | shed | 2 | 48–50 |
+| lidar 6199,-5518 | shed | 1 | 48–49 |
+| lidar 6204,-5532 | shed | 1 | 50–51 |
+| lidar 6226,-5547 | shed | 2 | 52–54 |
+
+Cell 53,-43 (built): seven resolved items with terrain are all spread 0. Three more resolved items have no terrain on part of the footprint, so they are not placed (`no lidar ground`). This is the planner's resolved set, not a live apply. The world file had no owner veto at measurement time, so lidar shed 6168,-5584 is still in the list.
 
 Task #444 measurement (2026-11-23, Southampton cell 48,-44): the round table at
 6174,-5594 has terrain tops 52,52,53,53,52 (spread 1); the table at

@@ -20,10 +20,11 @@ shed or garage; that item is listed unresolved (``owner: not real``) and is not 
 
 Massing is a squared rectangle from the evidence cells, walls 2 high (shed) or 3 (garage) under
 a one-block roof layer, planks or brick by kind, pitched (gable) roof, a door facing the house
-or route, the top clamped to the nDSM height. Ground height comes from lidar; the placer in
-``decor_layer`` refuses (with an unplaced reason) a footprint on a route, clearance column,
-entrance opening, carriageway or across a plot line (plots are first-guess Voronoi cells, so a footprint
-with ``PLOT_MAJORITY`` of its columns in one plot counts as inside it).
+or route, the top clamped to the nDSM height. Ground height comes from lidar. The placer stands
+the whole footprint on one level: it may shift the rectangle by one block, or fill low columns,
+and otherwise refuses (with an unplaced reason). It also refuses a footprint on a route, clearance
+column, entrance opening, carriageway or across a plot line (plots are first-guess Voronoi cells,
+so a footprint with ``PLOT_MAJORITY`` of its columns in one plot counts as inside it).
 """
 from __future__ import annotations
 
@@ -204,6 +205,46 @@ def door_for(cells: Sequence[tuple[int, int]], targets: Iterable[tuple[int, int]
         if length >= 3:
             return {'cell': list(cell), 'facing': FACINGS[step]}
     return None
+
+
+def translate_item(item: Mapping[str, Any], dx: int, dz: int, *,
+                   plot_owner: Mapping[tuple[int, int], Any] | None = None,
+                   targets: Sequence[tuple[int, int]] | None = None) -> dict[str, Any]:
+    """Copy an outbuilding item moved by ``(dx, dz)`` blocks.
+
+    Cells and evidence cells move with the footprint. On a real move the door is
+    recomputed from ``targets`` when that list is given (otherwise the old door
+    cell is translated and its facing kept), and ``plot_ids`` / ``plot_share``
+    are recomputed from ``plot_owner`` when that map is given. Walls, roof and
+    size stay as they are. An unmoved call leaves the door and plots untouched.
+
+    @param item: outbuilding plan item
+    @param dx: blocks east
+    @param dz: blocks south
+    @param plot_owner: ``{(x, z): plot id}`` for the moved footprint; omitted keeps the recorded plots
+    @param targets: house and route columns the door should face; omitted keeps the recorded door
+    @returns: a new item dict
+    """
+    cells = [(int(c[0]) + dx, int(c[1]) + dz) for c in item.get('cells') or []]
+    moved = dict(item)
+    moved['cells'] = [list(c) for c in cells]
+    if item.get('evidence_cells') is not None:
+        moved['evidence_cells'] = [[int(c[0]) + dx, int(c[1]) + dz] for c in item['evidence_cells']]
+    if dx or dz:
+        if targets is not None:
+            moved['door'] = door_for(cells, targets, int(item.get('walls') or 0))
+        elif item.get('door'):
+            door = dict(item['door'])
+            door_cell = item['door']['cell']
+            door['cell'] = [int(door_cell[0]) + dx, int(door_cell[1]) + dz]
+            moved['door'] = door
+        if plot_owner is not None:
+            owned = [plot_owner[q] for q in cells if q in plot_owner]
+            owners = sorted(set(owned))
+            share = max((owned.count(o) for o in owners), default=0) / len(owned) if owned else 1.0
+            moved['plot_ids'] = owners
+            moved['plot_share'] = round(share, 3)
+    return moved
 
 
 def blob_green_share(group: Iterable[tuple[int, int]], rgb: Mapping[tuple[int, int], Any]) -> float | None:
@@ -400,7 +441,9 @@ def roof_row(j: int, across: int) -> tuple[int, str]:
 def voxels(item: Mapping[str, Any], ground: Mapping[tuple[int, int], int]) -> dict[tuple[int, int, int], str]:
     """Blocks of one outbuilding, from its plan item and the ground Y of each of its columns.
 
-    Perimeter walls stand from each column's own ground up to the roof above it; the roof is a
+    Perimeter walls stand from each column's own ground up to the roof above it. The placer
+    passes one ground Y for every column once the footprint is level or filled; a caller that
+    passes a slope still gets a wall from that column's own ground. The roof is a
     gable (``pitched_roof``): stairs facing up each slope toward the ridge, a full-block ridge on an odd width, so
     the gable-end walls step up into a triangle. The door is two blocks in the perimeter on the
     facing side. The interior is left empty (no private interiors). A footprint too narrow to
