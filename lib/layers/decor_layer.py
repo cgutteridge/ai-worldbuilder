@@ -17,6 +17,10 @@ remain; supported spots first, air/flowers only. Writes a decor mask (§3) only 
 clean readback. An empty plan (nothing to place) still lands so the cell can finish (#127).
 Garden outbuildings (sheds, garages) are decor plan items too (``outbuildings.py``, #251): mapped
 footprint, raw lidar blob or designer trace; each is placed whole or listed unplaced with a reason.
+A shed or garage stands on one level (#446): shift up to one block, or fill at most two blocks
+under a low column. Hedges, fences and walls still follow the slope.
+An owner veto (``rejected_items``: one column inside the item) lists that furniture or outbuilding
+item unresolved with reason ``owner: not real``; the placer builds nothing for it.
 
   python3 scripts/decor_layer.py --cell 48,-44            # dry run
   SITE_OWNER=<owner> python3 scripts/decor_layer.py --cell 48,-44 --apply
@@ -317,6 +321,21 @@ def level_and_shift(attempt, x: int, z: int) -> dict:
     return result
 
 
+def ground_fill_cap(placed: int, depth: int) -> int:
+    """How many items placed in one pass may use a fill of ``depth`` blocks.
+
+    One-block fills are capped at 30 percent and two-block fills at 10 percent,
+    rounded up, and at least one so a small cell can still fill a single item.
+    Furniture and outbuildings each apply this to their own placed set.
+
+    @param placed: items placed in this pass, including those with no fill
+    @param depth: 1 or 2
+    @returns: maximum count for that depth
+    """
+    numerator = {1: 3, 2: 1}[depth]
+    return max(1, (placed * numerator + 9) // 10)
+
+
 def furniture_fill_summary(report: list[dict], unplaced: list[dict]) -> dict:
     """Cell shares use the final placed-item denominator, including unfilled items."""
     total = len(report)
@@ -340,6 +359,7 @@ def place_furniture(
     lidar_hm: Mapping[str, Any] | None = None,
     keep_clear: set | frozenset = frozenset(),
     barrier_voxels: Mapping[tuple[int, int, int], str] | None = None,
+    rejected_items: Sequence = (),
 ) -> tuple[dict[tuple[int, int, int], str], list[dict], list[dict]]:
     """Place street-furniture recipes on any non-carriageway surface column.
 
@@ -357,6 +377,8 @@ def place_furniture(
     owned or masked, not already taken by another furniture item (``overlaps another furniture
     item``) and, for a multi-block kind, not a planned barrier block (``overlaps a planned barrier``).
     Failed rows are returned as unplaced plan-shaped dicts, with ``blocked_column`` on a multi-block one.
+    An owner veto column inside the item (anchor or footprint) is unplaced with reason
+    ``owner: not real`` and builds nothing.
 
     Road-edge kinds (#334): ``traffic_signals`` and ``crossing`` come from OSM nodes on the carriageway, so
     each stands at the nearest column (within :data:`street_furniture.ROADSIDE_REACH` blocks) that passes
@@ -375,6 +397,8 @@ def place_furniture(
                      not on a roof over it; the live surface is used only where terrain is missing
     @param keep_clear: columns no furniture may use (entrance openings, door routes, clearance)
     @param barrier_voxels: blocks already planned by the barrier pass; a multi-block item refuses to replace them
+    @param rejected_items: owner vetoes (:func:`street_furniture.rejected_items`); a column inside
+        the item is unplaced with reason ``owner: not real`` and builds nothing
     @returns: (placements, report rows that were placed, unplaced rows with reasons)
     """
     from surface_probe import ground_at, ground_missing_reason, raised_over_terrain, terrain_y
@@ -509,6 +533,9 @@ def place_furniture(
         accepted.append((item, row, voxels))
 
     for item in items:
+        if sf.owner_veto_reason(item, rejected_items):
+            unplaced.append(dplan.mark_unplaced(item, sf.OWNER_NOT_REAL))
+            continue
         place(item)
     for item, _fill in sorted(deferred, key=lambda entry: (entry[1]['max_depth'], entry[1]['blocks_added'])):
         place(item, allow_fill=True)
@@ -516,10 +543,9 @@ def place_furniture(
     # Removing an item shrinks the denominator: recheck both caps until stable.
     while True:
         over = []
-        for depth, numerator in ((1, 3), (2, 1)):
+        for depth in (1, 2):
             filled = [entry for entry in accepted if entry[1].get('ground_fill', {}).get('max_depth') == depth]
-            cap = max(1, (len(report) * numerator + 9) // 10)
-            if len(filled) > cap:
+            if len(filled) > ground_fill_cap(len(report), depth):
                 over.extend(filled)
         if not over:
             break
@@ -670,8 +696,10 @@ def place_outbuildings(
     owned: set,
     masked: set,
     lidar_hm: Mapping[str, Any] | None = None,
+    plot_owner: Mapping | None = None,
+    door_targets: Sequence | None = None,
 ) -> tuple[dict[tuple[int, int, int], str], list[dict], list[dict]]:
-    """Place resolved ``outbuilding`` plan items whole, or list them unplaced with a reason (#251).
+    """Place resolved ``outbuilding`` plan items whole, or list them unplaced with a reason (#251, #446).
 
     An outbuilding is all or nothing: a half-built shed is worse than none. Refused when its
     rectangle leaves the cell, spans plots (no plot holds half of it), sits on a route, clearance column or
@@ -680,6 +708,12 @@ def place_outbuildings(
     or any block that is not air or is owned / masked (``feature above terrain`` when a feature owns it).
     Ground height is lidar terrain, read through :func:`surface_probe.ground_at`; without a lidar ground
     the item is unplaced.
+
+    The footprint must stand on one level (spread 0). When the only failure is uneven ground,
+    :func:`level_and_shift` tries the eight neighbouring positions, then fills low columns at the
+    original spot with each column's own surface block (never cut, at most 2 blocks). A move
+    recomputes cells, evidence cells, the door and the plot share. One- and two-block fills have
+    the same caps as furniture, counted on outbuildings alone. Steeper ground is ``uneven ground``.
 
     @param cell: (tx, tz)
     @param items: ``outbuilding`` plan items
@@ -690,65 +724,155 @@ def place_outbuildings(
     @param owned: neighbour-owned block positions
     @param masked: positions owned by another pass mask
     @param lidar_hm: lidar height map with ``terrain``
+    @param plot_owner: ``{(x, z): plot id}`` used when a shift recomputes plot share; omitted keeps the recorded plots
+    @param door_targets: house and route columns used when a shift recomputes the door; omitted keeps the recorded door
     @returns: (placements, placed report rows, unplaced items)
     """
-    from surface_probe import ground_at, ground_missing_reason
+    from surface_probe import ground_at, ground_missing_reason, terrain_y
 
     found: dict[tuple[int, int, int], str] = {}
     report: list[dict] = []
     unplaced: list[dict] = []
+    plots = None if plot_owner is None else {tuple(k): v for k, v in plot_owner.items()}
+    targets = None if door_targets is None else [tuple(t) for t in door_targets]
+    deferred: list[tuple[Mapping[str, Any], dict]] = []
+    accepted: list[tuple[Mapping[str, Any], dict, dict]] = []
+
+    def consider(item, allow_fill=False):
+        raw_cells = [(int(c[0]), int(c[1])) for c in item.get('cells') or []]
+        if not raw_cells:
+            unplaced.append(dplan.mark_unplaced(item, 'no cells'))
+            return
+        if lidar_hm is None or 'terrain' not in lidar_hm:
+            unplaced.append(dplan.mark_unplaced(item, 'no lidar ground'))
+            return
+        anchor = (min(c[0] for c in raw_cells), min(c[1] for c in raw_cells))
+
+        def attempt(x, z, support=None):
+            dx, dz = x - anchor[0], z - anchor[1]
+            moved = ob.translate_item(
+                item, dx, dz,
+                plot_owner=plots if dx or dz else None,
+                targets=targets if dx or dz else None)
+            cells = [(int(c[0]), int(c[1])) for c in moved.get('cells') or []]
+            result = {'voxels': None, 'reason': None, 'bad': None, 'ground_spread': None,
+                      'ground_fill': None, 'item': moved, 'columns': cells}
+
+            def refuse(reason, bad=None):
+                result.update(reason=reason, bad=bad)
+                return result
+
+            if not all(cell_contains(cell, *q) for q in cells):
+                edge = next(q for q in cells if not cell_contains(cell, *q))
+                return refuse('crosses the cell edge', edge)
+            if len(moved.get('plot_ids') or ()) > 1 and float(moved.get('plot_share') or 0) < ob.PLOT_MAJORITY:
+                return refuse('across a plot line')
+            for test, reason in (
+                    (lambda q: q in keep_clear, 'on frontage route, clearance or entrance opening'),
+                    (lambda q: q in way, 'on path/road/water column'),
+                    (lambda q: q in houses, 'on a house footprint'),
+                    (lambda q: column_ground_kind(world, *q, lidar_hm) in sf.ROAD_KINDS, 'on carriageway')):
+                bad = next((q for q in cells if test(q)), None)
+                if bad is not None:
+                    return refuse(reason, bad)
+            ground = {}
+            for q in cells:
+                if terrain_y(lidar_hm, *q) is None:
+                    return refuse('no lidar ground', q)
+                top = ground_at(world, lidar_hm, *q, owned, masked)
+                if top is None:
+                    return refuse(ground_missing_reason(lidar_hm, *q, owned), q)
+                ground[q] = top
+            result['ground'] = ground
+            tops = {q: top[0] for q, top in ground.items()}
+            spread = max(tops.values()) - min(tops.values())
+            result['ground_spread'] = spread
+            if spread and support is None:
+                low = min(tops, key=lambda q: (tops[q], q))
+                return refuse('uneven ground', low)
+            level_ground = tops
+            blocks: dict[tuple[int, int, int], str] = {}
+            if support is not None:
+                blocks.update(support['voxels'])
+                level_ground = support['tops']
+                result['ground_fill'] = support['ground_fill']
+                result['original_ground_spread'] = spread
+                result['ground_spread'] = 0
+            blocks.update(ob.voxels(moved, level_ground))
+            bad_pos = next((p for p in blocks
+                            if not is_air(world.block(*p)) or p in owned or p in masked or p in found), None)
+            if bad_pos is not None:
+                result['ground_spread'] = spread
+                result['ground_fill'] = None
+                why = 'feature above terrain' if bad_pos in owned else 'blocked by live or owned block'
+                return refuse(why, (bad_pos[0], bad_pos[2]))
+            result['voxels'] = blocks
+            return result
+
+        result = level_and_shift(attempt, *anchor)
+        if result['reason'] is not None:
+            row = dplan.mark_unplaced(item, result['reason'])
+            row['ground_spread'] = result.get('ground_spread')
+            if result.get('bad') is not None:
+                row['blocked_column'] = list(result['bad'])
+            unplaced.append(row)
+            return
+        if result.get('ground_fill') and not allow_fill:
+            deferred.append((item, result['ground_fill']))
+            return
+        voxels = result['voxels']
+        moved = result['item']
+        cells = result['columns']
+        found.update(voxels)
+        row = {
+            'kind': ob.KIND, 'type': moved['type'], 'plan_id': item.get('id'),
+            'source': (item.get('provenance') or {}).get('source', ''),
+            'confidence': (item.get('provenance') or {}).get('confidence', ''),
+            'cells': len(cells), 'size': moved.get('size'), 'walls': moved.get('walls'),
+            'roof': moved.get('roof'), 'lidar_height': moved.get('lidar_height'),
+            'door': moved.get('door'), 'blocks': len(voxels),
+            'footprint': [list(c) for c in cells],
+            'evidence_cells': moved.get('evidence_cells'),
+            'plot_ids': list(moved.get('plot_ids') or []),
+            'plot_share': moved.get('plot_share'),
+            'x': anchor[0], 'z': anchor[1],
+            'ground_spread': result['ground_spread'],
+        }
+        if result.get('ground_fill'):
+            row['ground_fill'] = result['ground_fill']
+        if 'original_ground_spread' in result:
+            row['original_ground_spread'] = result['original_ground_spread']
+        if result['at'] != anchor:
+            row['placed_at'] = list(result['at'])
+        report.append(row)
+        accepted.append((item, row, voxels))
+
     for item in items:
         if item.get('role') != ob.KIND or prov.is_unresolved(item.get('provenance')):
             continue
-        cells = [(int(c[0]), int(c[1])) for c in item.get('cells') or []]
+        consider(item)
+    for item, _fill in sorted(deferred, key=lambda entry: (entry[1]['max_depth'], entry[1]['blocks_added'])):
+        consider(item, allow_fill=True)
 
-        def refuse(reason, _item=item):
-            unplaced.append(dplan.mark_unplaced(_item, reason))
-
-        if not cells:
-            refuse('no cells')
-        elif not all(cell_contains(cell, *q) for q in cells):
-            refuse('crosses the cell edge')
-        elif len(item.get('plot_ids') or ()) > 1 and float(item.get('plot_share', 0)) < ob.PLOT_MAJORITY:
-            refuse('across a plot line')
-        elif any(q in keep_clear for q in cells):
-            refuse('on frontage route, clearance or entrance opening')
-        elif any(q in way for q in cells):
-            refuse('on path/road/water column')
-        elif any(q in houses for q in cells):
-            refuse('on a house footprint')
-        elif any(column_ground_kind(world, *q, lidar_hm) in sf.ROAD_KINDS for q in cells):
-            refuse('on carriageway')
-        elif lidar_hm is None or 'terrain' not in lidar_hm:
-            refuse('no lidar ground')
-        else:
-            ground = {}
-            for q in cells:
-                i, j = q[0] - int(lidar_hm['x0']), q[1] - int(lidar_hm['z0'])
-                inside = 0 <= i < lidar_hm['terrain'].shape[0] and 0 <= j < lidar_hm['terrain'].shape[1]
-                ground[q] = int(lidar_hm['terrain'][i, j]) if inside else 0
-            if min(ground.values()) <= 0:
-                refuse('no lidar ground')
-                continue
-            missing = [q for q in cells if not ground_at(world, lidar_hm, *q, owned, masked)]
-            if missing:
-                refuse(ground_missing_reason(lidar_hm, *missing[0], owned))
-                continue
-            blocks = ob.voxels(item, ground)
-            bad = [p for p in blocks if not is_air(world.block(*p)) or p in owned or p in masked or p in found]
-            if bad:
-                refuse('feature above terrain' if any(p in owned for p in bad) else 'blocked by live or owned block')
-                continue
-            found.update(blocks)
-            report.append({
-                'kind': ob.KIND, 'type': item['type'], 'plan_id': item.get('id'),
-                'source': (item.get('provenance') or {}).get('source', ''),
-                'confidence': (item.get('provenance') or {}).get('confidence', ''),
-                'cells': len(cells), 'size': item.get('size'), 'walls': item.get('walls'),
-                'roof': item.get('roof'), 'lidar_height': item.get('lidar_height'),
-                'door': item.get('door'), 'blocks': len(blocks),
-                'footprint': [list(c) for c in cells],
-                'x': min(c[0] for c in cells), 'z': min(c[1] for c in cells)})
+    while True:
+        over = []
+        for depth in (1, 2):
+            filled = [entry for entry in accepted if entry[1].get('ground_fill', {}).get('max_depth') == depth]
+            if len(filled) > ground_fill_cap(len(report), depth):
+                over.extend(filled)
+        if not over:
+            break
+        entry = max(over, key=lambda e: (e[1]['ground_fill']['max_depth'], e[1]['ground_fill']['blocks_added']))
+        item, row, voxels = entry
+        accepted.remove(entry)
+        report.remove(row)
+        for pos in voxels:
+            del found[pos]
+        refused = dplan.mark_unplaced(item, 'ground fill cell cap')
+        refused['ground_spread'] = row.get('original_ground_spread')
+        refused['blocked_column'] = row['ground_fill']['columns'][0]['column']
+        refused['required_ground_fill'] = row['ground_fill']
+        unplaced.append(refused)
     return found, report, unplaced
 
 
@@ -1087,6 +1211,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict |
         land_classes = dplan.land_class_columns(idx, cellmath.bounds(cell, 12))
         wood_columns = woodland_decor_columns(cell, idx, land_classes)
         wood_columns = {q: cls for q, cls in wood_columns.items() if q not in railway}
+        rejected = sf.rejected_items(cell)
         decor = dplan.build_decor_plan(
             cell,
             map_barriers={'hedge': set(vmap.hedge), 'wall': set(vmap.wall), 'fence': set(vmap.fence)},
@@ -1104,7 +1229,9 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict |
             carriageway=set(vmap.road) | set(vmap.marks),
             furniture_avoid=way | near1,
             water=set(vmap.water) | set(vmap.water_line),
+            rejected_items=rejected,
         )
+    shift = decor.pop('outbuilding_shift', None) or {}
     unresolved = list(dplan.unresolved_items(decor))
     with timed_stage('decor surface warm-up'):
         warm_cols = decor_columns(decor['items'], dplan.resolved_furniture(decor)) | set(wood_columns)
@@ -1115,7 +1242,8 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict |
               if idx.buildings[k][1].get('building') not in OUTBUILDINGS} | owned_cols
     outbuilding_found, outbuilding_report, outbuilding_unplaced = place_outbuildings(
         cell, decor['items'], world, way=way, houses=houses, keep_clear=reserved_gap,
-        owned=owned, masked=masked, lidar_hm=lidar_hm)
+        owned=owned, masked=masked, lidar_hm=lidar_hm,
+        plot_owner=shift.get('plot_owner'), door_targets=shift.get('targets'))
     way = way | {tuple(c) for r in outbuilding_report for c in r['footprint']}   # interior too: nothing else goes under a roof
     masked = {**masked, **dict.fromkeys(outbuilding_found, 'outbuilding')}   # barriers and furniture fill only what is left
     barrier_items = [
@@ -1147,7 +1275,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict |
 
     furniture, furniture_report, furniture_unplaced = place_furniture(
         cell, dplan.resolved_furniture(decor), world, way=way, near1=near1, owned=owned, masked=masked,
-        lidar_hm=lidar_hm, keep_clear=reserved_gap, barrier_voxels=found,
+        lidar_hm=lidar_hm, keep_clear=reserved_gap, barrier_voxels=found, rejected_items=rejected,
     )
     # Furniture wins over a barrier block at the same position (rare overlap).
     barrier_positions = len(found)
@@ -1182,6 +1310,7 @@ def plan_cell(cell: tuple[int, int], plan: Plan, world: World, *, masked: dict |
     stats['barrier_partial_columns'] = sum(1 for r in barrier_report if r.get('partial'))
     stats['outbuildings'] = len(outbuilding_report)
     stats['outbuilding_blocks'] = len(outbuilding_found)
+    stats['outbuilding_ground_fill'] = furniture_fill_summary(outbuilding_report, outbuilding_unplaced)
     stats['woodland_decor'] = {k: woodland_report[k] for k in woodland_report if k != 'items'}
     stats['woodland_decor_items'] = woodland_report.get('items') or []
     furniture_unplaced = list(furniture_unplaced)
@@ -1242,18 +1371,32 @@ def _print_plan_notes(stats: dict) -> None:
 
 
 def outbuilding_rows(report, unresolved, unplaced) -> list[dict]:
-    """One row per outbuilding candidate: id, type, source, confidence, columns, ``accepted`` or the reason."""
-    rows = [{'id': r['plan_id'], 'type': r['type'], 'source': r['source'], 'confidence': r['confidence'],
-             'cells': r['cells'], 'size': r['size'], 'height': (r['walls'] or 0) + 1, 'status': 'accepted'}
-            for r in report]
+    """One row per outbuilding candidate: id, type, source, confidence, columns, ``accepted`` or the reason.
+
+    Accepted rows also carry ``ground_spread``, and ``placed_at`` or ``ground_fill`` when the
+    footprint moved or the ground was filled.
+    """
+    rows = []
+    for r in report:
+        row = {'id': r['plan_id'], 'type': r['type'], 'source': r['source'], 'confidence': r['confidence'],
+               'cells': r['cells'], 'size': r['size'], 'height': (r['walls'] or 0) + 1, 'status': 'accepted',
+               'ground_spread': r.get('ground_spread')}
+        if r.get('placed_at'):
+            row['placed_at'] = r['placed_at']
+        if r.get('ground_fill'):
+            row['ground_fill'] = r['ground_fill'].get('max_depth')
+        rows.append(row)
     for i in list(unresolved) + list(unplaced):
         if i.get('role') != ob.KIND:
             continue
         p = i.get('provenance') or {}
+        status = 'unplaced: ' + p.get('unresolved_reason', '')
+        if i.get('ground_spread') is not None:
+            status += f" (spread {i['ground_spread']})"
         rows.append({'id': i.get('id'), 'type': i.get('type'), 'source': p.get('source', ''),
                      'confidence': p.get('confidence', ''), 'cells': len(i.get('cells') or ()),
                      'size': i.get('size'), 'height': i.get('height'),
-                     'status': 'unplaced: ' + p.get('unresolved_reason', '')})
+                     'status': status})
     return sorted(rows, key=lambda r: str(r['id']))
 
 
@@ -1261,7 +1404,14 @@ def _print_outbuildings(rows) -> None:
     """Print the outbuilding candidate table (source, accepted or the unplaced reason)."""
     print(f'  outbuildings: {sum(r["status"] == "accepted" for r in rows)} accepted of {len(rows)} candidates')
     for r in rows:
-        print(f'    {r["id"]}  {r["type"]}  {r["source"]}/{r["confidence"]}  {r["cells"]} columns  {r["status"]}')
+        extra = ''
+        if r.get('ground_spread') is not None:
+            extra += f'  spread {r["ground_spread"]}'
+        if r.get('placed_at'):
+            extra += f'  placed_at {r["placed_at"]}'
+        if r.get('ground_fill'):
+            extra += f'  fill {r["ground_fill"]}'
+        print(f'    {r["id"]}  {r["type"]}  {r["source"]}/{r["confidence"]}  {r["cells"]} columns  {r["status"]}{extra}')
 
 
 def run(cell: tuple[int, int]) -> int:

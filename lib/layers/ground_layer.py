@@ -833,7 +833,10 @@ def plan_cell(cell: tuple[int, int], masked: dict, neighbour_owned: set, plan: P
                          unmapped_paving=unmapped, path_widen=widen)
     how.update(split_forecourt(kind, forecourt - route, fp))
     how['seam stitched to finished neighbour'] = stitch_seams(cell, kind, world)
-    how['car park bay line (perpendicular to the mapped aisle)'] = mark_car_park_bays(kind, vmap)   # #336
+    bay_lines = mark_car_park_bays(kind, vmap)   # #449: paint only the streaks the aerial shows
+    how['car park bay line (from the aerial)'] = bay_lines.n
+    for label in bay_lines.soft:
+        how[f'aerial too soft {label}'] = 1
     # #167: lidar base is HOW HIGH. Live surface only fills up to that Y (or stands
     # in when lidar is missing). Neighbour spike/pit logic must not override lidar.
     lidar_ys = lc.lidar_base_map(live, ev.get('lidar_maps'))
@@ -1046,8 +1049,10 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
     stats, conflicts, kind, skipped = plan_cell(cell, masked, owned, plan, world, owned_air=air,
                                                 settled_fp=settled_footprint(cell), owned_states=states)
     from layer_reports import artifact_path, write_report
+    kinds_path = artifact_path(name, 'kinds.png', dry=True)
+    kinds_image(cell, kind, kinds_path)
     write_report(name, {'stats': dict(stats), 'skipped': dict(skipped), 'conflicts': conflicts,
-                        'planned_positions': len(plan.cells)}, dry=True)
+                        'planned_positions': len(plan.cells), 'kinds_image': str(kinds_path)}, dry=True)
     stats.pop('excluded_columns', None)
     stats.pop('retained_positions', None)
     floating = stats.pop('floating_columns', [])
@@ -1083,9 +1088,7 @@ def run(cell: tuple[int, int], skip_preview: bool = False) -> int:
         print('  NOT SAFE TO APPLY: undo the listed mask first (scripts/element_undo.py; HANDOFF-LAYERED §3, ADR 010).')
     report_floating(floating)
     report_journal_floats(cell, plan)
-    out = artifact_path(name, 'kinds.png', dry=True)
-    kinds_image(cell, kind, out)
-    print(f'  kinds image: {out}')
+    print(f'  kinds image: {kinds_path}')
     if not skip_preview:
         from site_kit import preview
         pv = artifact_path(name, 'preview.png', dry=True)

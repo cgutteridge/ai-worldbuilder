@@ -15,13 +15,16 @@ colour alone:
                ``garage``, ``cells``, an evidence id) -> medium.
 
 No default scatter: nothing here invents an outbuilding without one of those three.
+An owner veto (``rejected_items`` in the decor file) names one column inside a false
+shed or garage; that item is listed unresolved (``owner: not real``) and is not built.
 
 Massing is a squared rectangle from the evidence cells, walls 2 high (shed) or 3 (garage) under
 a one-block roof layer, planks or brick by kind, pitched (gable) roof, a door facing the house
-or route, the top clamped to the nDSM height. Ground height comes from lidar; the placer in
-``decor_layer`` refuses (with an unplaced reason) a footprint on a route, clearance column,
-entrance opening, carriageway or across a plot line (plots are first-guess Voronoi cells, so a footprint
-with ``PLOT_MAJORITY`` of its columns in one plot counts as inside it).
+or route, the top clamped to the nDSM height. Ground height comes from lidar. The placer stands
+the whole footprint on one level: it may shift the rectangle by one block, or fill low columns,
+and otherwise refuses (with an unplaced reason). It also refuses a footprint on a route, clearance
+column, entrance opening, carriageway or across a plot line (plots are first-guess Voronoi cells,
+so a footprint with ``PLOT_MAJORITY`` of its columns in one plot counts as inside it).
 """
 from __future__ import annotations
 
@@ -31,6 +34,7 @@ from typing import Any
 
 import cellmath
 import provenance as prov
+import street_furniture as sf
 from roof_material import family_variants
 
 KIND = 'outbuilding'
@@ -203,6 +207,46 @@ def door_for(cells: Sequence[tuple[int, int]], targets: Iterable[tuple[int, int]
     return None
 
 
+def translate_item(item: Mapping[str, Any], dx: int, dz: int, *,
+                   plot_owner: Mapping[tuple[int, int], Any] | None = None,
+                   targets: Sequence[tuple[int, int]] | None = None) -> dict[str, Any]:
+    """Copy an outbuilding item moved by ``(dx, dz)`` blocks.
+
+    Cells and evidence cells move with the footprint. On a real move the door is
+    recomputed from ``targets`` when that list is given (otherwise the old door
+    cell is translated and its facing kept), and ``plot_ids`` / ``plot_share``
+    are recomputed from ``plot_owner`` when that map is given. Walls, roof and
+    size stay as they are. An unmoved call leaves the door and plots untouched.
+
+    @param item: outbuilding plan item
+    @param dx: blocks east
+    @param dz: blocks south
+    @param plot_owner: ``{(x, z): plot id}`` for the moved footprint; omitted keeps the recorded plots
+    @param targets: house and route columns the door should face; omitted keeps the recorded door
+    @returns: a new item dict
+    """
+    cells = [(int(c[0]) + dx, int(c[1]) + dz) for c in item.get('cells') or []]
+    moved = dict(item)
+    moved['cells'] = [list(c) for c in cells]
+    if item.get('evidence_cells') is not None:
+        moved['evidence_cells'] = [[int(c[0]) + dx, int(c[1]) + dz] for c in item['evidence_cells']]
+    if dx or dz:
+        if targets is not None:
+            moved['door'] = door_for(cells, targets, int(item.get('walls') or 0))
+        elif item.get('door'):
+            door = dict(item['door'])
+            door_cell = item['door']['cell']
+            door['cell'] = [int(door_cell[0]) + dx, int(door_cell[1]) + dz]
+            moved['door'] = door
+        if plot_owner is not None:
+            owned = [plot_owner[q] for q in cells if q in plot_owner]
+            owners = sorted(set(owned))
+            share = max((owned.count(o) for o in owners), default=0) / len(owned) if owned else 1.0
+            moved['plot_ids'] = owners
+            moved['plot_share'] = round(share, 3)
+    return moved
+
+
 def blob_green_share(group: Iterable[tuple[int, int]], rgb: Mapping[tuple[int, int], Any]) -> float | None:
     """Share of the blob's sampled aerial columns that read lawn or shade; ``None`` with no samples."""
     from ground_sources import aerial_class
@@ -235,30 +279,39 @@ def _item(kind: str, evidence: Sequence[tuple[int, int]], source: str, confidenc
 
 
 def mapped_items(footprints: Sequence[Mapping[str, Any]], *, rise=None, targets=(), plot_owner=None,
-                 evidence_ids=(), root=None) -> list[dict[str, Any]]:
-    """High-confidence items for mapped outbuilding footprints (``mapped_outbuilding_footprints`` rows)."""
+                 evidence_ids=(), root=None, rejected=()) -> list[dict[str, Any]]:
+    """High-confidence items for mapped outbuilding footprints (``mapped_outbuilding_footprints`` rows).
+
+    @param rejected: owner veto entries; a column inside the footprint lists the item unresolved
+    """
     out = []
     for fp in footprints:
         cells = [tuple(c) for c in fp['cells']]
         kind = mapped_type(fp['building'])
+        reason = sf.owner_veto_reason({'cells': cells}, rejected)
         out.append(_item(
             kind, cells, 'vector_map', 'high', item_id=_item_id('map', fp['ref']),
             ndsm=ndsm_height(rise, cells), targets=targets, plot_owner=plot_owner,
-            evidence_ids=evidence_ids, note=f"mapped building={fp['building']}", root=root))
+            evidence_ids=evidence_ids, note=f"mapped building={fp['building']}", root=root,
+            unresolved_reason=reason))
     return out
 
 
 def lidar_items(rise: Mapping[str, Any] | None, *, exclude: set[tuple[int, int]],
                 canopy: set[tuple[int, int]], rgb: Mapping[tuple[int, int], Any],
                 cell_box: tuple[int, int, int, int], targets=(), plot_owner=None,
-                evidence_ids=(), root=None) -> list[dict[str, Any]]:
+                evidence_ids=(), root=None, rejected=()) -> list[dict[str, Any]]:
     """Medium-confidence items for raw nDSM blobs; blobs that fail a test come back unresolved.
 
     A blob is 1.6-4.5 m above bare ground on at least ``MIN_BLOB_COLUMNS`` connected columns, off
     ``exclude`` (building footprints dilated by one column, labelled lidar objects)
     and off ``canopy``. A blob that reads green on the aerial (lawn + shade share at least
     ``GREEN_SHARE_MAX``), is a thin line, or is too large is listed with the reason rather than built.
-    Only blobs with a column inside ``cell_box`` count here.
+    A blob that contains an owner veto column is listed ``owner: not real`` instead, including
+    when another check would also have refused it. Only blobs with a column inside ``cell_box``
+    count here.
+
+    @param rejected: owner veto entries (:func:`street_furniture.rejected_items`)
 
     @param rise: ``lidar_rise`` result; ``None`` gives no items
     @param exclude: columns that cannot be part of a blob
@@ -296,6 +349,8 @@ def lidar_items(rise: Mapping[str, Any] | None, *, exclude: set[tuple[int, int]]
         cells = square_rectangle(group)
         kind = 'garage' if len(cells) >= GARAGE_MIN_COLUMNS else 'shed'
         lo = min(group)
+        if sf.owner_veto_reason({'cells': [*group, *cells]}, rejected):
+            reason = sf.OWNER_NOT_REAL
         out.append(_item(
             kind, group, 'lidar', 'medium', item_id=_item_id('lidar', lo[0], lo[1]),
             ndsm=ndsm_height(rise, group), targets=targets, plot_owner=plot_owner,
@@ -305,11 +360,14 @@ def lidar_items(rise: Mapping[str, Any] | None, *, exclude: set[tuple[int, int]]
 
 
 def designer_items(rows: Sequence[Mapping[str, Any]], *, rise=None, targets=(), plot_owner=None,
-                   default_evidence=(), root=None) -> list[dict[str, Any]]:
+                   default_evidence=(), root=None, rejected=()) -> list[dict[str, Any]]:
     """Medium-confidence items for designer traces (``kind`` shed / garage with ``cells``).
 
     A trace needs its own evidence id (``evidence_ids`` on the row, else the entry's); without one
     it is listed unresolved. The designer's cells are the evidence; the same squaring applies.
+    An owner veto column inside the trace lists it ``owner: not real`` instead.
+
+    @param rejected: owner veto entries (:func:`street_furniture.rejected_items`)
     """
     out = []
     for raw in rows:
@@ -320,11 +378,14 @@ def designer_items(rows: Sequence[Mapping[str, Any]], *, rise=None, targets=(), 
         ids = list(raw.get('evidence_ids') or default_evidence or ())
         lo = min(cells)
         source = 'photo_read' if 'photo' in str(raw.get('evidence') or '').lower() else 'aerial'
+        reason = '' if ids else 'designer outbuilding trace names no evidence id'
+        if sf.owner_veto_reason({'cells': cells}, rejected):
+            reason = sf.OWNER_NOT_REAL
         out.append(_item(
             kind, cells, source, 'medium', item_id=_item_id('designer', lo[0], lo[1]),
             ndsm=ndsm_height(rise, cells), targets=targets, plot_owner=plot_owner,
             evidence_ids=ids, root=root, note=str(raw.get('note') or 'designer trace'),
-            unresolved_reason='' if ids else 'designer outbuilding trace names no evidence id'))
+            unresolved_reason=reason))
     return out
 
 
@@ -380,7 +441,9 @@ def roof_row(j: int, across: int) -> tuple[int, str]:
 def voxels(item: Mapping[str, Any], ground: Mapping[tuple[int, int], int]) -> dict[tuple[int, int, int], str]:
     """Blocks of one outbuilding, from its plan item and the ground Y of each of its columns.
 
-    Perimeter walls stand from each column's own ground up to the roof above it; the roof is a
+    Perimeter walls stand from each column's own ground up to the roof above it. The placer
+    passes one ground Y for every column once the footprint is level or filled; a caller that
+    passes a slope still gets a wall from that column's own ground. The roof is a
     gable (``pitched_roof``): stairs facing up each slope toward the ridge, a full-block ridge on an odd width, so
     the gable-end walls step up into a triangle. The door is two blocks in the perimeter on the
     facing side. The interior is left empty (no private interiors). A footprint too narrow to

@@ -31,14 +31,17 @@ def rise_grid(blobs, size=140):
 
 
 def plan_for(cell=(0, 0), *, footprints=(), rise=None, rgb=None, footprint=None, canopy=None,
-             plot_owner=None, designer=(), openings=None, water=None):
+             plot_owner=None, designer=(), openings=None, water=None, map_furniture=(),
+             rejected=(), map_barriers=None):
     """Decor plan with every source injected (no map, aerial or lidar read)."""
+    barriers = map_barriers if map_barriers is not None else {
+        'hedge': set(), 'wall': set(), 'fence': set()}
     return dp.build_decor_plan(
-        cell, map_barriers={'hedge': set(), 'wall': set(), 'fence': set()}, map_furniture=[],
+        cell, map_barriers=barriers, map_furniture=map_furniture,
         designer_items=designer, photo_observations=[], garden={}, rgb=rgb or {},
         canopy=canopy or set(), footprint=footprint or set(),
         outbuilding_footprints=footprints, lidar_rise=rise, plot_owner=plot_owner,
-        openings=openings, water=water)
+        openings=openings, water=water, rejected_items=rejected)
 
 
 def only(plan, role='outbuilding'):
@@ -57,11 +60,22 @@ def live_world(top=GROUND, extra=None):
     return world
 
 
-def place(items, *, keep_clear=(), houses=(), way=(), lidar=None, cell=(0, 0), surface=GROUND, extra=None, owned=()):
+def place(items, *, keep_clear=(), houses=(), way=(), lidar=None, cell=(0, 0), surface=GROUND, extra=None, owned=(),
+          plot_owner=None, door_targets=None):
     """``surface`` is the top of the live ground; ground height itself comes from the lidar terrain."""
     return dl.place_outbuildings(
         cell, items, live_world(surface, extra), way=set(way), houses=set(houses), keep_clear=set(keep_clear),
-        owned=set(owned), masked=set(), lidar_hm=lidar or lidar_hm())
+        owned=set(owned), masked=set(), lidar_hm=lidar or lidar_hm(),
+        plot_owner=plot_owner, door_targets=door_targets)
+
+
+def raise_band(hm, extra, *, xs, zs, by):
+    """Lift lidar terrain and the live blocks under it, so ``ground_at`` sees a solid top."""
+    for x in xs:
+        for z in zs:
+            hm['terrain'][x, z] = GROUND + by
+            for y in range(GROUND + 1, GROUND + by + 1):
+                extra[(x, y, z)] = 'minecraft:grass_block'
 
 
 def blob_plan(cells, rise_value=2.6, **kw):
@@ -338,10 +352,124 @@ class TestReviewFixes(unittest.TestCase):
             placed, stats = dl.plan_cell((0, 0), plan, world)
         self.assertEqual(stats['outbuildings'], 1)
         self.assertIn('outbuilding-lidar-30-30', plan.outside_footprint_ok)
+        self.assertNotIn('outbuilding_shift', stats['decor_plan'])
+        self.assertEqual(stats['outbuilding_ground_fill']['items_placed'], 1)
+        self.assertEqual(stats['outbuilding_ground_fill']['filled_by_1'], 0)
         self.assertEqual(sum('stairs' in b for b in plan.cells.values()), 6)         # a gable: two stair rows
         self.assertEqual(plan.keep_slab_cells, set())
         self.assertFalse(any(p[:3:2] == (31, 31) and 'bench' in b for p, b in plan.cells.items()))
         self.assertEqual([u['plan_id'] for u in stats['unplaced_items']], ['bench-31-31'])
+
+
+class TestLevelShift(unittest.TestCase):
+    """Sheds and garages stand on one level: shift one block, else fill, else refuse (#446)."""
+
+    def test_plan_keeps_shift_context_until_placement(self):
+        plan = blob_plan(rect(30, 30, 3, 3))
+        self.assertIn('plot_owner', plan['outbuilding_shift'])
+        self.assertIn('targets', plan['outbuilding_shift'])
+
+    def test_translate_item_recomputes_door_and_plots(self):
+        item = only(blob_plan(rect(30, 30, 3, 4), footprint={(10, 31)}))[0]
+        owner = {(x, z): (1 if x >= 31 else 2) for x in range(28, 40) for z in range(28, 40)}
+        moved = ob.translate_item(item, 1, 0, plot_owner=owner, targets=[(10, 31)])
+        self.assertEqual(moved['door']['facing'], 'west')
+        self.assertEqual(moved['door']['cell'][0], item['door']['cell'][0] + 1)
+        self.assertEqual(moved['plot_ids'], [1])
+        west = ob.translate_item(item, -1, 0, plot_owner=owner, targets=[(10, 31)])
+        self.assertEqual(west['plot_ids'], [1, 2])
+        self.assertGreater(west['plot_share'], 0.5)
+
+    def test_a_shift_recomputes_the_door_cells_and_plot_share(self):
+        owner = {(x, z): (1 if x >= 31 else 2) for x in range(20, 60) for z in range(20, 50)}
+        item = only(blob_plan(rect(30, 30, 3, 4), plot_owner=owner, footprint={(50, 31)}))[0]
+        self.assertEqual(item['door']['facing'], 'east')
+        hm = lidar_hm()
+        extra = {}
+        for z in range(28, 40):
+            hm['terrain'][30, z] = GROUND - 1
+            extra[(30, GROUND, z)] = 'minecraft:air'
+        _found, report, unplaced = place(
+            [item], lidar=hm, extra=extra, plot_owner=owner, door_targets=[(50, 31)])
+        self.assertEqual(unplaced, [])
+        row = report[0]
+        self.assertEqual(row['placed_at'], [31, 30])
+        self.assertEqual(row['plot_ids'], [1])
+        self.assertEqual(row['plot_share'], 1.0)
+        self.assertEqual(row['door'], {'cell': [33, 32], 'facing': 'east'})
+        self.assertTrue(all(c[0] >= 31 for c in row['evidence_cells']))
+        self.assertEqual(row['source'], 'lidar')
+
+    def test_mapped_outline_may_shift(self):
+        cells = sorted(rect(30, 30, 3, 3))
+        item = only(plan_for(footprints=[{'ref': 's', 'building': 'shed', 'cells': cells}]))[0]
+        self.assertEqual(item['provenance']['source'], 'vector_map')
+        hm = lidar_hm()
+        hm['terrain'][30, 30] = GROUND - 1
+        found, report, unplaced = place([item], lidar=hm, extra={(30, GROUND, 30): 'minecraft:air'})
+        self.assertEqual(unplaced, [])
+        self.assertEqual(report[0]['placed_at'], [30, 31])
+        self.assertEqual(report[0]['ground_spread'], 0)
+        self.assertNotIn((30, 30), {tuple(c) for c in report[0]['footprint']})
+        warm = dl.decor_columns([item], [])
+        self.assertTrue({tuple(c) for c in report[0]['footprint']} <= warm)
+        self.assertTrue(found)
+
+    def test_no_level_spot_fills_low_columns_and_keeps_one_wall_base(self):
+        item = only(blob_plan(rect(30, 40, 3, 3), footprint={(10, 41)}))[0]
+        hm = lidar_hm()
+        extra = {(31, GROUND, 41): 'minecraft:coarse_dirt'}
+        raise_band(hm, extra, xs=range(0, 80, 2), zs=range(36, 52), by=2)
+        found, report, unplaced = place([item], lidar=hm, extra=extra, door_targets=[(10, 41)])
+        self.assertEqual(unplaced, [])
+        self.assertNotIn('placed_at', report[0])
+        fill = report[0]['ground_fill']
+        self.assertEqual(fill['max_depth'], 2)
+        self.assertGreater(fill['blocks_added'], 0)
+        self.assertEqual(found[(31, GROUND + 1, 41)], 'coarse_dirt')
+        self.assertEqual(found[(31, GROUND + 2, 41)], 'coarse_dirt')
+        door = tuple(report[0]['door']['cell'])
+        self.assertEqual(found[(door[0], GROUND + 3, door[1])].split('[')[0], 'spruce_door')
+        wall_bottoms = {y for (x, y, z), block in found.items()
+                        if block == 'spruce_planks' and (x, z) != door}
+        self.assertTrue(wall_bottoms)
+        self.assertGreaterEqual(min(wall_bottoms), GROUND + 3)
+
+    def test_more_than_two_blocks_is_refused(self):
+        item = only(blob_plan(rect(30, 40, 3, 3)))[0]
+        hm = lidar_hm()
+        extra = {}
+        raise_band(hm, extra, xs=range(0, 80, 2), zs=range(36, 52), by=3)
+        found, report, unplaced = place([item], lidar=hm, extra=extra)
+        self.assertEqual((found, report), ({}, []))
+        self.assertEqual(unplaced[0]['provenance']['unresolved_reason'], 'uneven ground')
+        self.assertEqual(unplaced[0]['ground_spread'], 3)
+        self.assertIn('blocked_column', unplaced[0])
+
+    def test_fill_caps_are_separate_and_keep_the_smallest_first(self):
+        for depth, flat_count, large_count, expected in ((1, 6, 3, 3), (2, 8, 1, 1)):
+            with self.subTest(depth=depth):
+                hm = lidar_hm()
+                extra = {}
+                raise_band(hm, extra, xs=range(0, 120, 2), zs=range(36, 52), by=depth)
+                slopes = []
+                for x in (21, 29, 37):
+                    if len(slopes) >= large_count:
+                        break
+                    slopes.append(only(blob_plan(rect(x, 40, 3, 3)))[0])
+                small = only(blob_plan(rect(45, 40, 2, 3)))[0]
+                slopes.append(small)
+                flats = [only(blob_plan(rect(8 + 8 * i, 8, 3, 3)))[0] for i in range(flat_count)]
+                _found, report, unplaced = place(slopes + flats, lidar=hm, extra=extra)
+                filled = [r for r in report if r.get('ground_fill')]
+                self.assertEqual(len(filled), expected)
+                self.assertIn(small['id'], [r['plan_id'] for r in filled])
+                self.assertEqual(
+                    [u['provenance']['unresolved_reason'] for u in unplaced], ['ground fill cell cap'])
+                summary = dl.furniture_fill_summary(report, unplaced)
+                self.assertEqual(summary['items_placed'], flat_count + expected)
+                self.assertEqual(summary[f'filled_by_{depth}'], expected)
+                self.assertEqual(summary['refused_for_cap'], 1)
 
 
 class TestMassing(unittest.TestCase):
@@ -388,16 +516,19 @@ class TestMassing(unittest.TestCase):
         self.assertEqual({(x, z) for x, _y, z in walls}, rect(30, 30, 3, 3) - {(31, 31)})   # hollow
         self.assertEqual(report[0]['blocks'], len(found))
 
-    def test_garage_is_brick_with_stair_roof_and_ground_follows_the_slope(self):
+    def test_garage_shifts_off_a_one_block_dip_instead_of_stepping_the_wall(self):
         cells = rect(30, 30, 5, 4)
         item = only(blob_plan(cells, rise_value=3.5))[0]
         hm = lidar_hm()
-        hm['terrain'][30, 30] = GROUND - 1                       # one corner sits a block lower
-        lowered = {(30, GROUND, 30): 'minecraft:air'}              # the live ground there is lower too
-        found, _r, unplaced = place([item], lidar=hm, extra=lowered)
+        hm['terrain'][30, 30] = GROUND - 1
+        lowered = {(30, GROUND, 30): 'minecraft:air'}
+        found, report, unplaced = place([item], lidar=hm, extra=lowered)
         self.assertEqual(unplaced, [])
-        self.assertEqual(found[(30, GROUND, 30)], 'bricks')        # wall runs down to the low ground
-        self.assertTrue(all(y <= GROUND + 6 for _x, y, _z in found))
+        self.assertEqual(report[0]['placed_at'], [30, 31])
+        self.assertEqual((report[0]['ground_spread'], report[0]['original_ground_spread']), (0, 1))
+        self.assertNotIn((30, GROUND, 30), found)
+        self.assertTrue(found)
+        self.assertTrue(all(y >= GROUND + 1 for _x, y, _z in found))
 
     def garage(self, w, d, door, facing, walls=3, kind='garage'):
         cells = [[x, z] for x in range(30, 30 + w) for z in range(30, 30 + d)]
@@ -582,3 +713,127 @@ class TestNonHouseStrip(unittest.TestCase):
         mapped = plan_for(footprints=[{'ref': '9', 'building': 'garage', 'cells': sorted(rect(20, 20, 3, 4))}],
                           plot_owner={q: 'yard' for q in rect(18, 18, 8, 8)})
         self.assertTrue(place(only(mapped))[0])
+
+
+class TestOwnerRejection(unittest.TestCase):
+    """#443: one column list vetoes any false decor item. Match the column, never the plan id."""
+
+    def test_lidar_shed_with_and_without_the_entry(self):
+        cells = rect(30, 30, 3, 3)
+        other = rect(50, 50, 3, 3)
+        clear = blob_plan(cells)
+        (built,) = only(clear)
+        self.assertEqual(built['type'], 'shed')
+        self.assertFalse(prov.is_unresolved(built['provenance']))
+        found, report, unplaced = place(only(clear))
+        self.assertTrue(found)
+        self.assertEqual((len(report), unplaced), (1, []))
+
+        # (32, 31) sits in the blob. The plan id is the lowest column, (30, 30).
+        veto = [{'cell': [32, 31], 'note': 'misread, not in the real world'}]
+        plan = blob_plan(cells | other, rejected=veto)
+        items = only(plan)
+        self.assertEqual(len(items), 2)
+        vetoed = [i for i in items if (32, 31) in {tuple(c) for c in i['evidence_cells']}]
+        kept = [i for i in items if i not in vetoed]
+        self.assertEqual(len(vetoed), 1)
+        self.assertEqual(vetoed[0]['id'], 'outbuilding-lidar-30-30')
+        self.assertEqual(vetoed[0]['provenance']['unresolved_reason'], sf.OWNER_NOT_REAL)
+        self.assertFalse(prov.is_unresolved(kept[0]['provenance']))
+        found, report, unplaced = place(items)
+        self.assertEqual(len(report), 1)
+        self.assertEqual(report[0]['plan_id'], kept[0]['id'])
+        self.assertEqual(unplaced, [])
+        self.assertEqual(
+            [i['provenance']['unresolved_reason'] for i in dp.unresolved_items(plan)],
+            [sf.OWNER_NOT_REAL])
+
+    def test_lidar_garage_with_and_without_the_entry(self):
+        cells = rect(40, 40, 4, 4)
+        clear = blob_plan(cells)
+        (built,) = only(clear)
+        self.assertEqual(built['type'], 'garage')
+        self.assertFalse(prov.is_unresolved(built['provenance']))
+        self.assertTrue(place(only(clear))[0])
+
+        plan = blob_plan(cells, rejected=[{'cell': [43, 42], 'note': 'not a garage'}])
+        (item,) = only(plan)
+        self.assertEqual(item['type'], 'garage')
+        self.assertNotEqual(item['id'], 'outbuilding-lidar-43-42')
+        self.assertEqual(item['provenance']['unresolved_reason'], sf.OWNER_NOT_REAL)
+        found, report, unplaced = place(only(plan))
+        self.assertEqual((found, report, unplaced), ({}, [], []))
+
+    def test_owner_reason_wins_when_the_blob_would_already_be_unresolved(self):
+        cells = rect(30, 30, 3, 3)
+        plan = blob_plan(cells, rgb={q: GREEN for q in cells},
+                         rejected=[{'cell': [31, 31], 'note': 'not real'}])
+        (item,) = only(plan)
+        self.assertEqual(item['provenance']['unresolved_reason'], sf.OWNER_NOT_REAL)
+
+    def test_designer_shed_and_mapped_garage_with_and_without_the_entry(self):
+        shed = sorted(rect(10, 10, 3, 2))
+        garage = sorted(rect(50, 50, 4, 4))
+        designer = [{'kind': 'shed', 'cells': [list(c) for c in shed], 'evidence_ids': ['e1']}]
+        footprints = [{'ref': 'g', 'building': 'garage', 'cells': garage}]
+        clear = plan_for(footprints=footprints, designer=designer)
+        self.assertEqual({i['type'] for i in only(clear)}, {'shed', 'garage'})
+        self.assertFalse(any(prov.is_unresolved(i['provenance']) for i in only(clear)))
+        self.assertEqual(len(place(only(clear))[1]), 2)
+
+        plan = plan_for(
+            footprints=footprints, designer=designer,
+            rejected=[{'cell': [11, 10], 'note': 'shed'}, {'cell': [52, 52], 'note': 'garage'}])
+        items = only(plan)
+        self.assertEqual({i['type'] for i in items}, {'shed', 'garage'})
+        for item in items:
+            self.assertEqual(item['provenance']['unresolved_reason'], sf.OWNER_NOT_REAL, item['type'])
+        found, report, unplaced = place(items)
+        self.assertEqual((found, report, unplaced), ({}, [], []))
+
+    def test_each_furniture_kind_with_and_without_the_entry(self):
+        furniture = [(10 + i * 4, 20, kind) for i, kind in enumerate(sf.KINDS)]
+        clear = plan_for(map_furniture=furniture)
+        resolved = dp.resolved_furniture(clear)
+        self.assertEqual({i['kind'] for i in resolved}, set(sf.KINDS))
+        self.assertFalse(any(
+            prov.is_unresolved(i.get('provenance'))
+            for i in clear['items'] if i.get('role') == 'furniture'))
+
+        rejected = []
+        for x, z, kind in furniture:
+            column = [x + 1, z] if kind in sf.FOOTPRINTS else [x, z]
+            rejected.append({'cell': column, 'note': kind})
+        plan = plan_for(map_furniture=furniture, rejected=rejected)
+        by_kind = {i['kind']: i for i in plan['items'] if i.get('role') == 'furniture'}
+        self.assertEqual(set(by_kind), set(sf.KINDS))
+        for x, z, kind in furniture:
+            item = by_kind[kind]
+            self.assertEqual(item['cell'], [x, z], kind)
+            self.assertEqual(item['provenance']['unresolved_reason'], sf.OWNER_NOT_REAL, kind)
+            if kind in sf.FOOTPRINTS:
+                self.assertNotEqual(item['cell'], [x + 1, z])
+        self.assertEqual(dp.resolved_furniture(plan), [])
+
+        outside = [{'cell': [10, 21], 'note': 'beside the bench'}]
+        spared = plan_for(map_furniture=furniture, rejected=outside)
+        self.assertEqual({i['kind'] for i in dp.resolved_furniture(spared)}, set(sf.KINDS))
+
+    def test_a_veto_column_leaves_a_barrier_in_place(self):
+        plan = plan_for(
+            map_barriers={'hedge': {(15, 15), (16, 15), (17, 15)}, 'wall': set(), 'fence': set()},
+            rejected=[{'cell': [16, 15], 'note': 'not a shed'}])
+        hedges = [i for i in plan['items'] if i.get('role') == 'barrier' and i.get('kind') == 'hedge']
+        self.assertTrue(hedges)
+        self.assertFalse(any(prov.is_unresolved(i.get('provenance')) for i in hedges))
+
+    def test_a_lidar_lump_column_vetoes_the_furniture_item_not_its_anchor(self):
+        item = {
+            'role': 'furniture', 'kind': 'waste_basket', 'cell': [4, 5],
+            'id': 'lidar-object-1-2', 'lidar_cells': [[1, 2], [4, 5]],
+            'provenance': {'source': 'photo_read', 'confidence': 'medium',
+                           'evidence_ids': [], 'unresolved_reason': ''},
+        }
+        dp._apply_owner_rejections([item], [{'cell': [1, 2], 'note': 'not a bin'}])
+        self.assertEqual(item['provenance']['unresolved_reason'], sf.OWNER_NOT_REAL)
+        self.assertEqual(item['id'], 'lidar-object-1-2')
