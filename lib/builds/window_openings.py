@@ -56,6 +56,21 @@ def choose_windows(candidates, *, block, walls, exposed, outside_ground, protect
         for face in {v.face for v in grouped[pos]}:
             report[face][reason] += 1
 
+    def is_tread(c):
+        """A tread corner of a diagonal staircase: no neighbouring wall cell shares any face it exposes.
+
+        A sharp corner of an L-shape or setback has a straight run along at least one exposed face, so
+        it is not a tread and keeps its pier.
+        """
+        for face in DIRS:
+            if not exposed(c, face):
+                continue
+            along = ((1, 0), (-1, 0)) if face in 'NS' else ((0, 1), (0, -1))
+            if any((c[0] + dx, c[1] + dz) in walls and exposed((c[0] + dx, c[1] + dz), face)
+                   for dx, dz in along):
+                return False
+        return True
+
     active = {}
     for pos, choices in sorted(grouped.items()):
         # A corner with two evidenced faces still has one deterministic material.
@@ -67,7 +82,8 @@ def choose_windows(candidates, *, block, walls, exposed, outside_ground, protect
             reason = 'protected entrance'
         elif not structural(block(*pos)):
             reason = 'non-wall'
-        elif corner and not any(v.corner_evidence for v in choices):
+        elif corner and not (any(v.corner_evidence for v in choices)
+                             or (any(v.stepped for v in choices) and is_tread(c))):
             reason = 'corner pier / tread too short'
         else:
             heights = [outside_ground.get((x + DIRS[v.face][0], z + DIRS[v.face][1]))
@@ -107,7 +123,10 @@ def choose_windows(candidates, *, block, walls, exposed, outside_ground, protect
                     todo.append(q)
         remaining -= component
         missing_bounds = set()
-        for x, y, z in component:
+        # Full glass blocks need no frame (jamb, sill, lintel); only panes do. A window on a stepped
+        # face or an evidenced corner is always full glass, so it skips the boundary check.
+        frameless = any(active[p][0].stepped or active[p][1] for p in component)
+        for x, y, z in () if frameless else component:
             current = active[x, y, z][0]
             for ox, oy, oz in offsets_for(current):
                 q = (x + ox, y + oy, z + oz)

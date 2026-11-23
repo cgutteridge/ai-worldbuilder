@@ -59,10 +59,23 @@ class WindowReportTest(unittest.TestCase):
                              ((0, 0, 0), 'sill')):
             with self.subTest(failure=failure):
                 shell = {p: s for p, s in blocks.items() if p != pos}
-                writes, report = self.select([Window((0, 1, 0), 'N', stepped=True)],
+                writes, report = self.select([Window((0, 1, 0), 'N')],
                                             shell, walls, columns)
                 self.assertEqual(writes, {})
                 self.assertEqual(report['N'], {f'unbounded opening: non-structural {failure}': 1})
+
+    def test_solid_glass_needs_no_frame_unlike_a_pane(self):
+        # The same opening with a missing jamb, lintel or sill: a pane is refused, a full block is not.
+        blocks = {(x, y, 0): 'bricks' for x in (-1, 0, 1) for y in range(3)}
+        walls = {(-1, 0), (0, 0), (1, 0)}
+        columns = walls | {(x, 1) for x in (-1, 0, 1)}
+        for pos in ((1, 1, 0), (0, 2, 0), (0, 0, 0)):
+            with self.subTest(missing=pos):
+                shell = {p: s for p, s in blocks.items() if p != pos}
+                writes, report = self.select([Window((0, 1, 0), 'N', stepped=True)],
+                                            shell, walls, columns)
+                self.assertEqual(writes, {(0, 1, 0): 'glass'})
+                self.assertEqual(report['N'], {'solid-glass': 1})
 
     def test_structural_block_outside_wall_is_not_a_jamb(self):
         blocks = {(x, y, 0): 'bricks' for x in (-1, 0, 1) for y in range(3)}
@@ -215,18 +228,32 @@ class WindowPolicyTest(unittest.TestCase):
                 south_glass = {p: s for p, s in self.glass(plan).items() if b.exposed((p[0], p[2]), 'S')}
                 self.assertTrue(south_glass)
                 self.assertTrue(all(s == 'minecraft:glass' for s in south_glass.values()))
-                for p in self.glass(plan):
-                    self.assertLessEqual(sum(b.exposed((p[0], p[2]), f) for f in DIRS), 1)
                 self.assertIn('solid-glass=', report)
                 self.assertTrue(set(plan) <= set(original), 'windows may not enlarge the shell')
 
-    def test_one_block_staircase_keeps_opaque_teeth_and_explains_omissions(self):
+    def test_one_block_staircase_takes_solid_glass_on_its_treads(self):
         cells = {(x, z) for x in range(10, 22) for z in range(20, 25 + x - 10)}
         for kind in ('feature', 'house'):
-            plan, _, report, b, h = self.run_builder(kind, cells)
-            for p in self.glass(plan):
-                self.assertLessEqual(sum(b.exposed((p[0], p[2]), f) for f in DIRS), 1)
-            self.assertIn('corner pier / tread too short', report)
+            with self.subTest(kind=kind):
+                plan, original, report, b, h = self.run_builder(kind, cells)
+                glass = self.glass(plan)
+                self.assertTrue(glass)
+                self.assertTrue(any(s == 'minecraft:glass' for s in glass.values()))
+                for p, state in glass.items():
+                    if sum(b.exposed((p[0], p[2]), f) for f in DIRS) > 1:   # a tread corner
+                        self.assertEqual(state, 'minecraft:glass', p)
+                self.assertIn('solid-glass=', report)
+                self.assertTrue(set(plan) <= set(original), 'windows may not enlarge the shell')
+
+    def test_l_shape_corners_stay_opaque_and_straight_runs_stay_framed(self):
+        # A setback makes the face "stepped", but its sharp corners have straight runs: a pier, not a tread.
+        cells = {(x, z) for x in range(10, 22) for z in range(20, 30)} | {(x, z) for x in range(22, 28) for z in range(20, 26)}
+        for kind in ('feature', 'house'):
+            with self.subTest(kind=kind):
+                plan, _, report, b, h = self.run_builder(kind, cells)
+                for p in self.glass(plan):
+                    self.assertLessEqual(sum(b.exposed((p[0], p[2]), f) for f in DIRS), 1, p)
+                self.assertIn('corner pier / tread too short', report)
 
     def test_outside_sill_and_unknown_ground_in_both_builders(self):
         for kind in ('feature', 'house'):

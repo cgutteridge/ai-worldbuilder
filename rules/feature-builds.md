@@ -128,11 +128,16 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   and marks missing rows `no evidence read`. It also counts panes, bounded solid glass
   and omissions by reason (corner pier, incomplete frame, protected entrance, missing
   outside ground or below-ground sill). Doors/glazing cannot terminate an opening.
-  Panes remain on coherent straight planes; stepped treads and potential extra pane
-  connections use solid glass within the existing shell. Sharp corners stay opaque
-  unless that glazing row lists `corner_glazing: [{at: [x,z], provenance: {...}}]`
-  with resolved `photo_read`/`aerial` provenance. This explicit exception uses solid
-  glass and never permits a missing sill/lintel or replacing door framing.
+  Panes remain on coherent straight planes and need a frame (jamb, sill, lintel).
+  Full glass blocks need no frame: windows on a stepped face and potential extra pane
+  connections use solid glass within the existing shell and skip the frame check.
+  The tread corner of a one-block diagonal staircase (no neighbouring wall cell shares an
+  exposed face) takes solid glass without a pier. A sharp corner with a straight run (an
+  L-shape or setback corner, or the end of a longer tread) stays opaque unless that glazing
+  row lists `corner_glazing: [{at: [x,z], provenance: {...}}]` with resolved
+  `photo_read`/`aerial` provenance; that exception also uses solid glass and skips the frame
+  check, and never replaces door framing. Door and protected-entrance cells, non-wall cells
+  and below-sill or unknown outside ground are still refused.
   The old top-level table is refused.
 - optional `signs` — per-label shopfront / street-face sign options
   (`lib/builds/sign_options.py`, catalogue `config/sign-options.json`).
