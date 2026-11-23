@@ -61,8 +61,10 @@ ROW_GAP = 1
 THIN_STEPS = 1
 # A street whose offset across the facing axis is under this many blocks is beside the end of a row, not in front.
 FRONT_MIN_OFFSET = 1.0
-# access lanes behind a row; they give a front only when no ordinary street is near
+# access lanes behind a row; an ordinary street in reach fronts instead, unless the lane is much nearer
 REAR_HIGHWAYS = frozenset({'service', 'track'})
+# a back lane beats an ordinary street only when under this fraction of its distance
+REAR_NEARER = 0.5
 # a row is spread along one axis when that spread is at least this many times the other
 ROW_AXIS_CLEAR = 2.0
 PITCHED_RISE = 0.6
@@ -652,7 +654,8 @@ def _row_front(group: list[dict], streets, axis: str | None) -> tuple[str | None
     spread about evenly in x and z (a street running at an angle to the grid) is rotated, so each
     footprint takes whichever cardinal its own street direction leans on, and the row follows the
     majority. One building, or no footprint with a front of its own, falls back to the whole row's
-    centroid and its reason.
+    centroid and its reason. A row whose centroid has no front (the nearest street sits off one end)
+    can now get one from its footprints; a clearly straight row keeps the perpendicular rule for each.
     """
     whole = _front(_cells_of(group), streets, axis)
     if len(group) < 2:
@@ -676,7 +679,7 @@ def _front(cells: set[tuple[int, int]], streets, axis: str | None) -> tuple[str 
     The street's direction from the centroid picks whichever allowed axis it leans on more, so a
     diagonal road still gives a front. Only no street in reach, or a centroid on the street, has none.
     """
-    hit = _closest(_centroid(cells), streets)
+    hit = _facing(_centroid(cells), streets)
     if hit is None or hit[0] > FRONT_REACH:
         return None, 'no street to face'
     _dist, px, pz = hit
@@ -697,6 +700,26 @@ def _centroid(cells: set[tuple[int, int]]) -> tuple[float, float]:
     """Centre of the block columns."""
     return (sum(x + 0.5 for x, _z in cells) / len(cells),
             sum(z + 0.5 for _x, z in cells) / len(cells))
+
+
+class RearLine(list):
+    """A street polyline for a back lane (service or track way): it fronts only when nothing ordinary does."""
+
+
+def _facing(origin: tuple[float, float], streets) -> tuple[float, float, float] | None:
+    """The street point a building at ``origin`` faces: distance and point.
+
+    An ordinary street within FRONT_REACH wins over a back lane, unless the lane is less than
+    ``REAR_NEARER`` times as far (a mews or farm on its own service road keeps its lane). With no
+    ordinary street in reach, the nearest lane of any kind is used.
+    """
+    ordinary = _closest(origin, [line for line in streets if not isinstance(line, RearLine)])
+    rear = _closest(origin, [line for line in streets if isinstance(line, RearLine)])
+    if ordinary is None or ordinary[0] > FRONT_REACH:
+        return rear if rear is not None else ordinary
+    if rear is not None and rear[0] < REAR_NEARER * ordinary[0]:
+        return rear
+    return ordinary
 
 
 def _closest(origin: tuple[float, float], streets) -> tuple[float, float, float] | None:
@@ -990,7 +1013,6 @@ def _nearby_streets(streets, chosen: list[dict]) -> list[list[tuple[float, float
     zs = [z for _x, z in cells]
     x0, x1, z0, z1 = min(xs), max(xs), min(zs), max(zs)
     kept = []
-    rear = []
     for _name, highway, points in streets:
         if len(points) < 2:
             continue
@@ -1004,9 +1026,8 @@ def _nearby_streets(streets, chosen: list[dict]) -> list[list[tuple[float, float
                 break
         if near:
             line = [(float(x), float(z)) for x, z in points]
-            (rear if highway in REAR_HIGHWAYS else kept).append(line)
-    # a back lane only fronts a building when no ordinary street is in reach
-    return kept or rear
+            kept.append(RearLine(line) if highway in REAR_HIGHWAYS else line)
+    return kept
 
 
 def _lidar_median(cells: set[tuple[int, int]]) -> float | None:
