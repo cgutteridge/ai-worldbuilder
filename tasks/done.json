@@ -3916,5 +3916,16 @@
       "builderTask": false,
       "notes": "samples() skips pixels under 1% brightness and the blocker prints a rounded percentage (100.0% when one column is missing). Use an explicit no-data mask or alpha, or a small window, and print the uncovered column count. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/8\n\nClosed at 26c9037646a422e07ff1917e3d116d1c78fa2b23: Dark aerial pixels count as covered; blockers report uncovered column counts.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
     , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/422-aerial-dark-pixels"}
+  ,
+    {
+      "id": 424,
+      "title": "Add matplotlib to pyproject.toml dependencies",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "matplotlib is imported by site_kit, coverage and osm_footprints but is not declared; three dry-run tests fail after a clean pip install -e . Declare it (or make the imports lazy and document an extra). GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/10\n\nClosed at 210315419e7d196067e8be6a9685893d11b5c924: Declare matplotlib in pyproject.toml dependencies and README.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/424-matplotlib-dep"}
   ]
 }

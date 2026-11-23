@@ -235,16 +235,7 @@
       "builderTask": false,
       "notes": "The first-ghost command uses --ring 1 but --include-focus is off, so it ghosts 8 cells not 9 and --ring 0 ghosts nothing. Add --include-focus to the skill commands or default it on for apply. GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/7"
     },
-    {
-      "id": 424,
-      "title": "Add matplotlib to pyproject.toml dependencies",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "matplotlib is imported by site_kit, coverage and osm_footprints but is not declared; three dry-run tests fail after a clean pip install -e . Declare it (or make the imports lazy and document an extra). GitHub issue to close when this task closes: https://github.com/cgutteridge/ai-worldbuilder/issues/10"
-    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/424-matplotlib-dep"},
+    
     
     {
       "id": 426,
