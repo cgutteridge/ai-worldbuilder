@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the worldbuilder-tasks skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 449,
+  "nextTaskId": 450,
   "tasks": [
     
     {
@@ -41,16 +41,7 @@
       "builderTask": true,
       "notes": "GOAL. Design and build the first level crossing feature, in game, with the owner: the crossing near MC 6980,-4343 (cell 54,-34). Claude chooses the gates, lights and colours from OSM tags and Street View, then builds it using the crossing mechanism.\n\nREAD FIRST: AGENTS.md; docs/plans/railway.md (\"Owner decisions\" 7, 9, 10, 11); docs/plans/bridges-and-tunnels.md (\"Already decided\"); docs/agents/model-and-effort.md (builderTask gate; owner present); the crossing feature module and schema from the crossing mechanism ticket (lib/builds/, rules/feature-builds.md); the `snag` skill; rules/build-roles.md.\n\nEVIDENCE ALREADY FOUND (OSM, node on each of the two tracks about 4 blocks apart, near 50.92340 N, 1.38633 W): `railway=level_crossing`, `crossing:barrier=double_half`, `crossing:light=yes`, `crossing:bell=yes`, `crossing:activation=remote`, description \"Manually Controlled Barriers monitored with Closed-Circuit Television (MCB-CCTV)\". The branch line crosses a road here; read the road data for the surface and width.\n\nDECISIONS TO HONOUR: the rail feature trumps the road; the crossing feature lays the road surface across the rails itself; gates, lights and bell exist only because the OSM tags say so (barrier double_half, light yes, bell yes); their STYLE and COLOURS come from Street View, chosen in this build, with the frame ids recorded as evidence; no default style and no separate survey. The crossing is built after both abutting line features exist and joins their recorded levels.\n\nSTEPS:\n1. Check the dispatch gate and that the line features either side of the gap exist (task 384 (Railway trial D) builds them). If not, stop and report; do not build the line here.\n2. Get Street View frames: `python3 shims/streetview_sample.py --world southampton-build sample --cell 54,-34` (optional `--grid` and `--yaws`; it has no dry-run flag, so before running it tell the owner the source (Google Street View thumbnails), the cell, the number of frames and that they save under instance/streetview/, and wait for a yes; see config/system-providers.json for the licence note: do not commit the frames). Read the sheet. Note the barrier arms, lamps, signs, colours, and anything the OSM tags missed.\n3. Record the evidence with scripts/decision_record.py (`evidence add`, `phase add`), write the crossing spec in site/builds/, choose valid block ids for bars, posts and lamps (iron bars and the other colour variants available in this game version; check lib/blocks/block_reference.py), dry-run, apply under the site lock, read back.\n4. Judge it in game with the owner: does it read as that crossing, are the colours right, does a cart pass through. Fix by editing the spec and re-applying; file snags in the world repo, not as tasks.\n5. Add a short Crossing section to docs/plans/railway.md: what Street View showed, choices made and why, what looked right or wrong, cost (minutes, session tokens, method), and the owner's verdict. Say whether the same approach should be repeated for other crossings.\n\nACCEPTANCE: the crossing spec and its evidence record exist in the world repo; the crossing is built, read back and judged in game by the owner; the railway findings file has the Crossing section with a Cost heading and the owner's verdict.\n"
     },
-    {
-      "id": 429,
-      "title": "house_build: roof underlay block sits in the wall's top course (roof material one layer low)",
-      "status": "todo",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "From trial #257 (docs/plans/typology-buildings.md, \"Roof layer\"). The owner says the roof material appears to be applied one layer below the roof on the rule-built Begonia Road and Northcote Road houses. Likely cause, to confirm first: house_build.roof() adds a two-layer skin, setting a full block of the roof material at y - 1 under every non-eave pitched cell (self.set(x, y - 1, z, family_variants(rm)['full'])); cells beside the eave sit at the wall-top level, so that block lands in the wall's top course. A live scan of the west semi at x 6347, z -6134..-6123 found full deepslate_tiles at y 63 and y 64 where the top wall course should be brick. First step is a diagnosis against a dry-run plan (compare the planned top course with the wall material); then keep the wall's top course in wall material and seal the stair cutouts without it, or move the underlay below the wall top. Affects house_build pitched roofs (roof_pitch above 0.5) in both the rule-built and hand-spec path; check whether feature_build pitched roofs have the same extra layer. Tests with a synthetic rectangular footprint asserting the wall-top row and the roof rows. Stretch (a diagnosis that touches the roof planner); do not raise model or effort without the owner.\n\n\nReview corrections (2026-11-22): cite #414. Today's code is `if not eave: self.set(x, y-1, z, full)` in lib/builds/house_build.py (about line 492), so the eave ring already has no underlay; the leftover is the first row below the eave, which at pitch 0.6 sits at the wall top plus 6, so its underlay lands at plus 5, the wall's top course. The live column scan (x 6347, full tiles at y 63 and 64) was taken before #414 was checked and is NOT re-checked; it is also not verified that this is the exact spot the owner means (\"one layer below the roof\"). Constraint: legacy flat output must stay byte-identical (test_legacy_flatish_plans_match_pre_change_output). This is a stretch because it starts as a diagnosis, even though complexity is m. Also check whether feature_build roofs have the same extra layer (cheap)."
-    },
+    
     {
       "id": 431,
       "title": "Typology generator: glazing and facade detail as a class recipe (shopfront table into facade_plan)",
@@ -70,7 +61,7 @@
       "priority": "medium",
       "complexity": "l",
       "blockedBy": [
-        429,
+        
         441
       ],
       "builderTask": true,
@@ -79,13 +70,13 @@
     {
       "id": 433,
       "title": "Cell-edge features: plan each feature in its primary cell",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
       "builderTask": false,
       "notes": "Found in trial #257 (parade, Portswood Road; findings in docs/plans/typology-buildings.md, Cell edges). Two shops straddling the 51,-37 / 52,-37 edge, ways 149855650 and 167071535, could not be built. Their feature plans were recorded under 51,-37 (when that cell's plans were recorded), but they are built from 52,-37. The builder refuses them with \"feature plan absent from cell plan 52,-37\"; `cell_registry.py propose-features --cell 52,-37` reports no candidates for them because they are already planned elsewhere; dismissing the plans on 51,-37 did not release them, so they now have a plan in no cell (the parade stays at 17 of 19).\n\nA finished task (#288) already sets the rule: a feature that crosses a cell line is planned once, in the cell holding most of its columns (site_kit.primary_cell, cell_journal). This task must agree with it, not replace it.\n\nStep 1, diagnose (read-only): give the column count each of the two shops has in 51,-37 and in 52,-37, and name which of propose-features, the plan record and the builder disagrees with #288's rule for them. The cause is NOT diagnosed yet.\nStep 2: make propose-features, the plan record and the builder all follow #288's rule, and make a plan recorded in the wrong cell recoverable without a manual registry edit (including after a dismissal).\nNon-builder: fixtures, no live world work. Acceptance: a synthetic two-cell footprint fixture where a feature planned in the wrong cell is proposed and applied from its primary cell; the two shops then propose and apply from their primary cell. Building the two shops is a separate world step with the owner's OK.\n"
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/433-cell-edge-features"},
     {
       "id": 434,
       "title": "feature_build roofs: octant fit or fixed stair rotation for pitched feature roofs",
@@ -130,14 +121,14 @@
     },
     {
       "id": 442,
-      "title": "Car-park bay lines draw a dense white grid on 50,-35 (S-117)",
-      "status": "todo",
+      "title": "Remove the car-park bay-line generator (I-053, S-116, S-117)",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
       "builderTask": false,
-      "notes": "From the 2026-11-23 trial of fix #336 on cell 50,-35 (issue I-053 \"Car-park bay lines do not match the real car park\"; snags S-116 from the owner, S-117 from the agent; screenshots on both). The owner saw long white stripes on the east side. After the stale hand patch (feature w1480342683_carpark_lines_removed, 557 gray_concrete blocks) was undone and ground redone, the north-west car park shows a dense white brick-like grid of many short rows, not rows at right angles to the aisle with gaps. I-053's cause text (\"no repo code reproduces this today\") is stale and should be updated when this lands.\n\nChecked 2026-11-23: all 339 white_concrete blocks in the east of the cell are in the ground redo's own block list, so none are old leftovers. The generator is lib/layers/bay_lines.py (mark_car_park_bays / bay_line_columns, called from lib/layers/ground_layer.py near line 838).\n\nVerified in the code (reviewer and agent): bay_line_columns loops every car-park polygon against every aisle segment in the cell, so an aisle paints bay lines into any car-park polygon it is near, even one it does not belong to. Each column is owned by its single nearest segment, so bands from different segments cannot stack. The line phase restarts at the start of each segment, so a bent aisle gets uneven spacing (gaps or doubled lines) at its joins. The pri==parking filter already keeps lines off plaza and driveway columns.\n\nNOT verified: which of these actually makes the grid at 50,-35. Step 1 is to dump the 50,-35 aisles (points, segment lengths, which polygon each lies in) and the bay columns coloured by owning segment, and say which cause holds.\n\nDeliverable (after step 1, fix the cause found): candidates are (a) associate each aisle with its own car-park polygon; (b) measure the spacing along a whole bent aisle instead of restarting at each segment; (c) draw nothing where the geometry cannot give consistent rows (nothing invented, as now). Files: lib/layers/bay_lines.py and lib/layers/test_bay_lines.py; update the layout statement in docs/plans/industrial-commercial.md (lines about 71 and 189, which cites #336). No change to the surface rule (#338).\n\nCheck line per snag (S-116 and S-117): after ground is redone on 50,-35, a scan of its white_concrete bay columns shows no two lines closer than 2 blocks along one aisle, each row at right angles to its aisle; a unit test covers a bent multi-segment aisle and two neighbouring car parks. The owner's in-game look at 50,-35 is the snag review.\nSize: m, because the cause is not yet known. Not a builder task: the check is a scan command; the in-game look is the owner's snag review. I-053 stays open until the owner confirms.\n"
-    },
+      "notes": "Issue I-053 (car-park bay lines do not match the real car park), snags S-116 (owner) and S-117 (agent). Owner decision 2026-11-23: remove the generated bay-line grid completely. The owner never asked for it, it caused the problem, and any bay lines should come from the aerial image even if messier (a separate task, below). Do not repair or tune the generator.\n\nBackground: the ground pass draws a white_concrete line every 3 blocks along each mapped service=parking_aisle, 5 blocks deep either side (lib/layers/bay_lines.py, from the car-park bay lines task, closed 81faf7e). It came from a throwaway trial script, not from an owner request. It paints into car parks the aisle does not belong to, and restarts its spacing at each bend of an aisle. On 50,-35 it makes a dense white grid.\n\nDeliverable (non-builder, code and docs):\n1. Delete lib/layers/bay_lines.py and lib/layers/test_bay_lines.py. Remove the import and the call in lib/layers/ground_layer.py (about lines 59 and 836) and the `how` count for it. The ground pass then paints every car park as plain tarmac.\n2. ground_sources.py: remove parking_areas and parking_aisles only if nothing else reads them (grep first); keep them if the aerial-lines task will need them, and say so.\n3. Docs: docs/plans/industrial-commercial.md (the parking rows near lines 71 and 189, and item 10 near line 282): state that parked bays carry no generated lines and point at the aerial-lines task. rules/craftsmanship.md (about lines 169 to 183): keep the ground-marking gate rule for kerb and crossing paint, drop bay lines as an example and as a consumer.\n4. Run python3 scripts/run_tests.py; nothing may import the old module.\n5. I-053: replace its cause text (it says no repo code reproduces this; that is stale) with the real cause and the removal.\n\nWorld step (separate, owner OK first, not part of the code commit): find which built cells hold generated bay lines (the ground reports in the world repo list a 'car park bay line' count; known candidates 46,-46, 48,-44, 49,-43, 53,-43 and 50,-35) and redo their ground so the car parks are tarmac. 50,-35 first.\n\nCheck for S-116 and S-117: after ground is redone on 50,-35, a scan of the car parks there finds no white_concrete bay columns. The owner's in-game look at 50,-35 is the snag review; I-053 stays open until the owner confirms.\n"
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/442-carpark-bay-lines"},
     {
       "id": 443,
       "title": "Decor: let the owner mark a lidar shed or garage as not real (S-114)",
@@ -192,6 +183,18 @@
       "blockedBy": [],
       "builderTask": true,
       "notes": "Live build of #333 + #427 at cell 50,-36 (2026-11-23) read back clean but looked wrong: blank stepped brick walls, roofs of solid brick, nearly no windows (house_build.windows passes no corner_evidence, so every wall column of a 45-degree stair-step wall is a corner and is refused: 'corner pier / tread too short'), no bays, mostly 1-storey bodies, most shops without a door. Fix generally (no street- or shop-specific code): (1) windows on stepped faces in house_build.windows, (2) roof material default for the commercial class (full-block brick roofs), (3) storeys and bay from evidence, (4) doors. Check on ONE shop first, in game, then the group. Source: session notes; docs/plans/typology-buildings.md."
-    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/447-live-parade-fixes"}
+    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/447-live-parade-fixes"},
+    {
+      "id": 449,
+      "title": "Ground: car-park bay lines read from the aerial image (no generated grid)",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [
+        442
+      ],
+      "builderTask": false,
+      "notes": "Replaces the removed generated bay-line grid (see the remove-the-generator task, I-053). Owner decisions 2026-11-23: bay lines come from the aerial image, even if messier; the generated grid was a disaster and is gone.\n\nGOAL. In the ground pass, mark a block white_concrete where the aerial shows a painted bay line inside a mapped car park (amenity=parking polygon, surface). Nothing else gets painted.\n\nRULES (owner):\n- Copy only what the image shows. Remove single-pixel specks (the existing majority filter or similar). No straightening, no joining of gaps, no invented lines, no line from aisle geometry.\n- Car parks only. Road centre and edge lines, zebra crossings and kerb yellows are separate later tasks, one kind at a time.\n- Where the aerial is too soft to show lines clearly, draw nothing for that car park and list it in the ground report as \"aerial too soft\". No fallback guess. The test for clear enough is part of this task.\n- Lines draw only on columns the ground pass has made tarmac inside that car park (not lawn, aisle, road or path), as the old generator did. They are written by the ground pass itself (see rules/craftsmanship.md on ground-layer markings).\n\nSTEPS:\n1. Read-only trial on 50,-35 (the owner knows that car park). Using the aerial the ground pass already uses (ground_sources.aerial_rgb, or the sharp registered aerial if the cell has one), plot the pale-thin-streak signal over each car park and say whether real bay lines show. STOP RULE: if the aerial does not show the lines on 50,-35, report with the picture and the numbers and stop; do not lower the threshold until something appears.\n2. If lines show, add the detector, a clear-enough test and the 'aerial too soft' report row, with unit tests on synthetic aerial fixtures (a clean line, a faint line, specks, a soft car park with no line).\n3. Dry-run the ground pass on 50,-35 and one more cell that has a car park. Compare the drawn lines with the aerial crop by eye; write the picture path in the report.\n\nNot a builder task: tool code with synthetic fixtures. The owner's in-game look at 50,-35 is the review. Blocked by the removal task: do not start until the generator is deleted.\n"
+    }
   ]
 }
