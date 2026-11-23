@@ -31,6 +31,7 @@ from feature_spec import STOREY_H, load_spec
 from roof_geometry import (
     ROOF_DELTA,
     ROOF_FACE_ORDER,
+    SlopeStairRule,
     align_stair_shapes,
     edge_distance_field,
     pitched_roof_states,
@@ -340,10 +341,13 @@ class Build(RoofZonePlanning, DoorPlanning, FacadePlanning, DetailPlanning):
             mats = {
                 c: roof_material_for_zone(f.roof, material_levels.get(c)) for c in halfs
             }
+            rule = self._slope_stair_rule(f) if f.roof.get('stairs') == 'slope' else None
             pitched_states = pitched_roof_states(
                 halfs, mats, warnings=self._roof_warnings, levels=zl,
-                flat_cells=getattr(f, 'zone_flat_cells', None),
+                flat_cells=getattr(f, 'zone_flat_cells', None), stair_ok=rule,
             )
+            if rule is not None:
+                self._zone_pad_lines.append(rule.summary(f.no))
 
         def top_of(q: tuple[int, int]) -> int:
             return roof[q] if q in roof else gy.get(q, -999)
@@ -390,6 +394,30 @@ class Build(RoofZonePlanning, DoorPlanning, FacadePlanning, DetailPlanning):
                 self.set(x, ry + 1, z, 'air')
         if pitched_states is not None:
             self._back_roof_stair_edges(roof, pitched_states)
+
+    @staticmethod
+    def _slope_stair_rule(f: Feature) -> SlopeStairRule:
+        """Stair rule for ``roofs[label].stairs: "slope"``: rim or fitted slope only (#434).
+
+        @param f: zoned pitched feature (``zone_roof``, ``zone_flat_cells``, ``zone_volume``,
+            ``zone_surface`` filled by ``prepare_zones``)
+        @returns: the rule to pass to ``pitched_roof_states``
+        """
+        import roof_surface
+        surfaces = getattr(f, 'zone_surface', None) or {}
+
+        def rise(c, facing):
+            surface = surfaces.get(c)
+            if surface is None:
+                return None
+            gx, gz = surface.gradient(*c)
+            dx, dz = ROOF_DELTA[facing]
+            return gx * dx + gz * dz
+
+        return SlopeStairRule(
+            f.zone_roof, flat=getattr(f, 'zone_flat_cells', None),
+            volume=getattr(f, 'zone_volume', None), rise=rise, min_rise=roof_surface.MIN_SLOPE,
+        )
 
     def _back_roof_stair_edges(self, roof: dict, states: dict) -> None:
         """Close horizontal slits beside lower stairs inside a zoned roof mass.
