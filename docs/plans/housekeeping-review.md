@@ -326,7 +326,7 @@ Several plans are **linked from code or rules**. Repoint those links before arch
 | `land-use-classes.md` | done | the design the code implements: make it an ADR |
 | `252-research-handoff`, `263-264-decor-preparation`, `284-preflight-blocker-commands`, `285-stale-ground` (its rule already lives in `process.md:151`), `bigbox-roof-aerial`, `split-next-new-cell-vs-overnight`, `shared-minecraft-instance`, `park-rural`, `seam-rationalisation-review` | done | archive |
 | `world-cli-arg` (103), `first-return-lidar-canopy` (320), `woodland-subtasks-handoff` (347–351) | name their done tickets in their own text | archive |
-| `323-unmapped-tree-lines.md` | 323 done | input to open 360: link it from 360, keep until 360 closes |
+| `323-unmapped-tree-lines.md` | 323 done | deleted after 360 closed (e60a057); findings live in the world repo (3d6dd27) |
 | `southampton-dryrun-001.md` | none | place history: move to southampton-build |
 | `industrial-commercial` (333), `vibe-at-scale` (257), `claude-task-splits-2026-11-21` (326, 358, 360), owner drafts (`railway.md`, `bridges-and-tunnels.md`, `railway-prototype/`) | live | keep |
 | specs: `cell-journal-interface` (superseded by ADR 004), `decor-furniture-aerial-zoom-spike` (308), `pyproj-gdal-point-validation` (85); audits: `312-rotated-window-policy`, `region-block-reads` | done | archive |

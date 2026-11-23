@@ -77,8 +77,9 @@ node scripts/tasks.mjs close ID --sha FULL_SHA --note "Short note"
 
 `tree` prints the active dependency forest: one line per task, children indented
 under each blocker. Multi-blocked tasks appear under every parent, with
-`(also blocked by #…)` for the other ids. Each line ends with `BUILDER` or
-`NO-BUILDER`, and `claimed by Cursor|Claude|Codex` when `claimedBy` is set.
+`(also blocked by #…)` for the other ids. Each line starts with
+`(Cursor|Claude|Codex)` when `claimedBy` is set, then `[BUILDER]` for builder
+tasks (non-builder tasks have no tag).
 
 Run mutations on `main` only, then commit them immediately (see above). The
 pre-commit hook rejects tracker edits on `task/*` branches. Read-only `show`,

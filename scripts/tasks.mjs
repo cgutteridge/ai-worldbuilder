@@ -327,10 +327,10 @@ export function formatTaskTreeLine(task, { parentId } = {}) {
       : ""
   const claim =
     typeof task.claimedBy === "string" && claimAppLabels[task.claimedBy]
-      ? ` - claimed by ${claimAppLabels[task.claimedBy]}`
+      ? `(${claimAppLabels[task.claimedBy]}) `
       : ""
-  const kind = isBuilderTask(task) ? "BUILDER" : "NO-BUILDER"
-  return `#${task.id} - ${title}${also}${claim} - ${kind}`
+  const kind = isBuilderTask(task) ? "[BUILDER] " : ""
+  return `#${task.id} - ${claim}${kind}${title}${also}`
 }
 
 /** Active-task dependency forest: roots first, then indented children under each blocker. */
@@ -923,7 +923,7 @@ const commands = {
   tree: {
     usage: "tree",
     summary:
-      "Print the active task dependency tree (blockers as parents; BUILDER/NO-BUILDER and claim).",
+      "Print the active task dependency tree (blockers as parents; claim and [BUILDER] tag).",
     positional: [],
     flags: [],
     values: [],

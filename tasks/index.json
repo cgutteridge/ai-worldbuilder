@@ -83,7 +83,7 @@
     {
       "id": 382,
       "title": "Railway line feature integration: cell workflow skips, ownership, backup, undo",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "l",
       "blockedBy": [
@@ -91,7 +91,7 @@
       ],
       "builderTask": false,
       "notes": "GOAL. Make the railway line a real, journalled FEATURE in the normal cell workflow: skip fast when there is nothing to do, build from the planner's plan with a structure backup, own its footprint so later passes leave it alone, and undo cleanly.\n\nREAD FIRST: AGENTS.md; docs/plans/railway.md (\"Owner decisions\" 2, 3, 5 to 8, 10, and \"Not in the normal workflow yet\"); GLOSSARY.md (Element, Feature); rules/handoff-layered-passes.md (sections 1, 3, 4 and 11: pass order, masks, undo, cross-cell effects); rules/feature-builds.md; lib/journal/cell_features.py and lib/journal/cell_journal.py (how a feature and its footprint are recorded); scripts/cell_registry.py (`propose_feature_candidates`, readiness); lib/site/site_kit.py (`apply`, `_structure_backup`, structure backups, readback); lib/site/element_undo.py; lib/builds/feature_build.py (how a feature spec in site/builds/<name>.json works); the planner (lib/builds/railway_plan.py) and evidence (lib/sources/railway_evidence.py) modules; docs/plans/railway-prototype/rail_apply.py.txt and rail_verify.py.txt.\n\nDECISIONS YOU MUST HONOUR (owner, 2026-11-22):\n- PER-CELL WORKFLOW: a cell with no railway is skipped at once. A cell already covered by an earlier railway feature is skipped at once (\"marked already by a nearby cell that was done first\"). Otherwise plan a railway feature starting from that cell, 2048 x 2048 box, join records at box cuts.\n- The feature OWNS its whole footprint: rails, ballast, slopes, planting. The cell trees and decor passes never place inside it (the rules already say a major feature wins; check this holds for railway footprints and enforce it if not), and the ground layer yields to it. Where a road crosses, the feature lays the road surface itself.\n- The feature's gaps (crossings, bridges, tunnels) and joins are recorded in the feature record so the crossing-feature ticket can read them.\n- BEST EFFORT, FAIL LOUDLY: if the plan has any `failures`, stop BEFORE any block is written and print them. A human fixes those bits.\n- Powered rail with a torch two blocks below, corners plain, junctions untouched.\n\nBUILD:\n1. Feature proposal for railway in the per-cell flow (propose, prepare, readiness), with the two instant skips.\n2. A spec in site/builds/ (name `railway_<tx>_<tz>`) that points at the plan or embeds it, validated by the registry check.\n3. Apply through site_kit.apply: structure backup tiles, fills and rail writes, journalled ownership of every footprint column, and a READ-BACK that rescans what was written and RETRIES misses. The trial's first powered-rail pass missed 45 cells (39 rails, 6 torches) near MC x 7376 to 7414 and a retry fixed them; the cause was never found, so treat a miss as normal and retry, then fail loudly if it persists.\n4. Undo through the existing element undo, restoring the structure backup and clearing the journal ownership. Covered-cell marking must be undone too.\n5. Docs: a railway section in rules/feature-builds.md; GLOSSARY.md note that a railway line is a feature, not a layer.\n\nACCEPTANCE (tests with MemoryBlocks and the journal test kit, no live server; run `python3 scripts/run_tests.py --only <your test stems>`): proposing for a cell with no railway returns nothing; proposing for a cell covered by an existing railway feature returns nothing; a planned feature applies into MemoryBlocks and the journal shows ownership of every footprint column; a later trees or decor pass over the cell writes nothing inside the footprint; read-back detects a deliberately dropped block and the retry restores it; a persistent miss fails loudly; a plan with failures writes no block at all; undo restores MemoryBlocks exactly; two features on adjacent boxes carry matching join records.\n\nDO NOT: apply to the live world, run a real-place build, or design crossings/bridges/tunnels (their own tickets). If you want a live smoke test, stop and leave it to the real-stretch trial ticket.\nWORKFLOW: task/* branch, ship-branch skill. builderTask false. This changes journal ownership across layers, so it is a stretch under docs/agents/model-and-effort.md: ask the owner before raising model or effort.\n\nShared seams (housekeeping review, docs/plans/housekeeping-review.md): use cellmath, the shared builder helpers (#407) and world-provider roles (#393) rather than new private tables or imports."
-    },
+    , "claimedBy": "codex", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/task-382-railway-feature"},
     {
       "id": 383,
       "title": "Crossing feature mechanism: spec, join records, not-ready gate and crossing builder",
@@ -151,7 +151,7 @@
     {
       "id": 406,
       "title": "Retire the handoff queue: keep cell gaps, delete the rest of site_handoff and rules_context",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "l",
       "blockedBy": [
@@ -159,7 +159,7 @@
       ],
       "builderTask": false,
       "notes": "Housekeeping review ticket T17. Spec and evidence: docs/plans/housekeeping-review.md, section 3 'T17' and the findings it cites in section 1. Owner decisions in that doc's 'Owner decisions (2026-11-22)' table are settled; do not reopen them.\n\n- priority: medium; complexity: l\n- Scope:\n  - 1.4. Move the cell-gaps block to `lib/journal/cell_gaps.py`.\n  - Delete the rest of `site_handoff.py` and `scripts/site_handoff.py`, `rules_context.py` and its test, and the QUEUE and ISSUES parts of `site_archive` (`test_site_archive.py:80-155`).\n  - Decided: drop the greeblies and contact-sheet gate (`:757-873`) with the queue code; reword `rules/feature-builds.md:251` so it promises no enforcement.\n  - Repoint: `site_status.py:14,139,171-173,246`, `site_pages.py:329,353-354`, `test_site_recover.py:282-292`, `test_cell_features.py:15,121-123`, `test_mc_player.py:66`, `cell-orchestrator/SKILL.md:18,120`, `rules/handoff-layered-passes.md:30`.\n  - Rewrite: `rules/process.md:351,361`, `rules/feature-builds.md:251`, `rules/rules-context.md` (the whole file), `rules/cleanup.md:39`, `scripts/issues.py:5`, `issue_log.py:209`, `coverage.py:30`, `geo.py:325`.\n- Check: the cell-gaps tests pass from their new home, and no doc names a removed subcommand.\n\nDone also requires the doc's 'Definition of done for every ticket' checklist: repo-wide grep (all file types, every world) for each removed/renamed name; index docs, rules, skills, templates and world data updated together; tests retargeted; full suite green.\n\nbuilderTask false: source, docs and fixture work only; no AI model interprets place evidence in the process.\nBlocked by: T3 (#393) because it site_handoff provider imports change in the shims ticket."
-    },
+    , "claimedBy": "codex", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/task-406-handoff-retire"},
     
     
     
