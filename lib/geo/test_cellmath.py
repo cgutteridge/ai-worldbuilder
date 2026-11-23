@@ -13,6 +13,15 @@ class CellMathTest(unittest.TestCase):
     def test_cell_id(self):
         self.assertEqual(C.cell_id((48, -44)), '48,-44')
 
+    def test_majority_cell_counts_columns_and_breaks_ties_low(self):
+        """Task 288: most distinct columns; a tie goes to the lowest cell; height does not vote."""
+        self.assertEqual(C.majority_cell([(0, 0), (1, 0), (128, 0), (129, 0), (130, 0)]), (1, 0))
+        stacked = ([(0, y, 0) for y in range(10)] + [(1, 0, 0)]
+                   + [(128, 0, 0), (129, 0, 0), (130, 0, 0)])
+        self.assertEqual(C.majority_cell(stacked), (1, 0))
+        self.assertEqual(C.majority_cell([(127, 0), (128, 0)]), (0, 0))
+        self.assertIsNone(C.majority_cell([]))
+
     def test_cell_of_and_bounds_round_trip(self):
         self.assertEqual(C.cell_of(6152, -5592), (48, -44))
         self.assertEqual(C.cell_of(-1, -1), (-1, -1))

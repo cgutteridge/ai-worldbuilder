@@ -80,6 +80,65 @@ class ZoneMathTest(unittest.TestCase):
         self.assertIn('pad=', line)
         self.assertIn('cover=', line)
 
+    def test_regions_from_the_aerial_set_the_zones_and_lidar_sets_their_levels(self):
+        # A hipped front (rises from 30 m at the eave to 34 m) beside a flat rear deck at 26 m.
+        # Lidar alone would blend the rear into the hip's low edge; the image splits them.
+        outline = np.ones((12, 20), dtype=bool)
+        zz, xx = np.mgrid[0:12, 0:20]
+        dsm = np.full((12, 20), 26.0)
+        front = xx < 10
+        dsm[front] = 30.0 + 4.0 * (1 - np.abs(zz[front] - 5.5) / 6.0)
+        regions = [
+            [(0, 0), (10, 0), (10, 12), (0, 12)],
+            [(10, 0), (20, 0), (20, 12), (10, 12)],
+        ]
+        readable, zone, levels, _axis, _dropped = FZ.assign_roof_zones(
+            dsm, outline, 'auto', xx, zz, bucket=4, axis_deg=0.0, regions=regions,
+        )
+        rear = readable & ~front
+        self.assertEqual(set(zone[rear].tolist()), {26.0})
+        self.assertEqual(len(set(zone[readable & front].tolist())), 1)
+        eave = zone[readable & front][0]
+        self.assertGreaterEqual(eave, 30.0)
+        self.assertLess(eave, 32.0)
+        self.assertIn(26.0, levels)
+        self.assertIn(eave, levels)
+
+    def test_region_levels_are_whole_metres_and_merge_when_equal(self):
+        # Two regions whose lidar eaves are 30.3 and 29.8 are the same 30 m zone, not a fractional step.
+        outline = np.ones((8, 16), dtype=bool)
+        zz, xx = np.mgrid[0:8, 0:16]
+        dsm = np.where(xx < 8, 30.3, 29.8)
+        regions = [[(0, 0), (8, 0), (8, 8), (0, 8)], [(8, 0), (16, 0), (16, 8), (8, 8)]]
+        readable, zone, levels, _axis, _dropped = FZ.assign_roof_zones(
+            dsm, outline, 'auto', xx, zz, bucket=4, axis_deg=0.0, regions=regions,
+        )
+        self.assertEqual(set(zone[readable].tolist()), {30.0})
+        self.assertTrue(all(float(level).is_integer() for level in levels))
+
+    def test_cells_outside_every_region_keep_their_lidar_zone(self):
+        outline = np.ones((6, 12), dtype=bool)
+        zz, xx = np.mgrid[0:6, 0:12]
+        dsm = np.where(xx < 6, 41.0, 50.0)
+        regions = [[(0, 0), (6, 0), (6, 6), (0, 6)]]
+        readable, zone, _levels, _axis, _dropped = FZ.assign_roof_zones(
+            dsm, outline, [41, 50], xx, zz, bucket=3, axis_deg=0.0, regions=regions,
+        )
+        self.assertEqual(set(zone[readable & (xx >= 6)].tolist()), {50.0})
+        self.assertEqual(set(zone[readable & (xx < 6)].tolist()), {41.0})
+
+    def test_regions_refuse_overlap_and_empty_polygons(self):
+        outline = np.ones((6, 6), dtype=bool)
+        zz, xx = np.mgrid[0:6, 0:6]
+        dsm = np.full((6, 6), 41.0)
+        box = [(0, 0), (4, 0), (4, 6), (0, 6)]
+        overlapping = [box, [(3, 0), (6, 0), (6, 6), (3, 6)]]
+        with self.assertRaises(SystemExit):
+            FZ.assign_roof_zones(dsm, outline, [41], xx, zz, bucket=3, axis_deg=0.0, regions=overlapping)
+        empty = [[(50, 50), (60, 50), (60, 60)]]
+        with self.assertRaises(SystemExit):
+            FZ.assign_roof_zones(dsm, outline, [41], xx, zz, bucket=3, axis_deg=0.0, regions=empty)
+
     def test_assign_roof_zones_drops_outline_cells_without_lidar_mass(self):
         """#116: zoned readable mask keeps only cells with nDSM ≥ ZONE_LIDAR_MASS_M."""
         outline = np.ones((4, 6), dtype=bool)

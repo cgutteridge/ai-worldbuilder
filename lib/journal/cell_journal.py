@@ -34,7 +34,7 @@ import os
 import sys
 import time
 import zlib
-from collections import Counter, OrderedDict
+from collections import OrderedDict
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, Mapping
@@ -1508,7 +1508,10 @@ class CellRegistry:
         if b.cell is not None:
             primary = tuple(b.cell)
         else:
-            primary = Counter(self._cell_of(p) for p in positions).most_common(1)[0][0]
+            # Most distinct columns, tie lowest (tx, tz). Same rule as propose (task 288).
+            primary = cellmath.majority_cell(positions, self.cell_size)
+            if primary is None:
+                raise Refused(f'{b.plan}: empty plan')
         touched = self._cells_of(positions) | {primary}
         previous = self._latest(b.plan)
         if b.pass_ == 'feature' and previous is not None and previous.pass_ == 'feature':

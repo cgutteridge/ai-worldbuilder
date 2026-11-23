@@ -538,16 +538,78 @@ def propose_feature_candidates(cid: str) -> list[dict[str, Any]]:
     return list(cf.missing_features(tx, tz)) + proposal((tx, tz), view_registry())
 
 
+def candidate_home(item: dict[str, Any]) -> tuple[int, int] | None:
+    """Home cell recorded on a propose candidate.
+
+    @param item: candidate dict (``home`` is ``[tx, tz]`` when the proposer set it)
+    @returns: ``(tx, tz)``, or None when the candidate does not name a home
+    """
+    home = item.get('home')
+    if not home or isinstance(home, str):
+        return None
+    return (int(home[0]), int(home[1]))
+
+
+def covers_candidate(reg: CellRegistry, cell: tuple[int, int], item: dict[str, Any]) -> set[str]:
+    """Plan ids and map refs that already account for ``item`` in ``cell``.
+
+    When the candidate names this cell as its home, only a plan or dismissal in
+    this cell counts. A plan or dismissal in another cell is the wrong cell and
+    does not hide the feature (task 433). A candidate with no home, or whose home
+    is another cell, stays covered by plans and dismissals elsewhere, so a feature
+    planned in its real home is not proposed again next door (task 288).
+
+    @param reg: registry
+    @param cell: ``(tx, tz)`` being proposed
+    @param item: candidate dict
+    @returns: ids and refs
+    """
+    from cell_readiness import planned_elsewhere, planned_here
+    cell = tuple(cell)
+    here = planned_here(reg, cell)
+    if candidate_home(item) == cell:
+        return here
+    return here | planned_elsewhere(reg, cell)
+
+
+def candidate_recorded(reg: CellRegistry, cell: tuple[int, int], item: dict[str, Any],
+                       fid: str) -> bool:
+    """Whether ``fid`` must not be written again for ``item`` in ``cell``.
+
+    The home cell may record a feature that is planned or dismissed only in
+    another cell. A different cell still refuses an id planned anywhere, or
+    dismissed in the cell being recorded. A candidate whose home is another
+    cell is not recorded here.
+
+    @param reg: registry
+    @param cell: ``(tx, tz)``
+    @param item: candidate dict
+    @param fid: plan id
+    @returns: True when record should skip it
+    """
+    cell = tuple(cell)
+    home = candidate_home(item)
+    if home is not None and home != cell:
+        return True
+    on_cell = (any(f.id == fid for f in reg.cell(cell).features)
+               or fid in reg.plan_dismissed_ids(cell))
+    if home == cell:
+        return on_cell
+    return on_cell or fid in feature_plan_ids(reg)
+
+
 def drop_covered_candidates(reg: CellRegistry, cell: tuple[int, int],
                             items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Candidates minus map-ref features already planned or built, here or in another cell (tasks 288, 293, 233).
+    """Candidates minus map-ref features already accounted for (tasks 288, 293, 233, 433).
 
-    A feature crossing a cell line is planned once; the other cells it touches never
-    re-propose it (a legacy plan in a minority cell still counts). A plan covers a candidate
-    by map ref, not only by id: ``west_w34391673`` covers ``w34391673`` (``plan_refs``).
-    A ``kind: group`` is dropped only when every ref is covered; a partial hit keeps the
-    uncovered refs as building candidates (#328). House groups match the same way (#233):
-    a spec-backed plan under a different id covers its ways; a partial hit keeps the
+    A feature crossing a cell line is planned once, in the cell with most of its
+    columns. That home cell still proposes it when the only plan or dismissal is
+    in another cell. Other cells do not re-propose a feature planned or dismissed
+    in its home. A plan covers a candidate by map ref, not only by id:
+    ``west_w34391673`` covers ``w34391673`` (``plan_refs``). A ``kind: group`` is
+    dropped only when every ref is covered; a partial hit keeps the uncovered refs
+    as building candidates (#328). House groups match the same way (#233): a
+    spec-backed plan under a different id covers its ways; a partial hit keeps the
     uncovered houses.
 
     @param reg: registry
@@ -555,11 +617,10 @@ def drop_covered_candidates(reg: CellRegistry, cell: tuple[int, int],
     @param items: candidates from :func:`propose_feature_candidates` or readiness evidence
     @returns: the candidates still to account for in this cell
     """
-    from cell_readiness import planned_elsewhere, planned_here
     from plan_refs import uncovered_candidates
-    covered = planned_here(reg, cell) | planned_elsewhere(reg, cell)
     out: list[dict[str, Any]] = []
     for item in items:
+        covered = covers_candidate(reg, cell, item)
         # A house plan id already on the registry accounts for that whole candidate when
         # there is no hand-off ways list yet (prepare records the note before a build spec
         # exists). House plans never recover coverage from a name suffix, so this keeps a
@@ -573,16 +634,37 @@ def drop_covered_candidates(reg: CellRegistry, cell: tuple[int, int],
     return drop_unresolved_legacy_houses(reg, cell, out)
 
 
+def _release_stray_plan(reg: CellRegistry, home: tuple[int, int], fid: str) -> None:
+    """Dismiss ``fid`` on every cell other than its home.
+
+    The home-cell plan is the one that counts (task 433). An active plan left on
+    another cell would still look like a second claim.
+
+    @param reg: registry
+    @param home: ``(tx, tz)`` that now holds the plan
+    @param fid: plan id
+    """
+    home = tuple(home)
+    for other in list(reg.view()):
+        if tuple(other) == home:
+            continue
+        if any(f.id == fid for f in reg.cell(other).features):
+            note(reg, other, 'plan_feature-dismiss',
+                 'recorded in the home cell (most columns)', fid)
+
+
 def record_feature_candidates(reg: CellRegistry, cid: str,
                               candidates: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """Write ``plan_feature`` notes for propose-features candidates (#128).
 
-    Skips ids already on any cell's plan (a house street id planned next door must not be
-    recorded again, #233), map-ref features planned in another cell (task 288) and features
-    whose plan covers the candidate's map ref (task 293), house groups blocked by an
-    unresolved specless legacy plan (#233), and ids in ``plan_dismissed`` so a re-run of
-    ``--record`` does not undo a deliberate dismiss (a fresh ``plan_feature`` note would
-    clear the dismissal in the note fold).
+    Skips ids already on this cell's plan, and ids dismissed in this cell, so a
+    re-run of ``--record`` does not undo a deliberate dismiss here (a fresh
+    ``plan_feature`` note would clear the dismissal in the note fold). A feature
+    whose home is this cell is still recorded when the only plan or dismissal is
+    in another cell, and that stray plan is dismissed (task 433). A candidate
+    with no home is skipped when its id is planned in any cell (tasks 233, 288).
+    House groups blocked by an unresolved specless legacy plan are skipped (#233).
+    Map-ref coverage is applied first by :func:`drop_covered_candidates` (task 293).
 
     @param reg: registry
     @param cid: ``tx,tz``
@@ -592,13 +674,15 @@ def record_feature_candidates(reg: CellRegistry, cid: str,
     cell = cellmath.parse_cell(cid)
     items = candidates if candidates is not None else propose_feature_candidates(cid)
     items = drop_covered_candidates(reg, cell, items)
-    skip = feature_plan_ids(reg) | reg.plan_dismissed_ids(cell)
     recorded: list[dict[str, Any]] = []
+    seen: set[str] = set()
     for item, fid in zip(items, plan_ids_for_candidates(reg, cell, items)):
-        if fid in skip:
+        if fid in seen or candidate_recorded(reg, cell, item, fid):
             continue
         note(reg, cell, 'plan_feature', str(item.get('label') or ''), fid)
-        skip.add(fid)
+        if candidate_home(item) == cell:
+            _release_stray_plan(reg, cell, fid)
+        seen.add(fid)
         recorded.append({'id': fid, 'label': item.get('label'), 'kind': item.get('kind')})
     return recorded
 

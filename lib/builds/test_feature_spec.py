@@ -257,6 +257,21 @@ class ZonesSpecTest(unittest.TestCase):
         spec = FS.load_spec(self.write(g))
         self.assertEqual(spec['zones']['A']['levels'], 'auto')
 
+    def test_zone_regions_from_the_aerial_are_accepted(self):
+        g = self.good()
+        g['zones']['A']['levels'] = 'auto'
+        g['zones']['A']['regions'] = [[[0, 0], [10, 0], [10, 12]], [[10, 0], [20, 0], [20, 12], [10, 12]]]
+        spec = FS.load_spec(self.write(g))
+        self.assertEqual(len(spec['zones']['A']['regions']), 2)
+
+    def test_bad_zone_regions_refused(self):
+        for regions in ([], 'x', [[[0, 0], [1, 1]]], [[[0, 0], [1, 1], [1, 1]]], [[[0, 0], [1, 1], ['a', 2]]]):
+            with self.subTest(regions=regions):
+                g = self.good()
+                g['zones']['A']['regions'] = regions
+                with self.assertRaises(SystemExit):
+                    FS.load_spec(self.write(g))
+
     def test_bad_zones_refused(self):
         good = self.good()
         cases = [
