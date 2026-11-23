@@ -367,9 +367,10 @@ class BodyGeneratorTest(unittest.TestCase):
 
     def test_a_low_ridge_gets_a_bay_not_dormers(self):
         report = T.generate(self.shops(6.0, 7.2), self.STREET)
-        self.assertEqual(report['specs'], [])   # 1.2 m of roof is a flat commercial box: the feature path
-        self.assertEqual(report['needs_designer'], [{'way_id': w, 'reason': 'missing building:levels'}
-                                                     for w in ('1', '2', '3')])
+        self.assertEqual(report['specs'], [])   # flat box, and the district storey range is not one count
+        self.assertEqual(report['needs_designer'],
+                         [{'way_id': w, 'reason': 'district profile storeys min and max differ'}
+                          for w in ('1', '2', '3')])
         report = T.generate(self.shops(6.0, 8.0), self.STREET)
         block = report['specs'][0]['spec']['body']['a']
         self.assertEqual((block['bay'], block['dormers']), (True, 0))

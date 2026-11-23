@@ -9,10 +9,15 @@ spec, for example a shop with flats above. Missing tags, an odd footprint, or
 a class the tags do not name is reported with a reason and not guessed.
 
 The district profile supplies the palette and, when roof:shape is absent, the
-single roof form. Observed tags win. A pitched form is only a rise/run the
-existing builders already send through pitched_roof_states. house_build's
-shell is two storeys, so a house tagged with any other building:levels is
-needs-designer rather than a shell of the wrong height.
+single roof form. Observed tags win. A missing district profile, or a class
+the profile does not mention, uses the land-use class default (palette, roofs
+and storeys on the class row) and the spec note names that fallback. A pitched
+form is only a rise/run the existing builders already send through
+pitched_roof_states. house_build's shell is two storeys, so a house whose
+storeys are not two is needs-designer rather than a shell of the wrong height.
+A missing building:levels takes the profile or class storeys when min and max
+agree; a range is needs-designer. Lidar height is a note on the spec, never a
+refusal, and a missing lidar height is not a refusal either.
 
 This module writes spec JSON only. It never places blocks.
 """
@@ -65,8 +70,9 @@ def generate(buildings, streets=()) -> dict:
 
     Each building mapping needs ``way_id``, ``cells`` (block columns), ``tags``,
     ``lidar_m`` (median DSM minus DTM, metres, or None) and ``profile`` (a
-    validated district document, or None). ``streets`` is a list of polylines
-    in block coordinates. Buildings that share a full side are one row.
+    validated district document, or None). None, and a profile that omits the
+    class, fall back to the land-use class default. ``streets`` is a list of
+    polylines in block coordinates. Buildings that share a full side are one row.
 
     @param buildings: one mapping per footprint
     @param streets: polylines, each a sequence of (x, z) points
@@ -248,35 +254,36 @@ def _prepare(raw: dict, way_id: str, streets=()) -> dict:
     if class_reason:
         base['reason'] = class_reason
         return base
-    profile = raw.get('profile')
-    if not isinstance(profile, dict):
-        base['reason'] = 'no district profile'
-        return base
-    section = profile.get('classes', {}).get(cls) if isinstance(profile.get('classes'), dict) else None
-    if not isinstance(section, dict):
-        base['reason'] = 'no district palette'
+    section, source, section_reason = _appearance(raw.get('profile'), cls)
+    if section_reason:
+        base['reason'] = section_reason
         return base
     body = _body_evidence(cls, tags, raw, streets)
+    lidar_note = None
     if body:
         # lidar eave and ridge are the body's height truth; building:levels is not needed and does not veto
-        levels, level_reason, lidar_reason = terrace_body.storeys_from_eave(body[0]), None, None
+        levels, level_reason, levels_source = terrace_body.storeys_from_eave(body[0]), None, 'body'
     else:
         levels, level_reason = _levels(tags)
-        lidar_reason = None if level_reason else _lidar_agrees(raw.get('lidar_m'), levels)
+        if level_reason == 'missing building:levels':
+            where = 'district profile' if source == 'district' else 'class default'
+            levels, level_reason = _single_storey(section, where)
+            levels_source = source
+        else:
+            levels_source = 'tag'
+            # An observed count outside a district range is refused. The class default is only a fallback.
+            if level_reason is None and source == 'district' and _outside_storeys(section, levels):
+                level_reason = 'storeys outside the district range'
+        if level_reason is None:
+            lidar_note = _lidar_agrees(raw.get('lidar_m'), levels)
     if level_reason:
         base['reason'] = level_reason
-        return base
-    if lidar_reason:
-        base['reason'] = lidar_reason
-        return base
-    if _outside_storeys(section, levels):
-        base['reason'] = 'storeys outside the district range'
         return base
     house = cls == 'residential' and tags.get('building') in HOUSE_TAGS
     if house and levels != HOUSE_STOREYS:
         base['reason'] = 'house builder is two storeys'
         return base
-    form, roof_source, roof_reason = _roof_form(tags, section)
+    form, roof_source, roof_reason = _roof_form(tags, section, source)
     if roof_reason:
         base['reason'] = roof_reason
         return base
@@ -291,12 +298,17 @@ def _prepare(raw: dict, way_id: str, streets=()) -> dict:
     if not resolved.get('known') or not resolved.get('ok'):
         base['reason'] = 'palette has no roof material for this slope'
         return base
+    if source == 'district':
+        profile_name = str((raw.get('profile') or {}).get('name') or '').strip() or 'district'
+    else:
+        profile_name = 'land-use class default'
     base.update(
         cls=cls, levels=levels, form=form, roof_source=roof_source, family=family, wall=wall,
         path='house' if house else 'body' if body else 'feature',
         rises=raw.get('rises') if body else None, body_params=body[2] if body else None,
         eave_m=body[0] if body else None, ridge_m=body[1] if body else None,
-        profile_name=str(profile.get('name') or '').strip() or 'district',
+        profile_name=profile_name, section_source=source, levels_source=levels_source,
+        lidar_note=lidar_note,
     )
     return base
 
@@ -369,6 +381,49 @@ def _class_of(tags: dict) -> tuple[str | None, str | None]:
     return None, 'missing tags'
 
 
+def _appearance(profile, cls: str) -> tuple[dict | None, str | None, str | None]:
+    """District class section, or the land-use class default when the profile does not speak.
+
+    A profile that has a section for the class is used as written, including when
+    that section cannot supply a palette. A missing profile, or a profile that
+    omits the class, falls back to :func:`land_use.typology_defaults`.
+
+    @param profile: district document, or None
+    @param cls: land-use class id
+    @returns: ``(section, source, reason)``; source is ``district`` or ``class``
+    """
+    if isinstance(profile, dict):
+        classes = profile.get('classes')
+        section = classes.get(cls) if isinstance(classes, dict) else None
+        if isinstance(section, dict):
+            palette = section.get('palette')
+            if not isinstance(palette, list) or not palette:
+                return None, None, 'no district palette'
+            return section, 'district', None
+    section = land_use.typology_defaults(cls)
+    if not section or not isinstance(section.get('palette'), list) or not section.get('palette'):
+        return None, None, 'no class default'
+    return section, 'class', None
+
+
+def _single_storey(section: dict, where: str) -> tuple[int | None, str | None]:
+    """The storey count when min and max agree, else a needs-designer reason.
+
+    @param section: district class section or class-default section
+    @param where: ``district profile`` or ``class default``, named in the reason
+    @returns: ``(levels, None)`` or ``(None, reason)``
+    """
+    storeys = section.get('storeys') if isinstance(section, dict) else None
+    if not isinstance(storeys, dict):
+        return None, f'{where} does not give a single storey count'
+    low, high = storeys.get('min'), storeys.get('max')
+    if type(low) is not int or type(high) is not int or low < 1 or high < 1 or low > high:
+        return None, f'{where} does not give a single storey count'
+    if low != high:
+        return None, f'{where} storeys min and max differ'
+    return low, None
+
+
 def _levels(tags: dict) -> tuple[int | None, str | None]:
     """Whole ``building:levels``, or a reason."""
     raw = tags.get('building:levels')
@@ -388,7 +443,10 @@ def _levels(tags: dict) -> tuple[int | None, str | None]:
 
 
 def _lidar_agrees(lidar_m, levels: int) -> str | None:
-    """Whether the median lidar rise is present and within a storey of the tag."""
+    """Advisory note when median lidar is missing or more than a storey off the count.
+
+    The caller records this on the spec. It is never a reason to refuse the building.
+    """
     if isinstance(lidar_m, bool) or not isinstance(lidar_m, (int, float)) or not math.isfinite(lidar_m):
         return 'missing lidar height'
     if abs(float(lidar_m) - levels * STOREY_M) > LIDAR_TOL_M:
@@ -407,10 +465,13 @@ def _outside_storeys(section: dict, levels: int) -> bool:
     return type(low) is not int or type(high) is not int or not low <= levels <= high
 
 
-def _roof_form(tags: dict, section: dict) -> tuple[str | None, str | None, str | None]:
+def _roof_form(tags: dict, section: dict, source: str) -> tuple[str | None, str | None, str | None]:
     """Roof form, where it came from, and a reason when it cannot be chosen.
 
-    ``roof:shape`` wins. Otherwise the district must list exactly one form.
+    ``roof:shape`` wins. Otherwise the district or the class default must list
+    exactly one form.
+
+    @param source: ``district`` or ``class``, recorded when the form is not from a tag
     """
     raw = tags.get('roof:shape')
     if raw not in (None, ''):
@@ -419,12 +480,14 @@ def _roof_form(tags: dict, section: dict) -> tuple[str | None, str | None, str |
         return ROOF_SHAPES[raw], 'tag', None
     roofs = section.get('roofs')
     if not isinstance(roofs, list) or not roofs:
-        return None, None, 'missing roof form'
+        return None, None, 'missing roof form' if source == 'district' else 'no class default'
     if len(roofs) != 1:
+        if source == 'class':
+            return None, None, 'class default lists more than one roof form'
         return None, None, 'district lists more than one roof form'
     if roofs[0] not in PROFILE_ROOFS:
         return None, None, 'unknown roof form'
-    return roofs[0], 'district', None
+    return roofs[0], source, None
 
 
 def _material(section: dict) -> tuple[str | None, str | None, str | None]:
@@ -679,13 +742,70 @@ def _kind(group: list[dict]) -> tuple[str, str]:
 def _note(group: list[dict], phrase: str) -> str:
     """Provenance a person can read. The builders do not interpret it."""
     ways = ', '.join(row['way_id'] for row in group)
+    roof = _roof_sentence(group)
+    return (f"Typology {phrase}. Ways {ways}. {roof} {_material_sentence(group)}"
+            f"{_storey_clause(group)}{_lidar_clause(group)}")
+
+
+def _roof_sentence(group: list[dict]) -> str:
+    """One sentence naming the roof form and whether a tag, the district or the class default chose it."""
+    labels = {
+        'tag': 'roof:shape',
+        'district': 'the district profile',
+        'class': 'the land-use class default',
+    }
     sources = {row['roof_source'] for row in group}
-    source = 'roof:shape' if sources == {'tag'} else (
-        'the district profile' if sources == {'district'} else 'roof:shape or the district profile')
+    if len(sources) == 1:
+        source = labels[next(iter(sources))]
+    else:
+        source = ' or '.join(labels[key] for key in ('tag', 'district', 'class') if key in sources)
     forms = list(dict.fromkeys(row['form'] for row in group))
-    roof = f"Roof {forms[0]} from {source}." if len(forms) == 1 else "Roofs follow each building's roof:shape."
-    return (f"Typology {phrase}. Ways {ways}. {roof} "
-            f"Material {group[0]['family']} from the district palette ({group[0]['profile_name']}).")
+    if len(forms) == 1:
+        return f"Roof {forms[0]} from {source}."
+    return "Roofs follow each building's roof:shape."
+
+
+def _material_sentence(group: list[dict]) -> str:
+    """Palette provenance. A class-table fallback is named; a district profile keeps its own name."""
+    row = group[0]
+    if row.get('section_source') == 'class':
+        return f"Material {row['family']} from the land-use class default ({row['cls']})."
+    return f"Material {row['family']} from the district palette ({row['profile_name']})."
+
+
+def _storey_clause(group: list[dict]) -> str:
+    """Name storeys that were not taken from building:levels. Empty when every count is a tag."""
+    rows = [row for row in group if row.get('levels_source') in ('district', 'class')]
+    if not rows:
+        return ''
+    if len(rows) == len(group) and len({(row['levels'], row['levels_source']) for row in rows}) == 1:
+        where = 'the district profile' if rows[0]['levels_source'] == 'district' else 'the land-use class default'
+        return f" Storeys {rows[0]['levels']} from {where}."
+    bits = []
+    for row in rows:
+        where = 'the district profile' if row['levels_source'] == 'district' else 'the land-use class default'
+        bits.append(f"Way {row['way_id']} storeys {row['levels']} from {where}.")
+    return ' ' + ' '.join(bits)
+
+
+def _lidar_clause(group: list[dict]) -> str:
+    """Advisory lidar sentences. Missing and disagreeing heights are notes, not refusals."""
+    notes = [row.get('lidar_note') for row in group]
+    if not any(notes):
+        return ''
+    phrases = {
+        'missing lidar height': 'Lidar height missing.',
+        'lidar height disagrees with building:levels': 'Lidar height disagrees with building:levels.',
+    }
+
+    def sentence(note: str) -> str:
+        return phrases.get(note, note if note.endswith('.') else note + '.')
+
+    if len(set(notes)) == 1 and notes[0]:
+        return ' ' + sentence(notes[0])
+    bits = [f"Way {row['way_id']}: {sentence(note)}"
+            for row, note in zip(group, notes) if note]
+    return ' ' + ' '.join(bits)
 
 
 def _cells_of(group: list[dict]) -> set[tuple[int, int]]:
