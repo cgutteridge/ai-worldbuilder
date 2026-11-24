@@ -631,14 +631,17 @@ class LiveBlocks:
         @raises StaleRead: after ``mark_written()`` until ``flush()``"""
         self._guard()
         pos_list = [tuple(p) for p in positions]
-        out = {}
-        for start in range(0, len(pos_list), MAX_CACHE_BLOCKS):
-            batch = pos_list[start:start + MAX_CACHE_BLOCKS]
+        # Batch by chunk: an unordered set (an apply's warm set) would spread every batch over the
+        # whole area and cost several times the scans. The result keeps the caller's order.
+        ordered = sorted(set(pos_list), key=lambda p: (p[0] >> 4, p[2] >> 4, p[1], p[0], p[2]))
+        got = {}
+        for start in range(0, len(ordered), MAX_CACHE_BLOCKS):
+            batch = ordered[start:start + MAX_CACHE_BLOCKS]
             if len(self._cache) + len(batch) > MAX_CACHE_BLOCKS:
                 self._cache.clear()
             self._ensure(batch)
-            out.update((p, self._cache[p]) for p in batch)
-        return out
+            got.update((p, self._cache[p]) for p in batch)
+        return {p: got[p] for p in pos_list}
 
     def light(self, pos: Pos) -> int | None:
         """Block light at ``pos`` via MCP ``block_get_state`` (one call; not for bulk scans).

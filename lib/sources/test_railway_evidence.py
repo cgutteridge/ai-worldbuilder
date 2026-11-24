@@ -186,13 +186,24 @@ class ClassifyAndChainTests(unittest.TestCase):
             self.assertAlmostEqual(hit.at[0], 50, delta=0.1)
 
 
+class PlannerBoxTests(unittest.TestCase):
+    def test_planner_box_is_512_and_the_extract_plan_accepts_it(self):
+        self.assertEqual(rv.PLANNER_BOX, 512)
+        import world_frame as wf
+        frame = wf.WorldFrame({'crs': 'EPSG:27700', 'offsets': {'easting': 440000, 'northing': 110000},
+                               'y_offset': 0, 'cell': {'size': 128, 'home': [0, 0]}})
+        plan = rv.railway_box_plan((-192, -192, 319, 319), frame)
+        self.assertEqual(plan['box_mc'], (-192, -192, 319, 319))
+        self.assertFalse(plan['clip'])
+
+
 class CellSkipTests(unittest.TestCase):
     """A cell with no railway is false without opening the box extract."""
 
     def test_missing_clip_is_false_and_does_not_read_the_box(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            box = root / 'railway-bbox-0-0-2048-2048.geojson'
+            box = root / 'railway-bbox-0-0-512-512.geojson'
             box.write_text(RAIL.read_text())
             real = Path.read_text
 
@@ -207,7 +218,7 @@ class CellSkipTests(unittest.TestCase):
     def test_empty_clip_is_false_and_does_not_read_the_box(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            box = root / 'railway-bbox-0-0-2048-2048.geojson'
+            box = root / 'railway-bbox-0-0-512-512.geojson'
             box.write_text('not-json-and-must-not-be-read')
             cell = root / 'cell.geojson'
             _write(cell, [{

@@ -32,6 +32,12 @@ becomes a ``crossing`` gap (:func:`crossing_is_feature`). A footpath or private
 crossing with none of those tags is not a gap: the rails stay continuous and
 that path's surface is laid across those track columns.
 
+The box is :data:`railway_evidence.PLANNER_BOX` (512) square, so a longer line is a chain of
+features. Gaps are found on the visit plus :data:`EDGE_MARGIN`: a gap wholly inside the box is
+recorded, one wholly outside is the neighbour's, one that starts at an incoming join gets that
+join's rail as its first end (``from_join``), and one that straddles the edge fails loudly with
+coordinates (docs/plans/railway.md decision 17).
+
 Where several lines of one feature share rail columns, :func:`junction_gaps`
 keeps the main line's rails and names the side tracks' overlapping (and
 orphaned) rail runs as ``junction`` gaps, which :func:`plan_line` then plans
@@ -54,6 +60,8 @@ BED_RADIUS = 2.3
 SLOPE_RATIO = 2.0
 SLOPE_MAX = 40
 RAIL_CLEARANCE = 5
+# Gaps are looked for this far (cells along a track, blocks for a crossing) past the box edge.
+EDGE_MARGIN = 64
 # A rail run this short, cut off by junction gaps (or a dead end) on both sides, joins nothing.
 JUNCTION_MIN_RUN = 4
 # Deck-height policy for an overhead span whose lidar height is only inferred
@@ -153,20 +161,24 @@ def _nearest_indices(path, reference):
     return [int(np.argmin(np.sum((points - p) ** 2, axis=1))) for p in path]
 
 
-def _clip(path, box, entry, centre):
-    """One connected visit to the box, pointed along an incoming join if any."""
+def _clip(path, box, entry):
+    """One connected visit to the box, pointed along an incoming join if any.
+
+    @returns: ``(oriented, a, b, before, after, error)``: the whole track in travel order,
+        the visit as ``oriented[a:b]``, its outside neighbours, and a failure reason (or None)
+    """
     incoming_before = None
     if entry:
         at = tuple(entry['next'])
         if at not in path:
-            return [], None, None, 'incoming join is not on this track'
+            return [], 0, 0, None, None, 'incoming join is not on this track'
         if not _inside(at, box):
-            return [], None, None, 'incoming join is outside the planning box'
+            return [], 0, 0, None, None, 'incoming join is outside the planning box'
         i = path.index(at)
         desired = cellmath.FACING[entry['direction']]
         previous = tuple(entry.get('at', (at[0] - desired[0], at[1] - desired[1])))
         if (at[0] - previous[0], at[1] - previous[1]) != desired:
-            return [], None, None, 'incoming join direction disagrees with its entry cells'
+            return [], 0, 0, None, None, 'incoming join direction disagrees with its entry cells'
         if i and path[i - 1] == previous:
             path = path[i:]
         elif i + 1 < len(path) and path[i + 1] == previous:
@@ -176,7 +188,7 @@ def _clip(path, box, entry, centre):
         elif previous not in path and i == len(path) - 1:
             path = list(reversed(path))
         else:
-            return [], None, None, 'incoming join direction cannot connect'
+            return [], 0, 0, None, None, 'incoming join direction cannot connect'
         incoming_before = previous
     runs, start = [], None
     for i, p in enumerate(path):
@@ -189,12 +201,17 @@ def _clip(path, box, entry, centre):
     if start is not None:
         runs.append((start, len(path)))
     if not runs:
-        return [], None, None, 'track does not enter the planning box'
-    a, b = (min(runs, key=lambda r: min(math.dist(p, centre) for p in path[r[0]:r[1]]))
-            if not entry else runs[0])
+        return [], 0, 0, None, None, 'track does not enter the planning box'
+    if len(runs) > 1:
+        # A second visit would be planned by no feature (its cells lie inside this box).
+        out, back = path[runs[0][1] - 1], path[runs[1][0]]
+        return [], 0, 0, None, None, (
+            f'track leaves the planning box at {out[0]},{out[1]} and re-enters it at {back[0]},{back[1]}: '
+            'choose a start cell whose box holds the whole bend (docs/plans/railway.md decision 17)')
+    a, b = runs[0]
     before = path[a - 1] if a else incoming_before
     after = path[b] if b < len(path) else None
-    return path[a:b], before, after, None
+    return path, a, b, before, after, None
 
 
 def deck_evidence(line, structures, inferred_usable=None):
@@ -340,19 +357,17 @@ def _plain_crossing_surfaces(line, paths, roads) -> dict:
     return out
 
 
-def _gaps(line, paths, roads, decks=(), junctions=None):
-    """Gap intervals in snapped path indices, with source ids for integration."""
+def _structure_gaps(line, paths, roads, decks, near):
+    """Overhead, crossing and bridge/tunnel gap intervals in ``paths`` indices.
+
+    @param near: ``(x0, z0, x1, z1)`` inside which a level crossing is considered, or None for all
+    """
     result = _overhead_gaps(line, paths, decks)
-    for ti, intervals in (junctions or {}).items():
-        if ti >= len(paths) or not paths[ti]:
-            continue
-        for gap in intervals:
-            if not 0 <= gap['start'] <= gap['end'] < len(paths[ti]):
-                raise ValueError(f'junction gap {gap["start"]}..{gap["end"]} is outside track {ti}')
-            result[ti].append({**gap, 'kind': 'junction'})
     for crossing in line.crossings:
         ti = crossing.track_index
         if ti >= len(paths) or not paths[ti]:
+            continue
+        if near is not None and not _inside(crossing.at, near):
             continue
         road = roads.get(str(crossing.osm_id))
         if road is None:
@@ -386,14 +401,75 @@ def _gaps(line, paths, roads, decks=(), junctions=None):
             if selected:
                 result[ti].append({'kind': span.kind, 'source': span.bridge_ref,
                                    'start': min(selected), 'end': max(selected)})
+    return result
+
+
+def _in_window(intervals, path, lo, hi):
+    """Keep gaps wholly inside ``path[lo..hi]`` (shifted to start at 0); fail on straddlers.
+
+    A gap wholly outside belongs to the neighbouring feature. One that crosses the
+    window edge cannot be recorded with two abutting rails, so it becomes an ``error``.
+    """
+    kept = []
+    for gap in intervals:
+        if 'error' in gap:
+            kept.append(gap)
+        elif gap['end'] < lo or gap['start'] > hi:
+            continue
+        elif gap['start'] < lo or gap['end'] > hi:
+            edge = lo if gap['start'] < lo else hi
+            kept.append({'where': list(path[edge]), 'error':
+                         f'{gap["kind"]} gap{" " + str(gap["source"]) if gap["source"] else ""} straddles the planning box edge at '
+                         f'{path[edge][0]},{path[edge][1]}: choose a start cell whose box holds the whole '
+                         'gap (docs/plans/railway.md decision 17)'})
+        else:
+            kept.append({**gap, 'start': gap['start'] - lo, 'end': gap['end'] - lo})
+    return kept
+
+
+def _gaps(line, paths, roads, decks=(), junctions=None, windows=None, near=None):
+    """Gap intervals in snapped path indices, with source ids for integration.
+
+    @param paths: per-track columns; with ``windows`` they run past the planned visit
+    @param windows: per-track inclusive ``(lo, hi)`` of the planned visit inside ``paths``;
+        returned gaps are numbered from ``lo`` and ``junctions`` use the same numbering
+    @param near: box inside which a level crossing counts; others are another feature's
+    """
+    windows = windows or [(0, len(p) - 1) for p in paths]
+    wide = _structure_gaps(line, paths, roads, decks, near)
+    result = [_in_window(wide[ti], paths[ti], *windows[ti]) if paths[ti] else wide[ti]
+              for ti in range(len(paths))]
+    cores = [p[lo:hi + 1] for p, (lo, hi) in zip(paths, windows)]
+    for ti, intervals in (junctions or {}).items():
+        if ti >= len(paths) or not paths[ti]:
+            continue
+        for gap in intervals:
+            if not 0 <= gap['start'] <= gap['end'] < len(cores[ti]):
+                raise ValueError(f'junction gap {gap["start"]}..{gap["end"]} is outside track {ti}')
+            result[ti].append({**gap, 'kind': 'junction'})
     for ti, intervals in enumerate(result):
         ordered = sorted((g for g in intervals if 'error' not in g), key=lambda g: (g['start'], g['end']))
-        for a, b in zip(ordered, ordered[1:]):
-            if b['start'] <= a['end'] + 1:
-                result[ti] = [{'where': list(paths[ti][b['start']]),
-                               'error': 'overlapping or adjacent gap spans need a combined structure: '
-                                        f'{a["source"] or a["kind"]}, {b["source"] or b["kind"]}'}]
-                break
+        merged = []
+        for gap in ordered:
+            last = merged[-1] if merged else None
+            if last and gap['start'] <= last['end'] + 1:
+                if 'junction' not in (gap['kind'], last['kind']):
+                    result[ti] = [{'where': list(cores[ti][gap['start']]),
+                                   'error': 'overlapping or adjacent gap spans need a combined structure: '
+                                            f'{last["source"] or last["kind"]}, {gap["source"] or gap["kind"]}'}]
+                    break
+                # A junction touching a structure gap is one stretch for a person to finish.
+                structure = gap if gap['kind'] != 'junction' else last
+                last['also'] = sorted({*last.get('also', ()), *gap.get('also', ()),
+                                       *([structure['kind']] if structure['kind'] != 'junction' else ())})
+                last['source'] = '+'.join(dict.fromkeys(
+                    [*last['source'].split('+'), *gap['source'].split('+')]))
+                last['kind'] = 'junction'
+                last['start'], last['end'] = min(last['start'], gap['start']), max(last['end'], gap['end'])
+            else:
+                merged.append(dict(gap))
+        else:
+            result[ti] = merged + [g for g in intervals if 'error' in g]
     return result
 
 
@@ -401,7 +477,7 @@ def _solve(path, targets, terrain, start, minimum, deviation, forbidden, initial
     """Least-error profile with unit steps, spacing and solid legal corners.
 
     Numpy advances the level/run state matrix; int32 back pointers keep the
-    2048-box case bounded without retaining Python objects for every state.
+    planning-box case bounded without retaining Python objects for every state.
     """
     low = math.floor(min(min(targets), min(terrain))) - deviation
     high = math.ceil(max(max(targets), max(terrain))) + deviation
@@ -556,7 +632,7 @@ def plan_line(
 
     @param line: immutable extracted through-line evidence (never junction/decor ways)
     @param ground: arrays described in the module docstring
-    @param start_cell: coverage-cell coordinate around which to centre the 2048 box
+    @param start_cell: coverage-cell coordinate around which to centre the planning box (:data:`PLANNER_BOX` on a side)
     @param incoming: outgoing joins from earlier plans of this line
     @param crossing_roads: crossing node id -> actual crossing road tags; width uses road_width
     @param road_surfaces: vector-map column -> ground surface kind inside the footprint
@@ -594,25 +670,31 @@ def plan_line(
                 fail(start_cell, 'conflicting incoming join records')
                 return plan
             entries[ti] = track
-    paths, previous_cells, next_cells = [], [], []
+    paths, previous_cells, next_cells, wide, windows = [], [], [], [], []
     for ti, poly in enumerate(line.tracks):
         try:
             snapped = snap_track(poly)
         except ValueError as exc:
             fail(start_cell, str(exc))
             snapped = []
-        path, before, nxt, error = _clip(snapped, box, entries.get(ti), centre)
+        full, a, b, before, nxt, error = _clip(snapped, box, entries.get(ti))
+        path = full[a:b]
         if error or len(path) < 2:
             fail(path[0] if path else start_cell, error or 'track needs at least two rail cells')
             path = []
-        if any((b[0] - a[0], b[1] - a[1]) not in cellmath.N4 for a, b in zip(path, path[1:])):
+        if any((q[0] - p[0], q[1] - p[1]) not in cellmath.N4 for p, q in zip(path, path[1:])):
             fail(path[0], 'path is not 4-connected after repair')
             path = []
         paths.append(path)
         previous_cells.append(before)
         next_cells.append(nxt)
+        # Gaps are found on the visit plus a margin, so one that crosses the box edge is seen.
+        lo = max(0, a - EDGE_MARGIN)
+        wide.append(full[lo:b + EDGE_MARGIN] if path else [])
+        windows.append((a - lo, b - 1 - lo))
     under, plan['decks'] = deck_evidence(line, structures, inferred_deck_usable)
-    gaps = _gaps(line, paths, crossing_roads or {}, plan['decks'], junction_gaps)
+    near = (box[0] - EDGE_MARGIN, box[1] - EDGE_MARGIN, box[2] + EDGE_MARGIN, box[3] + EDGE_MARGIN)
+    gaps = _gaps(line, wide, crossing_roads or {}, plan['decks'], junction_gaps, windows, near)
     painted = _plain_crossing_surfaces(line, paths, crossing_roads or {})
     if road_surfaces:
         painted.update(road_surfaces)
@@ -697,7 +779,8 @@ def plan_line(
         profile = {'track_index': ti, 'path': [list(p) for p in path], 'levels': levels,
                    'gap': gap_mask, 'initial_run': initial_run,
                    'before': list(before) if before is not None else None,
-                   'after': list(after) if after is not None else None}
+                   'after': list(after) if after is not None else None,
+                   'join_in': bool(entry)}
         plan['tracks'].append(profile)
         rail_list, torch_list, support_list = rail_rows(
             path, levels, before=before, after=after,
@@ -712,6 +795,10 @@ def plan_line(
                     neighbour = path[index + inward]
                     ends.append({'track_index': ti, 'at': list(path[index]), 'level': levels[index] + 1,
                                  'direction': _direction(path[index], neighbour)})
+                elif index == -1 and entry:
+                    # The gap starts at the cut: its abutting rail is the earlier feature's last one.
+                    ends.append({'track_index': ti, 'at': list(before), 'level': levels[0] + 1,
+                                 'direction': _direction(before, path[0]), 'from_join': True})
             plan['gaps'].append({**gap, 'track_index': ti, 'ends': ends,
                                  'where': list(path[gap['start']]),
                                  'columns': [list(p) for p in path[gap['start']:gap['end'] + 1]]})
@@ -720,7 +807,9 @@ def plan_line(
             if nxt is None or _inside(nxt, box) or side == 'start' and entry:
                 continue
             if gap_mask[index]:
-                fail(path[index], 'planning box cuts a structure gap without an abutting rail')
+                fail(path[index], 'planning box cuts a structure gap without an abutting rail at '
+                     f'{path[index][0]},{path[index][1]}: choose a start cell whose box holds the whole gap '
+                     'and a rail on each side (docs/plans/railway.md decision 17)')
                 continue
             if side == 'end':
                 run = len(path) - 1 - steps[-1] if steps else initial_run + len(path) - 1
@@ -792,10 +881,13 @@ def junction_gaps(plans: Sequence[Mapping]) -> dict:
         for track in plan['tracks']:
             path, g0, n = [tuple(q) for q in track['path']], track['gap'], len(track['path'])
             mask = [q in columns for q in path]
-            for index, joined in ((0, track['before']), (n - 1, track['after'])):
+            # A junction that begins on an incoming join is fine: the earlier feature's last
+            # rail abuts it (the gap's first end record). Any other cut inside one is refused.
+            for index, joined in ((0, None if track.get('join_in') else track['before']), (n - 1, track['after'])):
                 if mask[index] and joined is not None:
                     raise ValueError(f'junction with {ids[columns[path[index]]]} covers the box join of '
-                                     f'{ids[i]} at {list(path[index])}')
+                                     f'{ids[i]} at {list(path[index])}: choose a start cell whose box holds '
+                                     'the whole junction (docs/plans/railway.md decision 17)')
             full = list(mask)
             start = 0
             while start < n:
@@ -948,6 +1040,11 @@ def validate_plan(plan: Mapping) -> None:
         assert gap['columns'] == track['path'][gap['start']:gap['end'] + 1]
         assert len({e['level'] for e in gap['ends']}) <= 1, 'gap levels are not continuous'
         for end in gap['ends']:
+            if end.get('from_join'):
+                assert gap['start'] == 0 and end['at'] == track['before'], 'join end is not at the cut'
+                assert end['level'] == track['levels'][0] + 1
+                assert end['direction'] == _direction(end['at'], track['path'][0])
+                continue
             i = track['path'].index(end['at'])
             assert end['level'] == track['levels'][i] + 1
             assert not track['gap'][i]

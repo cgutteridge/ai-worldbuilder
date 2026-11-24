@@ -63,9 +63,9 @@ class RailwayPlannerTest(unittest.TestCase):
     def test_three_steps_are_collinear_and_at_least_100_cells_apart(self):
         g = ground()
         for x in range(500):
-            g['terrain'][x - g['x0'], :] = 30 + min(3, x // 120)
+            g['terrain'][x - g['x0'], :] = 30 + min(3, x // 100)
         g['h'] = g['terrain'].copy()
-        p = self.plan(line(((0, 0), (450, 0))), g)
+        p = self.plan(line(((0, 0), (310, 0))), g)
         self.assertEqual(p['failures'], [])
         levels = p['tracks'][0]['levels']
         steps = [i for i in range(1, len(levels)) if levels[i] != levels[i - 1]]
@@ -85,20 +85,55 @@ class RailwayPlannerTest(unittest.TestCase):
         self.assertEqual(a[0], b[0])
         self.assertLessEqual(max(abs(x - y) for x, y in zip(a, b)), 1)
 
-    def test_3000_block_line_uses_box_cut_and_matching_incoming_join(self):
-        g = ground(x0=-1000, width=3200, depth=110)
-        evidence = line(((-900, 0), (2099, 0)))
+    def test_box_is_512_blocks_centred_on_the_start_cell(self):
+        p = self.plan(line(((0, 0), (100, 0))))
+        self.assertEqual(p['box'], [-192, -192, 319, 319])
+        self.assertEqual(R.PLANNER_BOX, 512)
+
+    def test_a_short_line_is_wholly_inside_one_box_with_no_joins(self):
+        p = self.plan(line(((-150, 0), (300, 0))), ground(x0=-200, width=600))
+        self.assertEqual(p['failures'], [])
+        self.assertEqual(len(p['rails']), 451)
+        self.assertEqual(p['joins'], [])
+
+    def test_line_longer_than_the_box_is_cut_and_each_next_feature_continues_it(self):
+        g = ground(x0=-300, width=1500, depth=110)
+        evidence = line(((-100, 0), (1000, 0)))
         first = self.plan(evidence, g)
         self.assertEqual(first['failures'], [])
-        self.assertEqual(first['box'][2] - first['box'][0] + 1, 2048)
+        self.assertEqual(first['box'][2] - first['box'][0] + 1, 512)
         self.assertEqual(len(first['joins']), 1)
-        join = first['joins'][0]
-        second = self.plan(evidence, g, tuple(join['cell']), [join])
-        self.assertEqual(second['failures'], [])
-        self.assertEqual(second['rails'][0][1], first['rails'][-1][1])
-        self.assertEqual(second['rails'][0][0] - first['rails'][-1][0], 1)
-        self.assertEqual(len(first['rails']) + len(second['rails']), 3000)
-        self.assertEqual(second['joins'], [])
+        plans, join = [first], first['joins'][0]
+        self.assertEqual((join['side'], join['direction'], join['tracks'][0]['next']), ('end', 'east', [320, 0]))
+        while plans[-1]['joins']:
+            join = plans[-1]['joins'][0]
+            nxt = self.plan(evidence, g, tuple(join['cell']), [join])
+            self.assertEqual(nxt['failures'], [])
+            # The continuation starts on the recorded column at the recorded level.
+            self.assertEqual(nxt['rails'][0][:3], [join['tracks'][0]['next'][0], join['level'], 0])
+            plans.append(nxt)
+        self.assertEqual(len(plans), 4)
+        columns = [r[0] for p in plans for r in p['rails']]
+        self.assertEqual(columns, list(range(-100, 1001)))
+        self.assertEqual({r[1] for p in plans for r in p['rails']}, {31})
+
+    def test_a_cut_keeps_the_step_spacing_and_level_across_the_join(self):
+        g = ground(x0=-300, width=1500, depth=110)
+        for x in range(-300, 1200):
+            g['terrain'][x - g['x0'], :] = 30 + max(0, x) // 250
+        g['h'] = g['terrain'].copy()
+        evidence = line(((-100, 0), (900, 0)))
+        plans = [self.plan(evidence, g)]
+        while plans[-1]['joins']:
+            join = plans[-1]['joins'][0]
+            plans.append(self.plan(evidence, g, tuple(join['cell']), [join]))
+        self.assertTrue(all(p['failures'] == [] for p in plans))
+        rails = [r for p in plans for r in p['rails']]
+        self.assertEqual([r[0] for r in rails], list(range(-100, 901)))
+        steps = [i for i in range(1, len(rails)) if rails[i][1] != rails[i - 1][1]]
+        self.assertGreaterEqual(len(steps), 3)
+        self.assertTrue(all(b - a >= R.RAIL_MIN_STEP_RUN for a, b in zip(steps, steps[1:])))
+        self.assertTrue(all(abs(rails[i][1] - rails[i - 1][1]) <= 1 for i in range(1, len(rails))))
 
     def test_crossing_gap_has_no_writes_and_two_matching_level_ends(self):
         crossing = LevelCrossing('crossing-1', 'fixture-line', 0, (50, 0), 50,
@@ -146,10 +181,10 @@ class RailwayPlannerTest(unittest.TestCase):
 
     def test_boundary_corner_uses_the_actual_outside_neighbour(self):
         g = ground(x0=-100, z0=-20, width=1450, depth=160)
-        evidence = line(((0, 0), (1087, 0), (1087, 100), (1200, 100)))
+        evidence = line(((0, 0), (319, 0), (319, 100), (500, 100)))
         p = self.plan(evidence, g)
         self.assertEqual(p['failures'], [])
-        boundary = next(r for r in p['rails'] if (r[0], r[2]) == (1087, 100))
+        boundary = next(r for r in p['rails'] if (r[0], r[2]) == (319, 100))
         self.assertEqual(boundary[3], 'north_east')
         self.assertEqual(boundary[4], 'minecraft:rail[shape=north_east]')
         continuation = self.plan(evidence, g, tuple(p['joins'][0]['cell']), p['joins'])
@@ -160,7 +195,7 @@ class RailwayPlannerTest(unittest.TestCase):
 
     def test_incoming_join_direction_is_entry_not_the_onward_direction(self):
         g = ground(x0=-100, z0=-20, width=1450, depth=160)
-        evidence = line(((0, 0), (1088, 0), (1088, 100)))
+        evidence = line(((0, 0), (320, 0), (320, 100)))
         first = self.plan(evidence, g)
         self.assertEqual(first['failures'], [])
         join = first['joins'][0]
@@ -307,9 +342,9 @@ class RailwayPlannerTest(unittest.TestCase):
     def test_descending_steps_are_ascending_shapes_toward_the_high_neighbour(self):
         g = ground()
         for x in range(450):
-            g['terrain'][x - g['x0'], :] = 33 - min(3, x // 120)
+            g['terrain'][x - g['x0'], :] = 33 - min(3, x // 100)
         g['h'] = g['terrain'].copy()
-        p = self.plan(line(((0, 0), (400, 0))), g)
+        p = self.plan(line(((0, 0), (310, 0))), g)
         self.assertEqual(p['failures'], [])
         ascending = [r for r in p['rails'] if r[3].startswith('ascending_')]
         self.assertEqual(len(ascending), 3)
@@ -448,6 +483,123 @@ class DeckEvidenceTest(RailwayPlannerTest):
         self.assertFalse({(c[0], c[2]) for c in p['planting']} & gap)
 
 
+class BoxEdgeGapTest(unittest.TestCase):
+    """Structure gaps and junctions at a 512 box edge (#464). Rail Y 31; the box is x -192..319."""
+
+    plan = RailwayPlannerTest.plan
+    ROADS = {'x': {'highway': 'residential', 'width': '6'}}
+
+    @staticmethod
+    def crossed(x, start=-100, end=1000):
+        crossing = LevelCrossing('x', 'fixture-line', 0, (x, 0), x - start, None, None, None, None, None)
+        return line(((start, 0), (end, 0)), crossings=(crossing,))
+
+    def wide(self):
+        return ground(x0=-300, width=1500, depth=110)
+
+    def test_a_track_that_leaves_the_box_and_comes_back_fails_loudly_with_both_coordinates(self):
+        u = line(((0, 0), (400, 0), (400, 50), (0, 50)))
+        g = ground(x0=-300, width=800, depth=110)
+        p = self.plan(u, g)
+        (failure,) = p['failures']
+        self.assertIn('leaves the planning box at 319,0 and re-enters it at 319,50', failure['reason'])
+        self.assertIn('choose a start cell', failure['reason'])
+        self.assertEqual((p['rails'], p['joins']), ([], []))
+        entry = [{'line_id': 'fixture-line', 'tracks': [
+            {'track_index': 0, 'next': [0, 0], 'level': 31, 'direction': 'east', 'run': 0}]}]
+        p = self.plan(u, g, incoming=entry)
+        self.assertIn('leaves the planning box at 319,0 and re-enters it at 319,50', p['failures'][0]['reason'])
+        self.assertEqual(p['rails'], [])
+
+    def test_a_track_that_only_runs_along_the_box_edge_still_plans(self):
+        p = self.plan(line(((319, -50), (319, 50))), ground(x0=-300, width=800, depth=220))
+        self.assertEqual(p['failures'], [])
+        self.assertEqual(len(p['rails']), 101)
+
+    def test_a_crossing_wholly_inside_the_box_is_a_gap_with_two_ends(self):
+        p = self.plan(self.crossed(200), self.wide(), crossing_roads=self.ROADS)
+        self.assertEqual(p['failures'], [])
+        (gap,) = p['gaps']
+        self.assertEqual([e['at'] for e in gap['ends']], [[195, 0], [205, 0]])
+        self.assertFalse(any(e.get('from_join') for e in gap['ends']))
+
+    def test_a_crossing_straddling_the_edge_fails_loudly_with_coordinates(self):
+        p = self.plan(self.crossed(322), self.wide(), crossing_roads=self.ROADS)
+        (failure,) = p['failures']
+        self.assertEqual(failure['where'], [319, 0])
+        self.assertIn('crossing gap x straddles the planning box edge at 319,0', failure['reason'])
+        self.assertIn('choose a start cell', failure['reason'])
+        self.assertEqual((p['rails'], p['joins']), ([], []))
+
+    def test_a_crossing_straddling_the_entry_edge_fails_the_same_way(self):
+        p = self.plan(self.crossed(-194, start=-400, end=100), self.wide(), crossing_roads=self.ROADS)
+        self.assertEqual([f['where'] for f in p['failures']], [[-192, 0]])
+        self.assertIn('straddles the planning box edge at -192,0', p['failures'][0]['reason'])
+
+    def test_a_gap_ending_on_the_last_inside_column_has_no_abutting_rail(self):
+        p = self.plan(self.crossed(315), self.wide(), crossing_roads=self.ROADS)
+        (failure,) = p['failures']
+        self.assertEqual(failure['where'], [319, 0])
+        self.assertIn('without an abutting rail at 319,0', failure['reason'])
+        self.assertIn('choose a start cell', failure['reason'])
+
+    def test_a_gap_that_starts_at_the_cut_is_the_next_features_with_the_join_as_its_first_end(self):
+        evidence = self.crossed(324)
+        g = self.wide()
+        first = self.plan(evidence, g, crossing_roads=self.ROADS)
+        self.assertEqual((first['failures'], first['gaps']), ([], []))
+        (join,) = first['joins']
+        self.assertEqual(join['tracks'][0]['next'], [320, 0])
+        second = self.plan(evidence, g, tuple(join['cell']), [join], crossing_roads=self.ROADS)
+        self.assertEqual(second['failures'], [])
+        (gap,) = second['gaps']
+        self.assertEqual((gap['start'], gap['columns'][0], gap['columns'][-1]), (0, [320, 0], [328, 0]))
+        joined, after = gap['ends']
+        self.assertEqual((joined['at'], joined['level'], joined['direction'], joined.get('from_join')),
+                         ([319, 0], first['rails'][-1][1], 'east', True))
+        self.assertEqual((after['at'], after['direction']), ([329, 0], 'west'))
+        self.assertEqual(second['rails'][0][0], 329)
+
+    def test_a_crossing_beyond_the_edge_margin_is_another_features_and_needs_no_road_tags(self):
+        p = self.plan(self.crossed(600), self.wide())
+        self.assertEqual((p['failures'], p['gaps']), ([], []))
+        self.assertEqual(len(p['joins']), 1)
+
+    def test_a_crossing_just_outside_the_box_still_needs_its_road_tags(self):
+        p = self.plan(self.crossed(350), self.wide())
+        self.assertEqual(p['failures'][0]['reason'], 'crossing is missing road tags')
+
+    def test_an_overhead_gap_straddling_the_edge_fails_and_one_inside_resolves(self):
+        def span(x0, x1):
+            deck = frozenset((x, z) for x in range(x0, x1 + 1) for z in range(-2, 3))
+            return OverheadSpan('fixture-line', 'b', 'footway', 'yes', '1', deck,
+                                (OverheadCrossing(0, x0 + 10, (x0 + 10, 0)),))
+        unknown = {'b': deck_height('unknown')}
+        edge = self.plan(line(((-100, 0), (1000, 0)), overhead=(span(310, 330),)), self.wide(), structures=unknown)
+        self.assertIn('overhead gap b straddles the planning box edge at 319,0', edge['failures'][0]['reason'])
+        inside = self.plan(line(((-100, 0), (1000, 0)), overhead=(span(100, 120),)), self.wide(), structures=unknown)
+        self.assertEqual(inside['failures'], [])
+        self.assertEqual([(g['kind'], g['columns'][0], g['columns'][-1]) for g in inside['gaps']],
+                         [('overhead', [100, 0], [120, 0])])
+
+    def test_a_junction_gap_touching_a_crossing_gap_is_one_junction_stretch(self):
+        crossing = LevelCrossing('x', 'fixture-line', 0, (50, 0), 50, None, None, None, None, None)
+        p = self.plan(line(((0, 0), (100, 0)), crossings=(crossing,)), crossing_roads=self.ROADS,
+                      junction_gaps={0: [{'source': 'main', 'start': 55, 'end': 58}]})
+        self.assertEqual(p['failures'], [])
+        (gap,) = p['gaps']
+        self.assertEqual((gap['kind'], gap['source'], gap['also']), ('junction', 'x+main', ['crossing']))
+        self.assertEqual((gap['columns'][0], gap['columns'][-1]), ([46, 0], [58, 0]))
+        self.assertEqual([e['at'] for e in gap['ends']], [[45, 0], [59, 0]])
+
+    def test_two_structure_gaps_that_touch_still_need_a_combined_structure(self):
+        crossings = tuple(LevelCrossing(str(x), 'fixture-line', 0, (x, 0), x, None, None, None, None, None)
+                          for x in (50, 59))
+        p = self.plan(line(((0, 0), (100, 0)), crossings=crossings),
+                      crossing_roads={str(x): {'highway': 'residential', 'width': '6'} for x in (50, 59)})
+        self.assertIn('combined structure', p['failures'][0]['reason'])
+
+
 class JunctionGapsTest(unittest.TestCase):
     """:func:`railway_plan.junction_gaps` on hand-made first-pass plans (#452)."""
 
@@ -492,7 +644,7 @@ class JunctionGapsTest(unittest.TestCase):
     def test_an_overlap_on_a_box_join_fails_with_both_line_ids_and_the_coordinates(self):
         main = self.plan('main', self.row(0, 0, 100), tracks=2)
         side = self.plan('side', self.row(0, 50, 80), before=(49, 0))
-        with self.assertRaisesRegex(ValueError, r'junction with main covers the box join of side at \[50, 0\]'):
+        with self.assertRaisesRegex(ValueError, r'junction with main covers the box join of side at \[50, 0\].*choose a start cell'):
             R.junction_gaps([main, side])
 
     def test_duplicate_line_ids_cannot_choose_a_main_line(self):
