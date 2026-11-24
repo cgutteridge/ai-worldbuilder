@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the worldbuilder-tasks skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 468,
+  "nextTaskId": 469,
   "tasks": [
     
     
@@ -111,6 +111,16 @@
       "blockedBy": [],
       "builderTask": false,
       "notes": "Found in the live Chaiiwala rebuild (2026-11-24, after #458 merged at 61733d5). `python3 scripts/reapply_feature.py --world southampton-build w122706795 --apply` undid the old build and the rebuild landed (journal seq 2298 build w122706795 owner reapply-82465 -> seq 2299 landed, 03:26:37Z), yet the wrapper printed \"reapply w122706795: stopped during rebuild: builder left an in-flight journal entry. Undo completed; rebuild did not complete cleanly ... To re-lay it ...\". The in-flight entry it saw belonged to another session: `site_recover.py status` -> \"in-flight: cell 54,-34 stage feature plan railway_54_m34 owner claude since 2026-11-24T02:04:03Z\".\n\nFix in lib/builds/feature_reapply.py: the post-rebuild in-flight check must only count journal entries for this feature's plan (and this run's owner / seq range), not any in-flight entry in the world; report another session's in-flight entry as information, not as this run's failure. Add a test with a foreign in-flight entry present while the rebuild lands cleanly (expect success), next to the existing #458 lapse tests in scripts/test_reapply_feature.py. Also update the recovery text in rules/slow-commands.md if it says otherwise.\n\nNon-builder: fixtures only, no live apply. Acceptance: the test, and a clean success line when only a foreign entry is in flight.\n"
+    },
+    {
+      "id": 468,
+      "title": "Test suite: supported wait for a busy full suite (stop endless agent wait loops)",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": true,
+      "notes": "Agents waiting for a busy full suite wrote shell loops that never ended (some ran for days):\n- `until ! pgrep -f <pattern>` matched the loop's own zsh -c command line, so it always found itself.\n- `until [ ! -e .git/ai-worldbuilder-full-suite.lock ]` never ends: run_tests.py uses an advisory flock on a file that persists (it has existed since 27 Oct), so the file is never removed.\n\nFix:\n1. Add `run_tests.py --wait [--timeout SECS]`: block on the flock itself (not just fail fast), then run; exit non-zero with a clear message after the timeout. Default timeout is bounded (e.g. 30 min).\n2. Use it in ship_branch.py where it retries on \"already running\".\n3. One line in the agent docs (docs/agents/world-and-live-commands.md slow-command section, and the ship-branch / parallel-task-wave skills): never wait on pgrep or on lock-file existence; use `--wait`.\nDone when: tests cover wait-then-run and timeout, the docs line has landed, and ship_branch no longer needs its own retry loop.\n"
     }
   ]
 }
