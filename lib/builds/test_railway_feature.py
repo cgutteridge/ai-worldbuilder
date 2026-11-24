@@ -17,7 +17,7 @@ import structure_evidence as se
 import structure_fixtures as fixtures
 from railway_evidence import Line, LevelCrossing, Way, build_lines, classify
 from journal_testkit import FakePaced, JournalWorld, LiveApplyCase
-from site_kit import Plan
+from site_kit import Plan, full
 
 
 def ground(x0=-50, z0=-50, width=180, depth=120):
@@ -55,6 +55,19 @@ class TestRailwaySpec(unittest.TestCase):
         self.assertEqual(plan.cells[(20, 28, 10)], 'minecraft:stone')
         from site_kit import full
         self.assertEqual(plan.cells[(20, 31, 10)], full('powered_rail[shape=east_west,powered=true]'))
+
+    def test_planting_passes_the_readback_comparison_for_a_game_normalised_leaf(self):
+        """#469: the game re-labels leaf distance/waterlogged; plan only what it keeps."""
+        from site_kit import same
+        game_leaf = 'minecraft:oak_leaves[distance=7,persistent=true,waterlogged=false]'
+        raw = spec()
+        plan_row = raw['plans'][0]
+        x, z, surface = next((c[0], c[1], c[3]) for c in plan_row['columns'])
+        plan_row['planting'] = [[x, surface + 1, z, 'bush']]
+        plan = F.build(json.loads(json.dumps(raw)))
+        planted = plan.cells[(x, surface + 1, z)]
+        self.assertTrue(same(planted, game_leaf))
+        self.assertFalse(same(full('oak_leaves[persistent=true,distance=1]'), game_leaf))
 
     def test_gaps_write_nothing_and_retain_two_join_ends(self):
         crossing = LevelCrossing('n2', 'line-one', 0, (20, 10), 10, None, None, None, None, None)

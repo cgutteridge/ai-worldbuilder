@@ -19,6 +19,7 @@ import cellmath
 from railway_plan import (PLANNER_BOX, RAIL_CLEARANCE, deck_evidence, junction_gaps, plan_line,
                           share_footprints, validate_plan)
 from site_kit import Plan
+from tree_species import DEFAULT_LEAVES
 
 KIND = 'railway'
 BUILDER = 'railway_build'
@@ -257,7 +258,8 @@ def build(raw) -> Plan:
             if top > surface:
                 plan.fill((x, surface + 1, z), (x, top, z), 'air')
         for x, y, z, _kind in corridor['planting']:
-            plan.set(x, y, z, 'oak_leaves[persistent=true,distance=1]')
+            # The game derives leaf distance/waterlogged; plan only what it keeps (readback compares planned props).
+            plan.set(x, y, z, DEFAULT_LEAVES)
         place_rails(plan, corridor['rails'], corridor['torches'], corridor['torch_supports'])
         if any(plan.cells.get(p) != b for p, b in previous.items()):
             raise ValueError('railway corridor plans disagree in their overlapping footprint')
