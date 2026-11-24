@@ -766,22 +766,21 @@ class FacadePlanning:
         return None
 
     def _dress_shop_front(self, f: Feature, fronts: dict, rule: dict, name: str) -> None:
-        """Glass, a pavement-level door, fascia, a contrasting sign, and a continuous awning.
+        """Glass, a pavement-level door and a two-row fascia band (#470: no awning, no wall sign).
 
         A near-axis row is squared onto straight runs first (:func:`fit_straight_runs`).
-        Glass, the door, the fascia, the sign and the awning sit on that line, and
+        Glass, the door and the fascia sit on that line, and
         the stair-step between a recessed column and the line is filled solid. A
         steeper row keeps each wall step: the same pieces sit on the step, one
-        block outward along its face. Either way the awning, the sign and the door
-        touch the wall. Side, alley and party walls are not in ``fronts`` and stay
-        shell. The band and the door stand on the pavement or the column floor, whichever
+        block outward along its face. Either way the door touches the wall.
+        Side, alley and party walls are not in ``fronts`` and stay shell. The band and the door stand on the pavement or the column floor, whichever
         is higher (:meth:`_shop_floor`). On a straight run its jambs are
         the line's neighbours; on a step they are that step's neighbours.
 
         @param f: feature mass
         @param fronts: ``{(x, z): 'N'|'S'|'E'|'W'}`` from :func:`facade_plan.front_columns`
         @param rule: shop recipe from :func:`land_use.street_face_defaults`
-        @param name: mapped name; empty skips the sign
+        @param name: mapped name (kept for the fascia colour hash; no sign is placed)
         """
         runs = []
         for run in fit_straight_runs(fronts):
@@ -880,48 +879,12 @@ class FacadePlanning:
         for cell, (_floor, awning_y, sign_y) in rows.items():
             write(cell, awning_y, fascia)
             write(cell, sign_y, fascia)
-        if name and rows:
-            cx = statistics.mean(x for x, _z in rows)
-            cz = statistics.mean(z for _x, z in rows)
-            for cell in sorted(rows, key=lambda c: (abs(c[0] - cx) + abs(c[1] - cz), c)):
-                _floor, _awning_y, sign_y = rows[cell]
-                dx, dz = DIRS[face_of[cell]]
-                pos = (cell[0] + dx, sign_y, cell[1] + dz)
-                outside = self.p.cells.get(pos)
-                if outside is None:
-                    outside = self.live.block(*pos)
-                wall = self.p.cells.get((cell[0], sign_y, cell[1]))
-                if wall == bid(fascia) and outside in _OUTSIDE_AIRS:
-                    self.set(
-                        *pos,
-                        f"{sign['wall_sign']}[facing={FACE[face_of[cell]]}]",
-                    )
-                    self.p.sign(
-                        pos, textwrap.wrap(name, width=rule['sign_wrap'])[:4],
-                        colour=sign['text_colour'], glow=False,
-                    )
-                    break
-        if rule['awning']:
-            hinge_for = {'N': 'south', 'S': 'north', 'E': 'west', 'W': 'east'}
-            for cell, (_floor, awning_y, _sign_y) in rows.items():
-                dx, dz = DIRS[face_of[cell]]
-                outside_col = (cell[0] + dx, cell[1] + dz)
-                if outside_col in self.by_no_all_cells:
-                    continue
-                pos = (outside_col[0], awning_y, outside_col[1])
-                outside = self.p.cells.get(pos)
-                if outside is None:
-                    outside = self.live.block(*pos)
-                if outside not in _OUTSIDE_AIRS:
-                    continue
-                hinge = hinge_for[face_of[cell]]
-                self.set(*pos, f'oak_trapdoor[facing={hinge},half=top,open=false]')
 
     def street_face(self, f: Feature) -> None:
         """Dress an inferred industrial, big-box or shop street face.
 
         Evidenced facade rows win. Uses mapped names, street lines and the class table
-        only. Shop kinds select the awning. Full blocks support diagonal frontages; writes
+        only. Shop fronts get fascia only (#470). Full blocks support diagonal frontages; writes
         stay below each column's roof. Loading marks replace yard surfaces, never buildings
         or an unevidenced lawn.
         """
@@ -942,15 +905,11 @@ class FacadePlanning:
             if self._shop_dressing(f) is None:
                 if not has_faces:
                     print(f'{f.no} street face shop: shell too low for a fascia band; left the window grid')
-                elif name:
-                    print(
-                        f'{f.no} name sign "{name}" not placed: facade rows '
-                        'glaze the street face; add a sign detail to give it one')
                 return
             self._dress_shop_front(f, fronts, rule, name)
             print(
                 f'{f.no} street face shop: {len(fronts)} columns; '
-                f'kind={rule.get("shop_kind")}; awning={rule["awning"]}; name={name}'
+                f'kind={rule.get("shop_kind")}; fascia only (no awning, no wall sign); name={name}'
             )
             return
         sign = sign_options.resolve_label_sign(
