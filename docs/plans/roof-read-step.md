@@ -164,7 +164,7 @@ task notes had median 0.13 and 90th 0.21 over 150 houses). Per-volume roughness 
 
 ## Tests
 
-`python3 scripts/run_tests.py --only test_roof_read`: 26 tests, OK (frame, segmentation including the hip and
+`python3 scripts/run_tests.py --only test_roof_read`: 25 tests, OK (frame, segmentation including the hip and
 the empty-yard case, roughness, trust with staged canopy, shadow, smooth crown, both degraded, model
 disagreement, tags, answer parsing, the proposal keys, region joining, a plan through `feature_build.Build`,
 and the designer call with a runner double). The full suite runs on each commit.
