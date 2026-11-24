@@ -2,6 +2,7 @@
 import contextlib
 import io
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -35,6 +36,22 @@ class RunTest(unittest.TestCase):
         self.assertEqual(site_lock.run('me', 'task', [PY, '-c', code]), 0)
         self.assertEqual(out.read_text(), 'me|me')
         self.assertFalse(self.lock.exists())
+
+    def test_missing_lock_names_the_file(self):
+        with self.assertRaises(SystemExit) as caught:
+            site_lock.check('me')
+        message = str(caught.exception)
+        self.assertIn('World lock not held by me: None (no file at ', message)
+        self.assertIn(str(self.lock), message)
+
+    def test_child_with_a_different_lock_file_is_told_the_paths(self):
+        site_lock.claim('me', 'task')
+        other = self.lock.parent / 'other-lock.json'
+        other.write_text('{}\n', encoding='utf-8')
+        with mock.patch.dict(os.environ, {'SITE_LOCK_FILE': str(other)}):
+            with self.assertRaisesRegex(SystemExit, 'Pass the same --world'):
+                site_lock.check('me')
+        self.assertEqual(site_lock.read()['owner'], 'me')
 
     def test_failing_command_still_releases_and_returns_its_status(self):
         self.assertEqual(site_lock.run('me', 'task', [PY, '-c', 'raise SystemExit(7)']), 7)

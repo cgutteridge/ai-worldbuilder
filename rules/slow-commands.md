@@ -2,14 +2,28 @@
 
 ## Execution
 
-Use the lock runner for live writes and player-moving captures:
+Use `site_apply.py` for a live feature apply. It claims `site/LOCK.json`, writes the child's output to a command log, supplies `SITE_OWNER` and `SITE_LOCK_FILE`, always releases, and prints one last line `APPLY_EXIT=<n>, lock released, <command log>`:
+
+```sh
+python3 scripts/site_apply.py --world <world> run --owner <owner> --task "<what>" -- <command>
+```
+
+Recover first, without claiming, when a journal entry is still unfinished. A chain stops if recover fails:
+
+```sh
+python3 scripts/site_apply.py --world <world> chain --owner <owner> --task "<what>" -- \
+  python3 scripts/site_recover.py --world <world> recover <tx,tz> --apply -- <command>
+```
+
+`site_lock.py run` remains the lock runner for other live writes (layers, ghost baseline, and the sequences `redo_layer.py` and `reapply_feature.py` already own):
 
 ```sh
 python3 scripts/site_lock.py --world <world> run <owner> "<task>" -- <command>
 ```
 
-It claims `site/LOCK.json`, supplies `SITE_OWNER` to the child and releases on
-success, failure or interrupt. A fresh lock held by another owner is a stop.
+It claims `site/LOCK.json`, supplies `SITE_OWNER` and the claimed lock file to the child and releases on
+success, failure or interrupt. A fresh lock held by another owner is a stop. A child that selects a different world is told both lock paths instead of a missing file.
+
 `redo_layer.py --apply` and `reapply_feature.py --apply` own their sequence
 locks: call those wrappers directly, without another outer lock runner.
 
