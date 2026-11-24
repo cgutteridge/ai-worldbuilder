@@ -76,6 +76,38 @@ class RoofCatalogueTest(unittest.TestCase):
             self.assertIn(suggestion, message)
             self.assertTrue(self.catalogue['families'][suggestion]['triad'])
 
+    def test_colour_pick_chooses_a_dark_family_for_the_papa_johns_blue_grey(self):
+        for rgb in ((98, 96, 130), (119, 111, 138), (117, 100, 132)):
+            with self.subTest(rgb=rgb):
+                self.assertEqual(RM.pick_from_colour(rgb)['family'], 'deepslate_tile')
+
+    def test_colour_pick_covers_dark_and_warm_roofs_and_needs_a_triad_when_pitched(self):
+        self.assertEqual(RM.pick_from_colour((50, 50, 50))['family'], 'polished_blackstone')
+        self.assertEqual(RM.pick_from_colour((82, 82, 88))['family'], 'cobbled_deepslate')
+        self.assertEqual(RM.pick_from_colour((165, 100, 85))['family'], 'brick')
+        self.assertEqual(RM.pick_from_colour((150, 150, 148))['family'], 'stone')
+        for rgb in ((20, 20, 20), (240, 240, 240), (98, 96, 130)):
+            fam = RM.pick_from_colour(rgb, 'pitched')['family']
+            self.assertTrue(self.catalogue['families'][fam]['triad'], fam)
+
+    def test_colour_pick_says_when_the_runner_up_is_nearly_as_near(self):
+        self.assertFalse(RM.pick_from_colour((98, 96, 130))['close'])
+        weak = RM.pick_from_colour((119, 111, 138))
+        self.assertTrue(weak['close'])
+        self.assertIsNotNone(weak['runner_up'])
+
+    def test_new_dark_families_keep_stair_slab_and_block(self):
+        for fam in ('cobbled_deepslate', 'blackstone', 'polished_blackstone_brick', 'deepslate_tile'):
+            with self.subTest(fam=fam):
+                got = RM.family_variants(fam)
+                self.assertEqual(set(got), {'full', 'slab', 'stairs'})
+                self.assertTrue(RM.roof_blocks(fam, 'pitched')['ok'])
+        ids = RM.block_id_names()
+        for fam in self.catalogue['families'].values():
+            for key in ('full', 'slab', 'stairs'):
+                if key in fam:
+                    self.assertIn(fam[key], ids)
+
     def test_pitched_terracotta_is_rejected_with_brick_first(self):
         pitched = RM.roof_blocks('terracotta', 'pitched')
         self.assertFalse(pitched['ok'])

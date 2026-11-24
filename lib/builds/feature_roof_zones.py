@@ -14,7 +14,6 @@ import numpy as np
 from cellmath import N4
 from roof_geometry import regularise_roof_half_heights, roof_block_y
 from roof_material import family_variants
-from site_kit import nearest_preview_colour
 from world_frame import metres_aod_to_y
 
 
@@ -905,11 +904,35 @@ def sample_columns_rgb(pts: list[tuple[int, int]]) -> dict[tuple[int, int], tupl
     return {p: (float(c[0]), float(c[1]), float(c[2])) for p, (_, _, _, c) in found.items()}
 
 
+def roof_colour_choice_text(mean, roof, level=None) -> str:
+    """Why a measured aerial colour suggests a roof family (#476), and how it sits against the spec's own material.
+
+    @param mean: mean aerial colour 0..255
+    @param roof: the feature's ``roofs[label]`` dict (kind, material, zone_materials) or None
+    @param level: the zone level or ``region:<i>`` key, for a ``zone_materials`` / ``material_regions`` override
+    @returns: one line, ending in the one-source caveat
+    """
+    from roof_material import normalise_material, pick_from_colour
+    roof = roof if isinstance(roof, dict) else {}
+    slope = 'flatish' if roof.get('kind') == 'flat' else 'pitched'
+    pick = pick_from_colour(mean, slope)
+    text = f"roof colour mean rgb={mean} suggest {pick['family']} (nearest aerial look, distance {pick['distance']}"
+    if pick['close']:
+        text += f"; weak, {pick['runner_up']} is nearly as near"
+    text += ')'
+    used = roof_material_for_zone(roof, level) if roof.get('material') else None
+    if used:
+        same = normalise_material(str(used)) == pick['family']
+        text += f"; spec uses {used}" + (' (agrees)' if same else ' (differs)')
+    return text + '; one aerial source, colour picks a family and is not proof'
+
+
 def roof_zone_colour_lines(
     features: list,
     aerial_rgb: dict[tuple[int, int], tuple[float, float, float]] | None = None,
 ) -> list[str]:
-    """Dry-run lines: mean aerial colour + nearest site_kit preview block per zone.
+    """Dry-run lines: mean aerial colour + suggested catalogue roof family per zone,
+    with whether the spec's material for that zone agrees.
 
     Suggestion only — missing aerial / empty zone skips that zone silently.
 
@@ -922,26 +945,23 @@ def roof_zone_colour_lines(
         zl = getattr(f, 'zone_level', None)
         if not zl:
             continue
-        by_level: dict[int, list[tuple[int, int]]] = {}
+        by_level: dict[int | float | str, list[tuple[int, int]]] = {}
         for c, level in zl.items():
             if c not in f.cells:
                 continue
-            by_level.setdefault(int(level), []).append(c)
+            by_level.setdefault(level, []).append(c)
         need = [c for cols in by_level.values() for c in cols]
         try:
             rgb_map = aerial_rgb if aerial_rgb is not None else sample_columns_rgb(need)
         except AerialSourceMissing as exc:
             lines.append(f'roof colour suggestions skipped: {exc}')
             return lines
-        for level in sorted(by_level):
+        for level in sorted(by_level, key=str):
             samples = [rgb_map[c] for c in by_level[level] if c in rgb_map]
             mean = mean_rgb_255(samples)
             if mean is None:
                 continue
-            name, _ = nearest_preview_colour(mean)
-            lines.append(
-                f'{f.no} zone {level}: roof colour mean rgb={mean} suggest {name}'
-            )
+            lines.append(f'{f.no} zone {level}: ' + roof_colour_choice_text(mean, getattr(f, 'roof', None), level))
     return lines
 
 

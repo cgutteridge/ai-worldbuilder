@@ -202,6 +202,14 @@ class HelpersTest(unittest.TestCase):
         self.assertEqual(R.nearest_roof_material((160, 160, 160)), 'smooth_stone')
         self.assertEqual(R.nearest_roof_material((40, 36, 44)), 'polished_blackstone')
 
+    def test_aerial_pick_families_never_win_the_membrane_match(self):
+        from roof_material import load_catalogue
+        added = ('cobbled_deepslate', 'blackstone', 'polished_blackstone_brick')
+        for name in added:
+            self.assertIs(load_catalogue()['families'][name]['membrane_match'], False)
+            exact = tuple(load_catalogue()['families'][name]['colour'])
+            self.assertNotIn(R.nearest_roof_material(exact), added)
+
 
 class SpecPatchTest(unittest.TestCase):
     """Seam: write the derived roof into a feature spec's roofs[label]."""
