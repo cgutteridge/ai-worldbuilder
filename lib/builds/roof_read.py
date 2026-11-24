@@ -1022,7 +1022,7 @@ def load(way_id: str, loaded=None) -> dict:
                     flat[k] = c / 255.0
         img = flat.reshape(img.shape)
     ev = Evidence(frame, s, t, h, band, columns, img, img_s, img_t)
-    return {'evidence': ev, 'tags': me['tags'], 'front': front, 'cells': cells}
+    return {'evidence': ev, 'tags': me['tags'], 'front': front, 'cells': cells, 'street': street}
 
 
 def roof_columns(cells: set, columns: dict, mass_m: float = MASS_M) -> set:

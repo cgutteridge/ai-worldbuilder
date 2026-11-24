@@ -496,6 +496,34 @@ copied from a neighbour or the district default where the read has an answer.
   ask (cost recorded on the record); the step adds `record['fields'][name]` and label-keyed spec keys to
   `record['patch']` (a dict value merges over the generated one for that label). The generator needs no change.
 
+### Fascia colour read from street-level imagery (#475)
+
+`fascia_read.fascia_step` (`lib/builds/fascia_read.py`) is an **opt-in** row-read step: `row_read.STEPS` holds only
+the roof step, so generation never fetches street-level frames unless `typology_spec --fascia-read` is given (it
+adds the step via `default_reader(fascia=True)`). The flag needs the owner's OK first, per the street-level
+provider licence (few requests, no loops). With it, for each read
+shop it finds street-level frames of the shop front, asks the designer **one** question on a sheet of up to
+three crops (cache key `fascia`), maps the answer to the nearest `config/sign-options.json` fascia colour
+and writes `record['patch']['signs'] = {'fascia_colour': <name>}` (the generator keys it by label, so it wins
+over the class palette for that shop only) with `record['fields']['fascia_colour']` (`value`, `rests_on`
+`street-level imagery`, `flags`, `evidence` = frame ids and source).
+
+- Frame sources, in order, are the configured `streetlevel` providers: first the one that lists positioned,
+  headed photos (nearest frames on the shop's street side that face it, cropped to the shop with an assumed
+  70 degree field of view), then the one that renders a frame at a heading (two requests aimed at the shop from
+  12 blocks in front; keep requests few, its terms apply). A failing source falls to the next. Frames are saved
+  under the world's `instance/fascia-frames` (gitignored; never commit them). No new provider or host.
+- The only hint the designer gets is the shop's own `name` tag; no shop name is in code.
+- No frame, no street front, a failed ask, `visible: false` or `confident: false` keeps the class default
+  and says so in `unsure` (`fascia colour: ... class default fascia`); the dry run lists it. A colour name
+  outside the catalogue is mapped by rgb and flagged.
+- `python3 scripts/fascia_read.py --world W --way <map way id> [--spec path]` runs only this step for one
+  building and prints the colour, frame ids, cost and a `spec_patch` (`signs.<label>.fascia_colour`, the
+  label taken from `--spec`, read only). This is how a hand-specced shop gets a read: the CLI never edits a
+  spec, apply the printed patch by hand.
+- `roof_read.load` now also returns the building's `street` point, so the camera looks along the real
+  front, not only the compass letter.
+
 ## Railway line features
 
 A through railway is a named feature, `railway_<tx>_<tz>` (negative cell coordinates

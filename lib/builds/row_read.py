@@ -24,6 +24,7 @@ from pathlib import Path
 
 import numpy as np
 
+import fascia_read as FR
 import roof_read as RR
 
 MIN_IMAGE_SHARE = 0.5   # less of the crop covered by aerial than this and no ask is made
@@ -148,7 +149,7 @@ def _zone_mass(ctx: Ctx) -> bool:
     return bool(RR.roof_columns(ctx.cells, ctx.evidence.columns, mass_m=FZ.ZONE_LIDAR_MASS_M))
 
 
-STEPS = [roof_step]
+STEPS = [roof_step]  # the fascia step is opt-in (default_reader fascia=True): it fetches street-level frames
 
 
 def read_building(way_id, wall, *, loader, role_id, cache_dir=None, runner=None, steps=None) -> dict:
@@ -194,16 +195,17 @@ def cost(record: dict) -> dict:
 def summary_line(record: dict) -> str:
     """One dry-run line: the building, what was read and what it cost."""
     parts = [f"way {record['way_id']}: {record['status']}"]
-    for key in ('storeys', 'roof_kind', 'roof_material'):
+    for key in ('storeys', 'roof_kind', 'roof_material', 'fascia_colour'):
         field = record['fields'].get(key)
         if field:
             parts.append(f"{key} {field['value']} ({field['rests_on']})")
     c = cost(record)
     if c['asks']:
-        asks = record['asks'][0]
-        parts.append(f"ask {asks['model']} {asks['effort']}: "
+        models = ', '.join(dict.fromkeys(f"{a['model']} {a['effort']}" for a in record['asks']))
+        parts.append(f"{c['asks']} ask{'s' if c['asks'] > 1 else ''} {models}: "
                      + (f"cached ({c['tokens_when_asked']} tokens when asked)" if c['cached'] == c['asks']
-                        else f"{c['tokens']} tokens, ${c['cost_usd']}, {c['elapsed_s']} s"))
+                        else f"{c['tokens']} tokens, ${c['cost_usd']}, {c['elapsed_s']} s"
+                             + (f" ({c['cached']} cached)" if c['cached'] else '')))
     else:
         parts.append('no ask')
     if record['unsure']:
@@ -219,10 +221,11 @@ def make_reader(*, loader, role_id, cache_dir=None, runner=None, steps=None):
     return reader
 
 
-def default_reader(streets_buildings, *, role_id=None, cache_dir=None):
+def default_reader(streets_buildings, *, role_id=None, cache_dir=None, fascia=False):
     """The world-reading reader the CLI uses: lidar and aerial from the active world, the configured designer.
 
     @param streets_buildings: ``(buildings, streets)`` already loaded, so the map is read once
+    @param fascia: add the fascia step, which fetches street-level frames (opt-in; needs the owner's OK)
     """
     if role_id is None:
         from build_roles import resolve_roles
@@ -230,4 +233,5 @@ def default_reader(streets_buildings, *, role_id=None, cache_dir=None):
     if cache_dir is None:
         from script_env import ROOT
         cache_dir = Path(ROOT) / 'instance' / 'row-read-cache'
-    return make_reader(loader=lambda way: RR.load(way, streets_buildings), role_id=role_id, cache_dir=cache_dir)
+    return make_reader(loader=lambda way: RR.load(way, streets_buildings), role_id=role_id, cache_dir=cache_dir,
+                       steps=[*STEPS, FR.fascia_step] if fascia else None)
