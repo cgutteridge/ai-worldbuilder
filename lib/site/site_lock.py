@@ -366,29 +366,37 @@ def run_command(cmd, *, env=None, log_path=None, log_append=False) -> int:
     @param log_path: command log opened for the child; None inherits streams
     @param log_append: append to ``log_path`` instead of replacing it
     @returns: the command's exit status, or 130 on Ctrl-C
-    @raises SystemExit: when ``cmd`` is empty
+    @raises SystemExit: empty command, or 128+signal when SIGTERM hits this process
     """
     if not cmd:
         raise SystemExit('run: no command given')
+
+    def _term(signum, _frame):
+        raise SystemExit(128 + signum)
+
+    old = signal.signal(signal.SIGTERM, _term)
     process = None
     log_handle = None
     try:
-        log_handle = _open_log(log_path, log_append)
-        popen = {'env': os.environ if env is None else env, 'start_new_session': True}
-        if log_handle is not None:
-            popen['stdout'] = log_handle
-            popen['stderr'] = subprocess.STDOUT
-        process = subprocess.Popen(cmd, **popen)
-        rc = process.wait()
-        return 128 - rc if rc < 0 else rc
-    except KeyboardInterrupt:
-        return 130
-    finally:
         try:
-            _stop_group(process)
-        finally:
+            log_handle = _open_log(log_path, log_append)
+            popen = {'env': os.environ if env is None else env, 'start_new_session': True}
             if log_handle is not None:
-                log_handle.close()
+                popen['stdout'] = log_handle
+                popen['stderr'] = subprocess.STDOUT
+            process = subprocess.Popen(cmd, **popen)
+            rc = process.wait()
+            return 128 - rc if rc < 0 else rc
+        except KeyboardInterrupt:
+            return 130
+        finally:
+            try:
+                _stop_group(process)
+            finally:
+                if log_handle is not None:
+                    log_handle.close()
+    finally:
+        signal.signal(signal.SIGTERM, old)
 
 
 def parse_run_argv(argv):

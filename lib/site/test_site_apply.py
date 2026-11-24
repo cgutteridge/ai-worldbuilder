@@ -82,6 +82,14 @@ class ApplyCommandTest(unittest.TestCase):
         self.assertFalse(self.lock.exists())
         self.assertIn('APPLY_EXIT=130, lock released', out)
 
+    def test_sigterm_prints_the_result_line_and_releases(self):
+        with mock.patch('site_lock.subprocess.Popen', side_effect=SystemExit(143)):
+            status, out = self._stdout(lambda: site_apply.apply_command(
+                'me', 'apply feature', ['x'], self.log))
+        self.assertEqual(status, 143)
+        self.assertFalse(self.lock.exists())
+        self.assertIn(f'APPLY_EXIT=143, lock released, {self.log}', out)
+
     def test_busy_lock_refuses_without_writing(self):
         site_lock.claim('other', 'their build')
         before = self.lock.read_text(encoding='utf-8')

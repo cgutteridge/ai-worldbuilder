@@ -92,6 +92,12 @@ def apply_command(owner: str, task: str, cmd: list[str], log_path: Path, *, log_
             status = 2
             report = 'busy'
             return 2
+        # SIGTERM during the locked run becomes SystemExit(128 + signal) after
+        # the lock is released. That still needs the end marker.
+        if isinstance(exc.code, int):
+            status = exc.code
+            report = 'released'
+            return status
         raise
     except Exception:
         report = 'released'
@@ -110,7 +116,13 @@ def recover_command(cmd: list[str], log_path: Path) -> int:
     @param log_path: command log for this recover
     @returns: the command status, or 130 on Ctrl-C
     """
-    status = site_lock.run_command(cmd, log_path=log_path)
+    try:
+        status = site_lock.run_command(cmd, log_path=log_path)
+    except SystemExit as exc:
+        if not isinstance(exc.code, int):
+            raise
+        print(result_line(exc.code, 'not claimed', Path(log_path)), flush=True)
+        return exc.code
     print(result_line(status, 'not claimed', Path(log_path)), flush=True)
     return status
 
@@ -125,7 +137,13 @@ def chain_commands(owner: str, task: str, recover_cmd: list[str], apply_cmd: lis
     @param log_path: command log; the apply appends when recover succeeds
     @returns: recover's status when that step fails, otherwise the apply status
     """
-    status = site_lock.run_command(recover_cmd, log_path=log_path)
+    try:
+        status = site_lock.run_command(recover_cmd, log_path=log_path)
+    except SystemExit as exc:
+        if not isinstance(exc.code, int):
+            raise
+        print(result_line(exc.code, 'not claimed', Path(log_path)), flush=True)
+        return exc.code
     if status != 0:
         print(result_line(
             status, 'not claimed', Path(log_path), 'recover failed; apply not started',
