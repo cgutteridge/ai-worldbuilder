@@ -214,11 +214,11 @@ def fit_straight_runs(fronts: dict) -> list[dict]:
     and a grid-aligned corner, become straight runs. One run per stretch whose
     recess is at most :data:`MAX_SHOP_STEP` blocks. An already straight front is
     unchanged. Each stretch snaps to its own streetward edge, and every block
-    between a recessed column and that edge is fill, so a later awning or sign
-    meets wall rather than a gap.
+    between a recessed column and that edge is fill, so the fascia above the
+    glass meets wall rather than a gap.
 
     A steeper row is not squared. Each column stays a step with its own face
-    and no fill. The awning, the sign and the door then sit on that step, one
+    and no fill. The glass, the fascia and the door then sit on that step, one
     block outward along its face, so they still touch the wall.
 
     @param fronts: ``{(x, z): 'N'|'S'|'E'|'W'}``
@@ -320,7 +320,7 @@ def _stepped_shop_runs(cells: set, fronts: dict) -> list[dict]:
     """Leave a steep shop row as one run per wall step.
 
     Nothing is filled and nothing is snapped to a streetward line. Each column
-    keeps the face it was given. An awning and a sign go one block outward
+    keeps the face it was given. The glass and the fascia go one block outward
     along that face, and a door stays on the step.
 
     @param cells: front columns in one component
@@ -592,10 +592,10 @@ class FacadePlanning:
     def _shop_band_fits(
         self, f: Feature, cell: tuple[int, int], glass_height: int, floor: int | None = None,
     ) -> bool:
-        """True when a column has room for glass, the awning row and the sign row under the roof.
+        """True when a column has room for glass and the two fascia rows under the roof.
 
         On a carpet-finished deck (#455) the deck row is the band's top course, and one fascia
-        row (awning and sign together) is enough.
+        row is enough.
 
         @param f: feature mass
         @param cell: ``(x, z)``
@@ -657,7 +657,7 @@ class FacadePlanning:
     def _shop_band_tops(self, f: Feature) -> dict:
         """Top row the dressed shopfront owns on each street-face column, for window planning.
 
-        The band runs from the shop floor through the glass, awning and sign rows,
+        The band runs from the shop floor through the glass and both fascia rows,
         and never ends below the ground storey: windows stay off it, so the upper
         storeys and the other faces keep theirs.
 
@@ -765,17 +765,50 @@ class FacadePlanning:
                     return cell, run['face']
         return None
 
+    def _stair_risers(self, f: Feature, runs: list, rows: dict, jambs: set) -> dict:
+        """Wall blocks between two treads of a stepped shopfront, with the band rows of their treads.
+
+        A steep row keeps one run per wall step (:func:`fit_straight_runs`), so the shell is a
+        staircase of treads joined by risers. A riser left as brick sits behind the glass and
+        beside the door like a frame (#471); it takes the same glass and fascia as the treads
+        it joins. A squared run has no risers, and a run's end riser (one tread only) stays wall.
+
+        @param f: feature mass
+        @param runs: dressed runs
+        @param rows: ``{(x, z): (floor, fascia_y, fascia_top)}`` of the dressed line cells
+        @param jambs: cells beside a shop door; the door builder would otherwise add a brick jamb there
+        @returns: ``{(x, z): (floor, fascia_y, fascia_top)}`` for each riser
+        """
+        treads = {
+            cell for run in runs if not run['fill'] and len(run['line']) == 1
+            for cell in run['line'] if cell in rows
+        }
+        out = {}
+        candidates = {
+            (tread[0] + dx, tread[1] + dz) for tread in treads for dx, dz in N4
+        } - treads - set(rows) - self._door_keepout(f)
+        for cell in sorted(candidates):
+            joined = sorted((cell[0] + dx, cell[1] + dz) for dx, dz in N4 if (cell[0] + dx, cell[1] + dz) in treads)
+            floor = rows[joined[0]][0] + 1 if joined else 0
+            if len(joined) >= 2 and self._shop_column_ok(f, cell) and (
+                    cell in jambs or self._is_solid(cell[0], floor, cell[1])):
+                out[cell] = rows[joined[0]]
+        return out
+
     def _dress_shop_front(self, f: Feature, fronts: dict, rule: dict, name: str) -> None:
         """Glass, a pavement-level door and a two-row fascia band (#470: no awning, no wall sign).
 
-        A near-axis row is squared onto straight runs first (:func:`fit_straight_runs`).
-        Glass, the door and the fascia sit on that line, and
-        the stair-step between a recessed column and the line is filled solid. A
-        steeper row keeps each wall step: the same pieces sit on the step, one
-        block outward along its face. Either way the door touches the wall.
-        Side, alley and party walls are not in ``fronts`` and stay shell. The band and the door stand on the pavement or the column floor, whichever
-        is higher (:meth:`_shop_floor`). On a straight run its jambs are
-        the line's neighbours; on a step they are that step's neighbours.
+        The street-face storey 1 is glass and the door only, with the glass in place of the wall
+        (#471): no brick jamb beside the door, no wall behind the glass, and the fascia runs
+        unbroken over the door. A near-axis row is squared onto straight runs first
+        (:func:`fit_straight_runs`); glass, door and fascia sit on that line, the stair-step
+        between a recessed column and the line is filled solid above the glass, and the fill and
+        recessed wall behind the glass are opened. A steeper row keeps each wall step: the same
+        pieces sit on the step, and the risers between steps are glass too (:meth:`_stair_risers`).
+        Side, alley and party walls are not in ``fronts`` and stay shell, so a building corner
+        still shows wall behind its end column. The band and the door stand on the pavement or
+        the column floor, whichever is higher (:meth:`_shop_floor`). The door block is
+        ``signs[label].door`` or the class shop door.
 
         @param f: feature mass
         @param fronts: ``{(x, z): 'N'|'S'|'E'|'W'}`` from :func:`facade_plan.front_columns`
@@ -797,6 +830,10 @@ class FacadePlanning:
             return
         face_of = {cell: run['face'] for run in runs for cell in run['line']}
         line_cells = set(face_of)
+        sign = sign_options.resolve_label_sign(
+            self.spec, f.no, hash_key=name or f.no, hash_colour=fascia_colour,
+        )
+        door_block = sign['door'] or rule['door']
         door_line = []
         for door in list(getattr(f, 'door_cells', ()) or ()):
             hit = self._shop_line_for_door(runs, door)
@@ -805,7 +842,7 @@ class FacadePlanning:
             line_cell, face = hit
             if line_cell != door:
                 placed = self._placed_door(door)
-                block = placed[0] if placed else rule['door']
+                block = placed[0] if placed else door_block
                 old_floor = placed[1] if placed else self._column_floor(f, door)
                 old_face = placed[2] if placed else fronts.get(door, face)
                 self._release_recessed_door(door, old_face, old_floor)
@@ -822,16 +859,6 @@ class FacadePlanning:
         door_cell = _shop_door_cell(runs) if place_centre else None
         if door_cell is not None:
             door_line.append(door_cell)
-        jambs = set()
-        for cell in door_line:
-            face = face_of[cell]
-            lateral = (1, 0) if face in 'NS' else (0, 1)
-            jambs.update(
-                (cell[0] + lateral[0] * side, cell[1] + lateral[1] * side) for side in (1, -1)
-            )
-        sign = sign_options.resolve_label_sign(
-            self.spec, f.no, hash_key=name or f.no, hash_colour=fascia_colour,
-        )
         colour = sign['fascia_colour']
         fascia = f'{colour}_concrete'
         glass_h = rule['glass_height']
@@ -840,15 +867,31 @@ class FacadePlanning:
             if not self._shop_band_fits(f, cell, glass_h):
                 continue
             floor = self._shop_floor(f, cell, face_of[cell], glass_h)
-            awning_y = floor + glass_h + 1
-            rows[cell] = (floor, awning_y, min(awning_y + 1, self._band_top(f, cell)))
+            top_y = floor + glass_h + 1
+            rows[cell] = (floor, top_y, min(top_y + 1, self._band_top(f, cell)))
         if door_cell not in rows:
             door_cell = None
+        jambs = set()
+        for cell in door_line:
+            lateral = (1, 0) if face_of[cell] in 'NS' else (0, 1)
+            jambs.update((cell[0] + lateral[0] * side, cell[1] + lateral[1] * side) for side in (1, -1))
+        risers = self._stair_risers(f, runs, rows, jambs)
         doors = self._door_keepout(f)
         protected = set(self.keep)
         for (x, y, z), state in self.p.cells.items():
             if '_door[' in state:
                 protected.update((x + dx, y, z + dz) for dx, dz in ((0, 0), *N4))
+        # A jamb on the line is glass like the rest of the front, not a brick frame (#471); a jamb
+        # off the line (a corner) stays the solid the door builder put there.
+        for cell in door_line:
+            if cell not in rows:
+                continue
+            lateral = (1, 0) if face_of[cell] in 'NS' else (0, 1)
+            for side in (1, -1):
+                for y in range(rows[cell][0] + 1, rows[cell][0] + glass_h + 1):
+                    pos = (cell[0] + lateral[0] * side, y, cell[1] + lateral[1] * side)
+                    protected.discard(pos)
+                    self.keep.discard(pos)
 
         def write(cell, y, state):
             pos = (cell[0], y, cell[1])
@@ -859,26 +902,52 @@ class FacadePlanning:
             sample = next((cell for cell in run['line'] if cell in rows), None)
             if sample is None:
                 continue
-            floor, _awning_y, sign_y = rows[sample]
+            floor, _glass_top, fascia_top = rows[sample]
             for cell in run['fill']:
                 if cell in line_cells:
                     write(cell, floor, self.wall)
                     continue
-                for y in range(floor, sign_y + 1):
+                for y in range(floor, fascia_top + 1):
                     write(cell, y, self.wall)
-        for cell, (floor, awning_y, _sign_y) in rows.items():
-            if cell != door_cell and cell not in jambs:
-                for y in range(floor + 1, awning_y):
+        for cell, (floor, fascia_y, _fascia_top) in {**risers, **rows}.items():
+            if cell != door_cell:
+                for y in range(floor + 1, fascia_y):
                     write(cell, y, 'glass')
+        for run in runs:
+            # Glass replaces the wall (#471): nothing stands directly behind it. A line cell that
+            # was filled out to the run opens the fill and the recessed wall behind it; an
+            # inner cell that is wall only because it touches a notch diagonally goes too.
+            dx, dz = DIRS[run['face']]
+            for cell in run['line']:
+                if cell not in rows:
+                    continue
+                behind = (cell[0] - dx, cell[1] - dz)
+                if cell in run['fill']:
+                    chain = []
+                    while behind in run['fill'] or behind in run['sources']:
+                        chain.append(behind)
+                        behind = (behind[0] - dx, behind[1] - dz)
+                elif (behind in f.cells and behind not in rows and behind not in risers
+                      and all((behind[0] + ox, behind[1] + oz) in f.cells for ox, oz in N4)):
+                    chain = [behind]
+                else:
+                    continue
+                for opened in chain:
+                    for y in range(rows[cell][0] + 1, rows[cell][1]):
+                        write(opened, y, 'air')
         if place_centre and door_cell is not None:
             floor = rows[door_cell][0]
-            self._set_door_leaf(door_cell, face_of[door_cell], rule['door'], 'left', floor)
+            self._set_door_leaf(door_cell, face_of[door_cell], door_block, 'left', floor)
             f.door_cells.add(door_cell)
             if getattr(f, 'door', None) is None:
                 f.door = door_cell
-        for cell, (_floor, awning_y, sign_y) in rows.items():
-            write(cell, awning_y, fascia)
-            write(cell, sign_y, fascia)
+        for cell, (floor, fascia_y, fascia_top) in {**risers, **rows}.items():
+            write(cell, fascia_y, fascia)
+            write(cell, fascia_top, fascia)
+            if cell in door_line:
+                # the door's lintel is fascia too, so the band is unbroken over the door (#471)
+                for y in range(fascia_y, fascia_top + 1):
+                    self.set(cell[0], y, cell[1], fascia)
 
     def street_face(self, f: Feature) -> None:
         """Dress an inferred industrial, big-box or shop street face.

@@ -864,8 +864,12 @@ def _validate_street_face(cid: str, face) -> None:
         raise TableError(f'{cid}: street_face.shop glass_height must be an integer >= 1')
     if type(shop['sign_wrap']) is not int or shop['sign_wrap'] < 1:
         raise TableError(f'{cid}: street_face.shop sign_wrap must be an integer >= 1')
-    if not isinstance(shop['door'], str) or not shop['door'].endswith('_door'):
-        raise TableError(f'{cid}: street_face.shop door must be a door block')
+    import block_reference
+    if (not isinstance(shop['door'], str) or not shop['door'].endswith('_door')
+            or not block_reference.known_block(shop['door'])):
+        raise TableError(
+            f'{cid}: street_face.shop door must be a door block of the target version, '
+            'the default shop door that a spec overrides with signs[label].door (#471)')
     kinds = shop['kinds']
     if not isinstance(kinds, dict) or not kinds:
         raise TableError(f'{cid}: street_face.shop kinds must list shop and amenity kinds')

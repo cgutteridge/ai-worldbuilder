@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import block_reference
 from script_env import TOOL_ROOT
 
 CATALOGUE_PATH = TOOL_ROOT / 'config' / 'sign-options.json'
@@ -243,7 +244,7 @@ def label_sign_options(spec: dict | None, label: str) -> dict:
 
     @param spec: feature build spec
     @param label: way label
-    @returns: ``{wood?, fascia_colour?, text_colour?}`` (may be empty)
+    @returns: ``{wood?, fascia_colour?, text_colour?, door?}`` (may be empty)
     """
     row = ((spec or {}).get('signs') or {}).get(label) or {}
     return dict(row) if isinstance(row, dict) else {}
@@ -264,7 +265,8 @@ def resolve_label_sign(
     @param hash_key: name/brand/label for hashed fascia when unset
     @param catalogue: optional loaded catalogue
     @param hash_colour: optional fascia hash callable
-    @returns: ``{wood, fascia_colour, text_colour, wall_sign, hanging_sign, wall_hanging_sign}``
+    @returns: ``{wood, fascia_colour, text_colour, door, wall_sign, hanging_sign, wall_hanging_sign}``;
+        ``door`` is the spec's shop door block, or None to use the land-use class default (#471)
     """
     cat = catalogue or load_catalogue()
     opts = label_sign_options(spec, label)
@@ -278,6 +280,7 @@ def resolve_label_sign(
         'wood': wood,
         'fascia_colour': fascia,
         'text_colour': text,
+        'door': opts.get('door'),
         **blocks,
     }
 
@@ -294,7 +297,7 @@ def validate_sign_row(
     @param row: ``signs[label]`` object or a detail row carrying the same keys
     @param context: path prefix for error text
     @param catalogue: optional loaded catalogue
-    @param strict_keys: when True, refuse keys other than wood/fascia/text
+    @param strict_keys: when True, refuse keys other than wood/fascia/text/door
     @raises ValueError: on an invalid or low-contrast row
     """
     cat = catalogue or load_catalogue()
@@ -318,8 +321,13 @@ def validate_sign_row(
         if not isinstance(text, str) or not text:
             raise ValueError(f'{context}.text_colour must be a non-empty dye name')
         resolve_text_colour(wood, text, catalogue=cat)
+    if 'door' in row:
+        door = row['door']
+        if (not isinstance(door, str) or not door.endswith('_door')
+                or not block_reference.known_block(door)):
+            raise ValueError(f'{context}.door must be a door block id such as oxidized_copper_door')
     if strict_keys:
-        unknown = set(row) - {'wood', 'fascia_colour', 'text_colour'}
+        unknown = set(row) - {'wood', 'fascia_colour', 'text_colour', 'door'}
         if unknown:
             raise ValueError(f'{context} unknown keys {sorted(unknown)}')
 

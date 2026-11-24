@@ -112,6 +112,20 @@ class SignSpecValidationTest(unittest.TestCase):
             FS.load_spec(path)
         self.assertIn('low contrast', str(raised.exception))
 
+    def test_shop_door_key_loads_and_refuses_a_non_door_or_unknown_block(self):
+        path = self._write(signs={'A': {'door': 'oxidized_copper_door'}})
+        self.assertEqual(FS.load_spec(path)['signs']['A']['door'], 'oxidized_copper_door')
+        for bad in ('oak_trapdoor', 'oak_plank', 'teak_door', 7):
+            with self.subTest(door=bad), self.assertRaises(SystemExit) as raised:
+                FS.load_spec(self._write(signs={'A': {'door': bad}}))
+            self.assertIn('door', str(raised.exception))
+
+    def test_label_sign_carries_the_door_or_none(self):
+        self.assertIsNone(SO.resolve_label_sign({}, 'A', hash_key='A', hash_colour=lambda _k: 'cyan')['door'])
+        spec = {'signs': {'A': {'door': 'warped_door'}}}
+        self.assertEqual(
+            SO.resolve_label_sign(spec, 'A', hash_key='A', hash_colour=lambda _k: 'cyan')['door'], 'warped_door')
+
     def test_detail_sign_wood_is_validated(self):
         path = self._write(details={'A': [{
             'kind': 'sign', 'at': [0, 50, 0], 'size': [1, 1, 1],
