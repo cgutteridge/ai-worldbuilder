@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the worldbuilder-tasks skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 470,
+  "nextTaskId": 472,
   "tasks": [
     
     
@@ -131,6 +131,26 @@
       "blockedBy": [],
       "builderTask": false,
       "notes": "GOAL. The railway feature's planting writes leaves in a state the game re-labels, so the apply readback fails. #384 trial D, railway_54_m34 (512 box), first real apply: planned 100,826 cells, readback found 62 then 24 mismatches after two retries, all oak leaves: planned oak_leaves[persistent=true,distance=1], found oak_leaves[distance=7,persistent=true,waterlogged=false] (leaf distance is derived from nearby logs). Journal entry 2286 was left 'begun'; site_recover would roll back. No rail, torch or ground block mismatched.\n\nFIX. lib/builds/railway_feature.py line ~260 `plan.set(x, y, z, 'oak_leaves[persistent=true,distance=1]')`: use the same leaf state every other builder uses, 'oak_leaves[persistent=true]' (see lib/layers/tree_species.py DEFAULT_LEAVES), or better a shared constant, so the readback tolerates the game's derived distance and waterlogged properties. Check how readback normalises block states (site_kit / readback compare) so the fix is the right layer: if the readback should treat derived leaf properties as equal for every builder, say so in your report but do not widen the shared readback unless it is clearly a defect.\n\nCHECKS. A test that the railway planting state passes the same readback comparison a game-normalised leaf would (use the repo's readback/compare helper with 'oak_leaves[distance=7,persistent=true,waterlogged=false]' as the found state), and that the old distance=1 string would fail. Run the railway tests and the full suite. No live world, nothing under worlds/.\n"
-    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/469-railway-leaf-state"}
+    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/469-railway-leaf-state"},
+    {
+      "id": 470,
+      "title": "Shop fronts: stop placing trapdoor awnings and wall signs",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": true,
+      "notes": "Owner decision 2026-11-24 after the Papa John's and Chaiiwala rebuilds: give up on trapdoor awnings and on signs fixed to buildings ('signs just look bad. stop putting signposts on buildings'). Reference photos show no awning on either shop. World issue I-065 (snags S-122, S-123). Code: lib/builds/feature_facade.py _dress_shop_front and _shop_dressing place the awning row and the oak wall sign; sign support lives in feature_build._check_sign_support (#435) and sign_options.py. Keep the fascia band and its colour (signs.<label>.fascia_colour stays; owner confirmed Papa John's lime fascia). Decide whether the freed awning/sign rows become fascia or wall, and say so in the dry-run summary. Done: no trapdoor or wall sign on any shop front from the shop recipe; dry run of w149814013 and w122706795 shows none; tests cover a dressed shop with a mapped name. Record the fix on I-065 with a check per snag."
+    },
+    {
+      "id": 471,
+      "title": "Shop fronts: glass and door replace the wall, with no brick frame or wall behind",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "m",
+      "blockedBy": [],
+      "builderTask": true,
+      "notes": "Owner snags 2026-11-24 (world issue I-066, S-124 Papa John's, S-125 Chaiiwala). The ground-floor shopfront is built in front of the wall rather than in place of it: glass has brick behind it, and the door is recessed in a brick frame that looks added at the end. Wanted: the street-face storey-1 front is 2-high glass and the door only, flush on the front line, with the glass replacing the wall block (nothing behind it). Owner also prefers a copper (green) door over oak for this frontage: make the shop door material a recipe/spec choice (default from the land-use class sign/facade palette, config/land-use-classes.json). Code: lib/builds/feature_facade.py _dress_shop_front, fit_straight_runs fill, _shop_floor (#436 door floor) and _stair_flights/_shop_band_tops (#466). Keep what the owner said is good: the Chaiiwala frontage angle and the 2-high glass. Done: dry runs of w149814013 and w122706795 show no wall block directly behind front glass and no brick jamb proud of or recessed around the door; tests pin it on a squared run and a stepped row. Record the fix on I-066 with a check per snag."
+    }
   ]
 }
