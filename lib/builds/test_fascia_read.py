@@ -161,7 +161,7 @@ class OptIn(unittest.TestCase):
 
     def test_default_reader_adds_the_fascia_step_only_when_asked(self):
         from unittest import mock
-        for flag, expected in ((False, None), (True, [RW.roof_step, FR.fascia_step])):
+        for flag, expected in ((False, None), (True, [RW.roof_step, RW.roof_colour_step, FR.fascia_step])):
             with mock.patch.object(RW, 'make_reader') as made:
                 RW.default_reader(([], []), role_id=ROLE, cache_dir='x', fascia=flag)
             self.assertEqual(made.call_args.kwargs['steps'], expected)
