@@ -229,6 +229,13 @@ class TrustTest(unittest.TestCase):
         self.assertEqual(self._vol(result, 2)['trust']['storeys']['tag'], 'disagree')
         self.assertEqual(self._vol(result, 1)['trust']['storeys']['tag'], 'silent')
 
+    def test_a_roof_shape_tag_checks_the_main_volume_form_family(self):
+        result = run(evidence(), answer(), tags={'roof:shape': 'hipped'})
+        self.assertEqual(self._vol(result, 2)['trust']['form']['tag'], 'disagree')
+        result = run(evidence(), answer(), tags={'roof:shape': 'gabled'})
+        self.assertEqual(self._vol(result, 2)['trust']['form']['tag'], 'agree')
+        self.assertEqual(self._vol(result, 1)['trust']['form']['tag'], 'silent')
+
     def test_single_source_is_named(self):
         rear = self._vol(run(evidence(), None), 3)['trust']
         self.assertIn('height rests on lidar alone', rear['flags'])
@@ -266,6 +273,16 @@ class ProposalTest(unittest.TestCase):
         store = spec['volumes']['a'][0]
         self.assertEqual((store['kind'], store['storeys']), ('flat', 1))
         self.assertIn('Read step proposal', spec['notes'])
+
+    def test_a_region_without_mass_columns_joins_its_neighbour(self):
+        result = run(evidence(), answer())
+        frame = R.PlotFrame(**result['frame'])
+        mass = {c for c in CELLS if frame.plot(c[0] + 0.5, c[1] + 0.5)[0] >= -8.0}   # front flat unreadable
+        spec = R.proposal(result, name='unit', way_id='99', front='W', wall='bricks', mass_cells=mass)
+        self.assertEqual(len(spec['zones']['a']['regions']), 2)
+        self.assertNotIn('finish', spec['roofs']['a'])      # the flat front lost its own region
+        full = R.proposal(result, name='unit', way_id='99', front='W', wall='bricks', mass_cells=set(CELLS))
+        self.assertEqual(len(full['zones']['a']['regions']), 3)
 
     def test_an_unread_volume_beyond_the_way_is_not_proposed(self):
         ev = evidence(canopy(shop, 9.75, 16, t_reach=1.0), leaves(9.75, 16, t_reach=1.0))

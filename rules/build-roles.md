@@ -63,6 +63,8 @@ hand-off. Fold these into that pass — they are not a separate step:
   lists every exposed face/storey glazed share and marks missing faces
   `no evidence read` ([feature-builds.md](feature-builds.md)).
 - Roof form, colour and material — check the lidar profile before calling a roof flat
+  (`scripts/roof_read.py` segments a building's roof volumes from lidar, asks the designer one image
+  question and records per-source trust flags; see [feature-builds.md](feature-builds.md))
 - Industrial chimneys: photo/spec diameter, taper and height; hollow open stacks are weak lidar targets. Use lidar only as a rough check, never to flatten them.
 - Edge on the roof? what block? outer only or steps too?
   Default **none**: leave `roofs[label].edge` out unless the aerial (or a

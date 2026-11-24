@@ -68,9 +68,13 @@ SHADOW_RATIO = 0.6      # mean luminance below this share of the local roofs is 
 FLAT_SPREAD_M = 1.5     # a flat volume whose lidar spreads more than this is not read as a roof
 ROW_AGREE_M = 1.0       # the two neighbours must agree this well to speak
 ROW_MATCH_M = 1.5       # a volume's top within this of the row agrees with it
+MIN_REGION_COLUMNS = 3  # a proposed zone region needs this many footprint columns with lidar mass
 FORMS = ('flat', 'gable_across', 'gable_along', 'mono_along', 'mono_across', 'hip')
 FRONTS = ('bay', 'dormer', 'none')
 PITCHED = frozenset(FORMS) - {'flat'}
+# Map ``roof:shape`` tags to the form family they name (gable, hip, mono, flat).
+TAG_FORMS = {'flat': 'flat', 'gabled': 'gable', 'hipped': 'hip', 'half-hipped': 'hip', 'pyramidal': 'hip',
+             'skillion': 'mono', 'lean_to': 'mono'}
 # A roof type from the measured aerial colour class, when the model is unsure of the type.
 MEASURED_TYPES = {'pitched': {'warm': 'red_clay_tile', 'grey': 'grey_tile', 'green': 'weathered_copper'},
                   'flat': {'warm': 'flat_deck', 'grey': 'flat_deck', 'green': 'flat_deck'}}
@@ -674,13 +678,15 @@ def _type_class(type_name: str | None) -> str | None:
 
 
 def trust(vol: Volume, label: dict | None, *, defaults: dict, tag_levels: int | None = None,
-          main: bool = False, front_label: str | None = None, body: dict | None = None) -> dict:
+          tag_shape: str | None = None, main: bool = False, front_label: str | None = None,
+          body: dict | None = None) -> dict:
     """Per-attribute choice for one volume and each source's status against it.
 
     @param vol: a measured volume
     @param label: the model's answer for this volume, or None (not asked)
     @param defaults: class defaults ``{form, roof: {flat, pitched}, storeys}`` (roof types)
     @param tag_levels: ``building:levels`` (checked on the main volume only)
+    @param tag_shape: ``roof:shape`` (checked on the main volume only, by form family)
     @param main: True for the building's main volume (tallest inside the way)
     @param front_label: the model's front answer, used on the front volume
     @param body: the class's terrace-body recipe for the front rule (``attic_rise_m``), or None
@@ -741,6 +747,8 @@ def trust(vol: Volume, label: dict | None, *, defaults: dict, tag_levels: int | 
     same = lambda a, b: a == b  # noqa: E731
     out['form'] = {'value': form, 'rests_on': rests, 'lidar': _status(lidar_f, form, same),
                    'image': _status(image_f, form, same), 'row': _status(row_f, form, same)}
+    tag_f = TAG_FORMS.get(str(tag_shape or '').strip()) if main else None
+    out['form']['tag'] = _status(tag_f, form.split('_')[0], same)     # roof:shape names the family only
 
     # colour: the image (the model's roof type, checked against the measured colour; the measured colour
     # alone when the model is unsure), else the class default for the chosen form
@@ -817,15 +825,17 @@ def read(ev: Evidence, answer: dict | None, *, defaults: dict, tags: dict | None
         levels = int(str((tags or {}).get('building:levels', '')).strip())
     except ValueError:
         pass
+    shape = (tags or {}).get('roof:shape')
     rows = []
     front_vol = None
     for vol in vols:
         label = labels.get(vol.id)
-        record = trust(vol, label, defaults=defaults, tag_levels=levels, main=vol is main, body=body)
+        record = trust(vol, label, defaults=defaults, tag_levels=levels, tag_shape=shape, main=vol is main,
+                       body=body)
         if front_vol is None and not vol.beyond and record['form']['value'] in PITCHED:
             front_vol = vol.id
-            record = trust(vol, label, defaults=defaults, tag_levels=levels, main=vol is main, body=body,
-                           front_label=(answer or {}).get('front', 'unsure'))
+            record = trust(vol, label, defaults=defaults, tag_levels=levels, tag_shape=shape, main=vol is main,
+                           body=body, front_label=(answer or {}).get('front', 'unsure'))
         data = asdict(vol)
         data.pop('row')
         rows.append({**data, 'beyond': vol.beyond, 'row': vol.row, 'label': label, 'trust': record})
@@ -838,7 +848,8 @@ def _family(type_name: str) -> str:
     return roof_type_blocks(type_name)['family']
 
 
-def proposal(result: dict, *, name: str, way_id: str, front: str | None, wall: str) -> dict:
+def proposal(result: dict, *, name: str, way_id: str, front: str | None, wall: str,
+             mass_cells: set | None = None) -> dict:
     """A ``feature_build`` spec proposal from a read (one label ``a``).
 
     @param result: :func:`read` output
@@ -846,6 +857,8 @@ def proposal(result: dict, *, name: str, way_id: str, front: str | None, wall: s
     @param way_id: the map way
     @param front: cardinal face onto the street, or None
     @param wall: wall material
+    @param mass_cells: footprint columns with lidar mass; a zone region over fewer than
+        ``MIN_REGION_COLUMNS`` of them joins its neighbour (the builder refuses an empty region)
     @returns: the spec dict
     """
     frame = PlotFrame(**result['frame'])
@@ -870,15 +883,17 @@ def proposal(result: dict, *, name: str, way_id: str, front: str | None, wall: s
     }
     t0, t1 = frame.t_min - 1.0, frame.t_max + 1.0
     if pitched:
-        regions = []
+        spans = []
         for k, vol in enumerate(inside):
             s0 = frame.s_min - 1.0 if k == 0 else vol['s0']
             s1 = max(vol['s1'], frame.s_max + 1.0) if k == len(inside) - 1 else vol['s1']
-            regions.append(frame.polygon(s0, s1, t0, t1))
+            spans.append([s0, s1, {vol['trust']['form']['value']}])
+        spans = _joined_spans(spans, frame, mass_cells)
+        regions = [frame.polygon(s0, s1, t0, t1) for s0, s1, _forms in spans]
         spec['zones'] = {'a': {'from': 'lidar', 'levels': 'auto', 'bucket': 4, 'axis_deg': 'auto',
                                'regions': regions, 'surface': 'fit'}}
         roofs['stairs'] = 'slope'
-        if any(f == 'flat' for f in forms):
+        if any(f == {'flat'} for _s0, _s1, f in spans):    # a flat volume that kept its own region
             roofs['finish'] = 'carpet'
     extra = []
     for vol in beyond:
@@ -898,6 +913,27 @@ def proposal(result: dict, *, name: str, way_id: str, front: str | None, wall: s
         spec['volumes'] = {'a': extra}
     spec['notes'] = note(result)
     return spec
+
+
+def _joined_spans(spans: list, frame: PlotFrame, mass_cells: set | None) -> list:
+    """Region spans ``[s0, s1, forms]`` along the plot, each joined to its neighbour until it holds enough
+    mass columns (the joined span carries both volumes' forms)."""
+    if not mass_cells:
+        return spans
+    along = [float(frame.plot(x + 0.5, z + 0.5)[0]) for x, z in mass_cells]
+    count = lambda sp: sum(1 for v in along if sp[0] <= v < sp[1])  # noqa: E731
+    spans = [[sp[0], sp[1], set(sp[2])] for sp in spans]
+    k = 0
+    while len(spans) > 1 and k < len(spans):
+        if count(spans[k]) >= MIN_REGION_COLUMNS:
+            k += 1
+            continue
+        j = k + 1 if k + 1 < len(spans) else k - 1
+        spans[j][0], spans[j][1] = min(spans[j][0], spans[k][0]), max(spans[j][1], spans[k][1])
+        spans[j][2] = spans[j][2] | spans[k][2]
+        del spans[k]
+        k = 0
+    return spans
 
 
 def note(result: dict) -> str:
@@ -983,6 +1019,25 @@ def load(way_id: str) -> dict:
         img = flat.reshape(img.shape)
     ev = Evidence(frame, s, t, h, band, columns, img, img_s, img_t)
     return {'evidence': ev, 'tags': me['tags'], 'front': front, 'cells': cells}
+
+
+def roof_columns(cells: set, columns: dict) -> set:
+    """The footprint columns the builder treats as roof: squared footprint with lidar mass, small pieces
+    dropped (the same helpers ``feature_build`` zones use)."""
+    import feature_roof_zones as FZ
+    xs_ = [x for x, _z in cells]
+    zs_ = [z for _x, z in cells]
+    x0, z0 = min(xs_) - 2, min(zs_) - 2
+    width, depth = max(xs_) - x0 + 3, max(zs_) - z0 + 3
+    mask = FZ.square_footprint(FZ.cells_to_mask(cells, x0, z0, width, depth))
+    for z in range(depth):
+        for x in range(width):
+            col = columns.get((x0 + x, z0 + z))
+            if mask[z, x] and not (col is not None and np.isfinite(col[2]) and col[2] >= MASS_M):
+                mask[z, x] = False
+    gz, gx = np.mgrid[z0:z0 + depth, x0:x0 + width]
+    mask, _dropped = FZ.drop_small_footprint_pieces(mask, gx, gz)
+    return FZ.mask_to_cells(mask, x0, z0)
 
 
 def crop_png(ev: Evidence, vols: list[Volume], path: Path) -> None:
@@ -1073,8 +1128,9 @@ def main(argv=None) -> int:
     result = read(ev, answer, defaults=defaults, tags=loaded['tags'], body=body)
     result.update(way=str(args.way), decision=call, answer=answer, defaults=defaults)
     (out / f'{stem}.json').write_text(json.dumps(result, indent=2, default=float) + '\n')
+    mass = roof_columns(loaded['cells'], ev.columns)
     spec = proposal(result, name=args.name or f'read_{args.way}', way_id=args.way,
-                    front=loaded['front'], wall=wall)
+                    front=loaded['front'], wall=wall, mass_cells=mass)
     (out / f'{stem}-proposal.json').write_text(json.dumps(spec, indent=2) + '\n')
     print(summary(result))
     print(f'wrote {crop.name}, {stem}-prompt.txt, {stem}.json, {stem}-proposal.json under {out}')
