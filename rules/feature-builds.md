@@ -169,6 +169,14 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   }
   ```
 
+  Every wall sign in the plan must stand on a full solid block that the finished plan
+  keeps (checked last, #435): a sign over air, glass, a trapdoor, a slab or any other
+  non-full face is refused and named in the dry run (`wall sign "..." at (x, y, z)
+  refused: back block ...`), with a `wall signs: N planned on solid support, M refused`
+  count. Attachables are written after the solid blocks, so support lands first. A shop
+  whose `facade_plan` rows glaze its street face is not dressed, so it gets no name sign;
+  the dry run says so, and a `sign` detail adds one.
+
 - optional `details` — per-label roof and facade greeblies from the aerial
   sheet and street photos (`rules/building-review.md`). Each row is
   `{kind, at: [x,y,z], size: [sx,sy,sz], source, face?}`:

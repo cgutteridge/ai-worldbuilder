@@ -942,6 +942,10 @@ class FacadePlanning:
             if self._shop_dressing(f) is None:
                 if not has_faces:
                     print(f'{f.no} street face shop: shell too low for a fascia band; left the window grid')
+                elif name:
+                    print(
+                        f'{f.no} name sign "{name}" not placed: facade rows '
+                        'glaze the street face; add a sign detail to give it one')
                 return
             self._dress_shop_front(f, fronts, rule, name)
             print(
