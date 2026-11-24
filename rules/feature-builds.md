@@ -475,7 +475,10 @@ copied from a neighbour or the district default where the read has an answer.
 
 ### Fascia colour read from street-level imagery (#475)
 
-`row_read.STEPS` holds a second step, `fascia_read.fascia_step` (`lib/builds/fascia_read.py`). For each read
+`fascia_read.fascia_step` (`lib/builds/fascia_read.py`) is an **opt-in** row-read step: `row_read.STEPS` holds only
+the roof step, so generation never fetches street-level frames unless `typology_spec --fascia-read` is given (it
+adds the step via `default_reader(fascia=True)`). The flag needs the owner's OK first, per the street-level
+provider licence (few requests, no loops). With it, for each read
 shop it finds street-level frames of the shop front, asks the designer **one** question on a sheet of up to
 three crops (cache key `fascia`), maps the answer to the nearest `config/sign-options.json` fascia colour
 and writes `record['patch']['signs'] = {'fascia_colour': <name>}` (the generator keys it by label, so it wins

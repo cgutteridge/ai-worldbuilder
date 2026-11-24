@@ -244,11 +244,11 @@ def make_step(sources=None, out_dir: Path | None = None):
             record['unsure'].append('fascia colour: no street front to look from: class default fascia')
             return
         frames_dir = out_dir
-        if frames_dir is None:
-            from script_env import ROOT
-            frames_dir = Path(ROOT) / 'instance' / 'fascia-frames'
         frames = []
         for source in sources if sources is not None else default_sources():
+            if frames_dir is None:  # resolved only when a source is about to run
+                from script_env import ROOT
+                frames_dir = Path(ROOT) / 'instance' / 'fascia-frames'
             try:
                 frames = source(tgt, frames_dir)
             except Exception as exc:  # noqa: BLE001 - a provider failing means the next one, then the default

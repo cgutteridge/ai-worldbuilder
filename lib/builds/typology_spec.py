@@ -262,6 +262,9 @@ def main(argv=None) -> int:
                              'cached); rows then use the class and district defaults')
     parser.add_argument('--read-cache', type=Path,
                         help='directory for cached read asks (default: the world instance/row-read-cache)')
+    parser.add_argument('--fascia-read', action='store_true',
+                        help='also read each shop fascia colour from street-level imagery (fetches up to two frames '
+                             'per shop from the street-level providers: needs the owner OK per the provider licence)')
     args = parser.parse_args(argv)
     if (args.ways is None) == (args.bbox is None):
         parser.error('pass exactly one of --ways or --bbox')
@@ -274,7 +277,8 @@ def main(argv=None) -> int:
     reader = None
     if not args.no_read:
         import row_read
-        reader = row_read.default_reader((buildings, streets), cache_dir=args.read_cache)
+        reader = row_read.default_reader((buildings, streets), cache_dir=args.read_cache,
+                                        fascia=args.fascia_read)
     report = generate(buildings, streets, reader)
     if args.write:
         from script_env import ROOT

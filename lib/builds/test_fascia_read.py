@@ -16,6 +16,17 @@ from test_typology_spec import STREET, building, rect
 import test_roof_read as TR
 
 
+def setUpModule():
+    # no test may reach a street-level provider: the default source list is empty unless a test passes doubles
+    global _sources
+    _sources = FR.default_sources
+    FR.default_sources = lambda: []
+
+
+def tearDownModule():
+    FR.default_sources = _sources
+
+
 def answer(colour='black', **extra):
     return json.dumps({'visible': True, 'fascia_colour': colour, 'rgb': [20, 20, 20], 'confident': True,
                        'frames': ['kartaview-1'], 'why': 'black board', **extra})
@@ -137,6 +148,31 @@ class Frames(unittest.TestCase):
         self.assertGreater(tgt['half_width'], 3.0)
 
 
+class OptIn(unittest.TestCase):
+    def test_the_default_steps_have_no_fascia_step_and_no_source_is_called(self):
+        from unittest import mock
+        self.assertNotIn(FR.fascia_step, RW.STEPS)
+        calls = []
+        with mock.patch.object(FR, 'default_sources', lambda: [lambda *a: calls.append(a) or []]):
+            record = RW.read_building('1', 'bricks', loader=lambda _w: loaded(TR.shop), role_id=ROLE,
+                                      runner=Runner(pitched_text()))
+        self.assertEqual(calls, [])
+        self.assertNotIn('fascia_colour', record['fields'])
+
+    def test_default_reader_adds_the_fascia_step_only_when_asked(self):
+        from unittest import mock
+        for flag, expected in ((False, None), (True, [RW.roof_step, FR.fascia_step])):
+            with mock.patch.object(RW, 'make_reader') as made:
+                RW.default_reader(([], []), role_id=ROLE, cache_dir='x', fascia=flag)
+            self.assertEqual(made.call_args.kwargs['steps'], expected)
+
+    def test_with_the_fascia_step_the_source_double_runs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            record, runner = read(FR.make_step([frame_source(tmp)], Path(tmp) / 'f'), answer(), tmp)
+        self.assertEqual(record['patch'], {'signs': {'fascia_colour': 'black'}})
+        self.assertEqual(runner.calls, 1)
+
+
 class Generator(unittest.TestCase):
     def test_the_patch_wins_over_the_class_palette_for_that_shop_only(self):
         rows = [building(1, rect(0, 0, 8, 7), dict(RETAIL), lidar=4.0),
@@ -145,10 +181,8 @@ class Generator(unittest.TestCase):
         colours = iter([answer(), answer('red', rgb=[150, 50, 50])])
 
         def runner(cmd, stdin):
-            text = pitched_text() if len(runner.n) % 2 == 0 else next(colours)
-            runner.n.append(1)
+            text = next(colours) if 'fascia' in stdin.lower() else pitched_text()
             return Runner(text)(cmd, stdin)
-        runner.n = []
         with tempfile.TemporaryDirectory() as tmp:
             steps = [RW.roof_step, FR.make_step([frame_source(tmp)], Path(tmp) / 'f')]
             reader = RW.make_reader(loader=lambda way: evidence[way], role_id=ROLE, runner=runner, steps=steps)
