@@ -636,6 +636,8 @@ class Build(RoofZonePlanning, VolumePlanning, DoorPlanning, FacadePlanning, Deta
         b = features[0].b
         eave = b + features[0].storeys * STOREY_H
         dist = edge_distance_field(own, set(self.owner) | self.foreign | self.shared)
+        if features[0].roof.get('frame') == 'plot' and self._roof_plot_hip(features[0], own, set(dist), eave):
+            return
         half_heights = regularise_roof_half_heights(
             {c: 2 * (eave + d) for c, d in dist.items()},
         )
@@ -649,6 +651,37 @@ class Build(RoofZonePlanning, VolumePlanning, DoorPlanning, FacadePlanning, Deta
                 for yy in range(eave, y):
                     self.set(x, yy, z, self.wall)
             self._set_roof(x, y, z, st)
+
+    def _roof_plot_hip(self, f: Feature, own: set, columns: set, eave: int) -> bool:
+        """Hip designed in the plot frame for ``roofs[label].frame: "plot"`` (#463; ``roof_plot_hip``).
+
+        @param f: the roof's (first) feature
+        @param own: owned (x, z) columns of the roof
+        @param columns: footprint plus eave ring
+        @param eave: eave block Y
+        @returns: False when the footprint is not close to a rectangle (the caller builds the default hip)
+        """
+        from roof_plot_hip import design_plot_hip, exposed_backing, plot_hip_states
+        hip = design_plot_hip(own, columns, eave)
+        if hip is None:
+            self._roof_warnings.append(
+                f'{f.no} roof frame plot: footprint is not close to a rectangle; using the default hip')
+            return False
+        rm = f.roof['material']
+        states = plot_hip_states(hip, rm)
+        backing = exposed_backing(hip)
+        full = family_variants(rm)['full']
+        for (x, z), st in states.items():
+            y = roof_block_y(hip.half_heights[(x, z)])
+            if (x, z) in self.owner:
+                for yy in range(eave, y):
+                    self.set(x, yy, z, full if (x, yy, z) in backing else self.wall)
+            self._set_roof(x, y, z, st)
+        stairs = sum('_stairs[' in st for st in states.values())
+        self._roof_warnings.append(
+            f'{f.no} roof frame plot: rectangle at {hip.angle} degrees (fill {hip.fill:.2f}); '
+            f'{stairs} stair(s), every face one facing')
+        return True
 
     def roof(self):
         todo = []

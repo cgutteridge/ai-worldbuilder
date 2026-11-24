@@ -34,7 +34,7 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   `zones`, this is the facade storey grid count (openings still use
   `STOREY_H=3` from the median-ground datum)
 - `roofs` — `{label: {kind: flat|pitched, material: <slab mat>,
-  edge?: {block, where: outer|all}, flat_tol_m?: <m>, stairs?: "slope",
+  edge?: {block, where: outer|all}, flat_tol_m?: <m>, stairs?: "slope", frame?: "plot",
   finish?: "carpet"|"<dye>_carpet", zone_materials?: {<level_m_AOD>: <mat>},
   material_regions?: [{level: <m_AOD>, polygon: [[x,z], ...]}]}}`.
   Absent `edge` = no roof
@@ -289,6 +289,25 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   stairs take their shape from the stairs that stay. Off by default (existing builds and `house_build` roofs
   are unchanged). Dry run prints `<label> roof stairs slope: kept <n> stair(s) (rim .., slope ..); <m> made
   level blocks (flat layer .., step between volumes .., no fitted slope ..)`.
+
+  Optional `roofs[label].frame: "plot"` (pitched roofs without `zones[label]` only; #463): build the hip in the
+  plot's own frame, for a footprint drawn at an angle to the grid. The default hip raises each column by its
+  Chebyshev distance from the outline and faces each stair at whichever neighbour is higher, so a diagonal
+  face alternates east and north stairs (outer then inner corners) with wall showing through their open
+  quarters. With `frame: "plot"` the footprint is fitted by a rectangle in its own frame (any angle; fill at
+  least 0.75, 0.9 when square to the grid), grown by a one-block eave, and the roof is a hip on it: each column
+  belongs to the face whose eave is nearest, and each face has one stair facing, the grid direction nearest
+  its uphill side (an exact 45 degree face turns the same way round on every face, so the four faces still
+  take four facings). Heights rise half a block per block along that facing (stair, slab, stair, slab).
+  Blocks: on a whole-block height a column on the rim, or whose neighbour along its facing is higher, is a
+  stair facing that way; anything else is the level block of its height (full block, or a bottom slab on a
+  half-block height). A rim or eave-ring column on a half-block height drops half a block, so nothing outside the footprint is a
+  slab needing a block under it.
+  Wall fill that would show beside a lower roof column becomes the roof's full block. Stairs take their
+  corner shape from same-height neighbours. A footprint that is not close to a rectangle keeps the default
+  hip. Off by default (existing builds and `house_build` roofs are unchanged). Dry run prints
+  `<label> roof frame plot: rectangle at <deg> degrees (fill ..); <n> stair(s), every face one facing`, or
+  `<label> roof frame plot: footprint is not close to a rectangle; using the default hip`.
 
   Optional `roofs[label].finish` (#455): a carpet finish on flat roofs only, so a flat roof shows a
   material different from the walls without gaining height. `"carpet"` takes each column's roof material's
