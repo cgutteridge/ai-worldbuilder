@@ -129,6 +129,9 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   and omissions by reason (corner pier, incomplete frame, protected entrance, missing
   outside ground or below-ground sill). Doors/glazing cannot terminate an opening.
   Panes remain on coherent straight planes and need a frame (jamb, sill, lintel).
+  A zoned wall above a lower part of the same building (a zone step, #473) is a window
+  face too, for the rows above the lower roof (carpet included); it follows the same
+  rhythm and corner rules, and doors and the glazing-share report still see outside faces only.
   Full glass blocks need no frame: windows on a stepped face and potential extra pane
   connections use solid glass within the existing shell and skip the frame check.
   The tread corner of a one-block diagonal staircase (no neighbouring wall cell shares an

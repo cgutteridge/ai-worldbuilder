@@ -31,13 +31,16 @@ def structural(state):
                                    'lantern', 'pressure_plate', 'candle', 'banner'))
 
 
-def choose_windows(candidates, *, block, walls, exposed, outside_ground, protected=()):
+def choose_windows(candidates, *, block, walls, exposed, outside_ground, protected=(), step=None):
     """Resolve all intended openings against one shell snapshot, independently of write order.
 
     @param candidates: Window values for all faces/storeys of one mass
     @param block: finished-shell lookup (x, y, z), before any window writes
     @param walls: shell wall columns
     @param exposed: callback (column, face) for exterior geometry
+    @param step: optional callback (column, face) for a wall above a lower part of the same
+        building (#473); it counts as a face for the tread rule and, on a column with no
+        outside face, for corners. A column with one outside face keeps it as before.
     @param outside_ground: mapping exterior (x, z) to known terrain Y or None
     @param protected: door/frame positions that must remain intact
     @returns: (position-to-block writes, per-face Counter of outcomes/reasons).
@@ -56,17 +59,22 @@ def choose_windows(candidates, *, block, walls, exposed, outside_ground, protect
         for face in {v.face for v in grouped[pos]}:
             report[face][reason] += 1
 
+    step = step or (lambda c, d: False)
+
     def is_tread(c):
         """A tread corner of a diagonal staircase: no neighbouring wall cell shares any face it exposes.
 
         A sharp corner of an L-shape or setback has a straight run along at least one exposed face, so
-        it is not a tread and keeps its pier.
+        it is not a tread and keeps its pier. An outside face is compared with outside faces and a
+        zone-step face with zone-step faces, as the two are planned apart.
         """
-        for face in DIRS:
-            if not exposed(c, face):
-                continue
+        outside_faces = [d for d in DIRS if exposed(c, d)]
+        for face in outside_faces or [d for d in DIRS if step(c, d)]:
+            outside = bool(outside_faces)
             along = ((1, 0), (-1, 0)) if face in 'NS' else ((0, 1), (0, -1))
-            if any((c[0] + dx, c[1] + dz) in walls and exposed((c[0] + dx, c[1] + dz), face)
+            if any((c[0] + dx, c[1] + dz) in walls
+                   and (exposed((c[0] + dx, c[1] + dz), face) if outside
+                        else step((c[0] + dx, c[1] + dz), face) and not exposed((c[0] + dx, c[1] + dz), face))
                    for dx, dz in along):
                 return False
         return True
@@ -77,7 +85,8 @@ def choose_windows(candidates, *, block, walls, exposed, outside_ground, protect
         w = min(choices, key=lambda v: (not v.corner_evidence, v.face))
         x, y, z = pos
         c = (x, z)
-        corner = sum(exposed(c, d) for d in DIRS) > 1
+        outside = sum(exposed(c, d) for d in DIRS)
+        corner = outside > 1 or (outside == 0 and sum(step(c, d) for d in DIRS) > 1)
         if pos in protected:
             reason = 'protected entrance'
         elif not structural(block(*pos)):

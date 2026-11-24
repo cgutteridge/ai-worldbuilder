@@ -184,3 +184,85 @@ class FacadeWindowsTest(unittest.TestCase):
             eave = plan.cells.get((x, eave_y, z), '')
             self.assertTrue(eave and 'air' not in eave.split('[')[0],
                             f'pane at {(x, y, z)} needs eave solid above, got {eave!r}')
+
+
+class StepWallWindowsTest(unittest.TestCase):
+    """Seam (#473): the wall above a lower part of the same building takes windows."""
+
+    X0, Z0 = 9, 19
+
+    def setUp(self):
+        self.cells = {(x, z) for x in range(10, 18) for z in range(20, 30)}
+
+    def build(self, high, high_y=50, low_y=45):
+        import numpy as np
+        from unittest import mock
+        import feature_roof_zones as FZ
+        dsm = np.full((12, 10), float(low_y))
+        for (x, z) in high:
+            dsm[z - self.Z0, x - self.X0] = float(high_y)
+        zone_data = {'A': {'dsm': dsm, 'ground_y': np.full((12, 10), 40),
+                           'x0': self.X0, 'z0': self.Z0}}
+        spec = {
+            'name': 'unit_step', 'ways': {'99': 'A'}, 'storeys': {'A': 3},
+            'roofs': {'A': {'kind': 'flat', 'material': 'smooth_stone'}},
+            'groups': [{'nos': ['A'], 'front': 'S', 'mode': 'each'}],
+            'modifies': [], 'floor_min': 40, 'step_max': 4, 'door_frame': True,
+            'keep_edits': False, 'wall': 'bricks', 'floor': 'smooth_stone',
+            'ledge_stair': False,
+            'zones': {'A': {'from': 'lidar', 'levels': sorted({low_y, high_y}),
+                            'bucket': 1, 'axis_deg': 0}},
+        }
+        builder = F.Build(spec, footprints={'A': self.cells}, world=_StoneWorld(), zone_data=zone_data)
+        out = io.StringIO()
+        with mock.patch.object(FZ, 'metres_aod_to_y', side_effect=lambda m: int(m)), \
+                redirect_stdout(out):
+            plan = builder.build()
+        self.out = out.getvalue()
+        return plan, builder.features[0]
+
+    @staticmethod
+    def glass(plan, cell):
+        return sorted(y for (x, y, z), st in plan.cells.items()
+                      if (x, z) == cell and 'glass' in st)
+
+    @staticmethod
+    def step_cells(f):
+        """Wall columns with a lower part of the same feature beside them and no outside face."""
+        near = ((1, 0), (-1, 0), (0, 1), (0, -1))
+        return {c for c in f.walls
+                if all((c[0] + dx, c[1] + dz) in f.cells for dx, dz in near)
+                and any(f.zone_roof[(c[0] + dx, c[1] + dz)] < f.zone_roof[c] for dx, dz in near)}
+
+    def test_straight_step_wall_gets_glass_above_the_lower_roof(self):
+        high = {(x, z) for x in range(10, 18) for z in range(20, 25)}
+        plan, f = self.build(high)
+        step = self.step_cells(f)
+        self.assertTrue(step)
+        glazed = [c for c in step if self.glass(plan, c)]
+        self.assertTrue(glazed, 'no glass on the zone step wall')
+        for c in glazed:
+            self.assertTrue(all(45 < y < 50 for y in self.glass(plan, c)), self.glass(plan, c))
+        self.assertFalse([k for k, st in plan.cells.items() if '_door[' in st and (k[0], k[2]) in step])
+
+    def test_stair_stepped_step_wall_gets_glass_above_the_lower_roof(self):
+        high = {(x, z) for x in range(10, 18) for z in range(20, 30) if x - 10 >= 2 * (z - 20)}
+        plan, f = self.build(high)
+        step = self.step_cells(f)
+        self.assertTrue(step)
+        glazed = [c for c in step if self.glass(plan, c)]
+        self.assertTrue(glazed, 'no glass on the stair-stepped wall')
+        for c in step:
+            for y in self.glass(plan, c):
+                self.assertTrue(45 < y < 50, (c, y))
+
+    def test_step_lower_than_one_window_row_gets_no_glass(self):
+        high = {(x, z) for x in range(10, 18) for z in range(20, 25)}
+        plan, f = self.build(high, high_y=47)
+        step = self.step_cells(f)
+        self.assertTrue(step)
+        self.assertEqual([c for c in step if self.glass(plan, c)], [])
+
+    def test_no_step_means_no_step_cells(self):
+        plan, f = self.build(set(), high_y=45)
+        self.assertEqual(self.step_cells(f), set())

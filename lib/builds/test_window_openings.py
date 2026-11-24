@@ -200,7 +200,7 @@ class WindowPolicyTest(unittest.TestCase):
             if kind == 'feature':
                 original_runs = b.face_runs
                 if reverse:
-                    b.face_runs = lambda f, face: list(reversed(original_runs(f, face)))
+                    b.face_runs = lambda f, face, **kw: list(reversed(original_runs(f, face, **kw)))
                 b.windows(h)
                 report = '\n'.join(b._window_lines)
             else:
@@ -337,3 +337,26 @@ class PlantStructureTest(unittest.TestCase):
             with self.subTest(state=state):
                 self.assertFalse(structural(f'minecraft:{state}'))
         self.assertTrue(structural('brown_mushroom_block'))
+
+
+class StepFaceTreadTest(unittest.TestCase):
+    """#473: a single-column tread whose two faces are zone steps keeps its glass."""
+
+    def test_two_face_step_cell_passes_the_tread_rule(self):
+        walls = {(1, 1)}
+        face = lambda c, d: c == (1, 1) and d in 'SW'
+        blocks = {(1, y, 1): 'bricks' for y in range(6)}
+        candidates = [Window((1, 4, 1), 'S', stepped=True), Window((1, 4, 1), 'W', stepped=True)]
+        writes, report = choose_windows(
+            candidates, block=lambda x, y, z: blocks.get((x, y, z), 'air'), walls=walls,
+            exposed=lambda c, d: False, step=face, outside_ground={(1, 2): 3, (0, 1): 3})
+        self.assertEqual(writes, {(1, 4, 1): 'glass'})
+        self.assertEqual(report['S'], {'solid-glass': 1})
+
+    def test_step_face_below_the_lower_roof_is_refused(self):
+        blocks = {(1, y, 1): 'bricks' for y in range(6)}
+        writes, report = choose_windows(
+            [Window((1, 3, 1), 'S')], block=lambda x, y, z: blocks.get((x, y, z), 'air'),
+            walls={(1, 1)}, exposed=lambda c, d: d == 'S', outside_ground={(1, 2): 3})
+        self.assertEqual(writes, {})
+        self.assertEqual(report['S'], {'below outside sill': 1})
