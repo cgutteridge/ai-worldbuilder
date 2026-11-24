@@ -44,16 +44,7 @@
     },
     
     
-    {
-      "id": 435,
-      "title": "Shop signs placed illegally fall off: validate support face and write order",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "From trial #257 parade snag S-106 (issue I-058, \"Shop signs missing or loose\"). The owner said some signs \"seem to have fallen off due to illegal placement\". Checked 2026-11-22 by block count only: the parade shop plans place 13 wall signs in cell 51,-37 and 13 oak wall signs stand in the world, so no sign block was dropped by count. A plan-time guard already exists in lib/builds/feature_facade.py (about lines 575 and 693: a sign is placed only where the wall block is the fascia and the outside block is air), and rows whose cell is not a wall sign are dropped at lib/builds/feature_build.py:605. NOT verified: what the owner is seeing: shops with no sign, the oak_trapdoor awnings (25 in the cell), a sign overwritten after the write, or a sign whose text did not land. Also unverified: the write order (whether McpWriter writes signs after the fills).\n\nStep 1, diagnose (read-only live check allowed): list each parade shop (51,-37 and 52,-37) with its planned sign, the block now at that position, and its text; ask the owner for one example if nothing is wrong by this check. Step 2: add a post-write validator that reads back every planned sign (block, facing, text) and reports differences, and fix the cause the diagnosis finds. Stretch (diagnosis): ask before raising model or effort. Non-builder: fixtures, no live apply. Acceptance: a stated cause with the example, the validator in tests, and the owner confirms S-106 in game after a rebuild.\n"
-    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/435-shop-sign-support"},
+    
     
     
     

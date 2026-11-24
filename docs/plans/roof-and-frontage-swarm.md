@@ -4,7 +4,17 @@ For the orchestrator of a small parallel wave. Origin: the Papa John's read-vers
 rebuild (task #447 session). Use the `parallel-task-wave` skill and `docs/agents/parallel-task-wave.md`.
 Talk to the owner by task **title** first, number second.
 
-## What is already true
+## Status (2026-11-24)
+
+All code is merged and pushed. Waves 1 to 3: #458 #436 #434 #457, #455 #456 #431 #460, #459. Parade follow-ups: #463 (rotated hip roofs, opt-in
+`roofs.frame: "plot"`), #466 (dressed shops keep upper and side windows; stepped-face window rows glaze everywhere, owner's call), #435 (sign
+support check). The Papa John's spec carries stairs slope, carpet finish, lime fascia and the bin-store volume (world commit 0851421); Chaiiwala
+(w122706795) was rebuilt live on 2026-11-24 (journal seq 2298, landed). Fixes recorded on issues I-063, I-059 and I-064 for review after the
+rebuild. Next: #461 (live parade rebuild and owner check; its notes hold the checklist). Filed follow-ups: #462 (stair rule as default, houses
+included), #465 (roof edges on West and Kiddle), #467 (reapply false alarm on a foreign in-flight journal entry). Open owner question: should
+hand-glazed shops still get a name sign?
+
+## What was true at the start
 
 - On `main` (and `origin/main`): the ridge-clip fix (`zones.levels: auto` plus `regions` no longer flattens a ridge;
   `ridge_clip_levels` in `lib/builds/feature_roof_zones.py`) and the opt-in `zones[label].surface: "fit"` key
