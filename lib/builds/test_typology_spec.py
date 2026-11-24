@@ -284,8 +284,8 @@ class TypologySpecs(unittest.TestCase):
         self.assertEqual(set(spec['signs']), {'a', 'b', 'c'})
         built, text = self.plan_parade(shops, spec)
         self.assertIn('street face shop', text)
-        self.assertTrue(any('dark_oak_wall_sign' in state for state in built.cells.values()))
-        self.assertFalse(any(state.startswith('minecraft:oak_wall_sign') for state in built.cells.values()))
+        # #470: shop fronts carry no wall sign or trapdoor awning, so the palette is only carried in the spec.
+        self.assertFalse(any('_wall_sign' in state or 'trapdoor' in state for state in built.cells.values()))
 
     def test_an_evidenced_face_switches_the_street_face_off_which_is_why_dressed_shops_get_none(self):
         shops = self.parade({'building': 'retail', 'building:levels': '3', 'name': 'Corner Shop'}, 1)

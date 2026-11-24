@@ -156,8 +156,12 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   fascia; omit it to pick the better of black and white. A low-contrast
   wood/text pair is refused at load (same catalogue gate style as roof
   materials). Class recipes and world data supply palette values (#431);
-  this key only accepts them. Both the shop and big-box name sign paths
-  honour the same keys. Example:
+  this key only accepts them. The big-box name sign path honours all of
+  these keys. A shop front (shop recipe) places no wall sign and no trapdoor
+  awning (#470, owner decision: signs fixed to buildings look bad): its two
+  rows above the glass are plain fascia in `fascia_colour`, so only that key
+  matters there; the per-kind `awning` flag in the land-use table is now
+  inert. Example:
 
   ```json
   "signs": {
@@ -173,9 +177,8 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   keeps (checked last, #435): a sign over air, glass, a trapdoor, a slab or any other
   non-full face is refused and named in the dry run (`wall sign "..." at (x, y, z)
   refused: back block ...`), with a `wall signs: N planned on solid support, M refused`
-  count. Attachables are written after the solid blocks, so support lands first. A shop
-  whose `facade_plan` rows glaze its street face is not dressed, so it gets no name sign;
-  the dry run says so, and a `sign` detail adds one.
+  count. Attachables are written after the solid blocks, so support lands first. A `sign` detail
+  still adds a wall sign to any building, shop included.
 
 - optional `details` — per-label roof and facade greeblies from the aerial
   sheet and street photos (`rules/building-review.md`). Each row is
@@ -344,7 +347,7 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   tiles or plain stone types); over anything else (air, glass, panes, fences, walls, trapdoors, signs,
   lanterns, doors, slabs, stairs, carpet) it is removed. Door clears stop under a carpeted deck row and its
   carpet. On a rule-built shopfront the
-  carpeted deck row is the band's top course: one fascia row (awning and sign row together) may be that
+  carpeted deck row is the band's top course: one fascia row (the two fascia rows together) may be that
   deck row, so a one-storey flat shop (glass 2, fascia on the deck) dresses instead of printing `shell too
   low for a fascia band`. Off by default. Dry run prints `<label> roof finish <finish>: carpet <n> cells on
   solid blocks; dropped <m> without a solid block below`.

@@ -381,7 +381,7 @@ class StreetFaceBuildTest(unittest.TestCase):
         kwargs.setdefault('storeys', 2)
         return self.build('retail', tags=tags, **kwargs)
 
-    def test_shop_front_is_glass_door_fascia_and_contrasting_sign(self):
+    def test_shop_front_is_glass_door_and_fascia_with_no_sign_or_awning(self):
         name = next(candidate for candidate in (
             'Cyan Cafe', 'Orange Cafe', 'Blue Cafe', 'A', 'B', 'C', 'D', 'E')
             if FF.fascia_colour(candidate) in FF.LIGHT_FASCIA)
@@ -400,36 +400,28 @@ class StreetFaceBuildTest(unittest.TestCase):
                 self.assertEqual(plan.cells[(jx, y, 20)], 'minecraft:bricks')
         fascia = plan.cells[(10, 54, 20)].removeprefix('minecraft:').removesuffix('_concrete')
         self.assertIn(fascia, FF.LIGHT_FASCIA)
-        self.assertEqual(len(plan.signs), 1)
-        pos, lines, colour, glow = plan.signs[0]
-        self.assertEqual(pos[1], 54)
-        # Text colour follows the oak board map colour, not the fascia band.
-        self.assertEqual(colour, FF.contrasting_sign_colour(wood='oak'))
-        self.assertIn(colour, ('black', 'white'))
-        self.assertFalse(glow)
-        self.assertTrue(all(len(line) <= 15 for line in lines))
-        self.assertIn('_concrete', plan.cells[(pos[0], pos[1], pos[2] + 1)])
-        self.assertTrue(any(
-            state.startswith('minecraft:oak_wall_sign[') for state in plan.cells.values()
-        ))
+        # #470: the awning and sign rows stay fascia; no wall sign, no trapdoor, even with a name.
+        self.assertEqual(plan.signs, [])
+        self.assertFalse(any('_sign[' in state for state in plan.cells.values()))
         self.assertFalse(any('trapdoor' in state for state in plan.cells.values()))
+        for x in range(10, 25):
+            for y in (53, 54):
+                self.assertIn('_concrete', plan.cells[(x, y, 20)], (x, y))
+            self.assertIn(plan.cells[(x, 54, 19)], ('minecraft:air', None))
         self.assertEqual(plan.cells[(24, 51, 25)], 'minecraft:bricks')
         self.assertEqual(plan.cells[(15, 51, 29)], 'minecraft:bricks')
         # The band owns the ground storey of the street face only (#466).
         self.assertIn('glass_pane', plan.cells[(12, 55, 20)])
 
-    def test_sign_options_override_wood_fascia_and_text(self):
+    def test_sign_options_still_set_the_shop_fascia_colour(self):
         spec = fixtures.build_spec(storeys=2)
         spec['signs'] = {'A': {
             'wood': 'dark_oak', 'fascia_colour': 'black', 'text_colour': 'white',
         }}
         _, plan = self._shop(shop='books', name='Tidal Vape', spec=spec)
-        self.assertEqual(len(plan.signs), 1)
-        pos, _lines, colour, glow = plan.signs[0]
-        self.assertEqual(colour, 'white')
-        self.assertFalse(glow)
-        self.assertTrue(plan.cells[pos].startswith('minecraft:dark_oak_wall_sign['))
-        self.assertEqual(plan.cells[(pos[0], pos[1], pos[2] + 1)], 'minecraft:black_concrete')
+        self.assertEqual(plan.signs, [])
+        self.assertEqual(plan.cells[(12, 54, 20)], 'minecraft:black_concrete')
+        self.assertEqual(plan.cells[(12, 53, 20)], 'minecraft:black_concrete')
 
     def test_big_box_sign_path_honours_the_same_keys(self):
         cells = {(x, z) for x in range(10, 61) for z in range(20, 61)}
@@ -463,16 +455,15 @@ class StreetFaceBuildTest(unittest.TestCase):
         self.assertTrue(glow)
         self.assertTrue(plan.cells[pos].startswith('minecraft:pale_oak_wall_sign['))
 
-    def test_food_kinds_get_a_continuous_awning_on_the_street_face_only(self):
+    def test_food_kinds_get_no_awning_on_the_street_face(self):
         for shop in ('cafe', 'restaurant', 'fast_food', 'food'):
             with self.subTest(shop=shop):
-                _, plan = self._shop(shop=shop)
-                awnings = {(x, y, z) for (x, y, z), state in plan.cells.items() if 'trapdoor' in state}
-                self.assertEqual(awnings, {(x, 53, 19) for x in range(10, 25)})
-                self.assertTrue(all('half=top' in plan.cells[pos] for pos in awnings))
-                self.assertTrue(all(y <= 53 for x, y, z in awnings))
+                _, plan = self._shop(shop=shop, tags={'name': 'Mapped Name'})
+                self.assertFalse(any('trapdoor' in state for state in plan.cells.values()))
+                self.assertEqual(plan.signs, [])
                 for x in range(10, 25):
                     self.assertIn('_concrete', plan.cells[(x, 53, 20)])
+                    self.assertIn(plan.cells[(x, 53, 19)], ('minecraft:air', None))
 
     def test_shop_front_stays_off_party_and_alley_walls(self):
         spec = fixtures.build_spec( storeys=2)
@@ -494,7 +485,7 @@ class StreetFaceBuildTest(unittest.TestCase):
         self.assertEqual(plan.cells[(24, 51, 25)], 'minecraft:bricks')
         self.assertFalse(any('trapdoor' in state for state in plan.cells.values()))
 
-    def test_angled_front_stays_stepped_with_awning_sign_and_door_on_the_wall(self):
+    def test_angled_front_stays_stepped_with_fascia_and_door_on_the_wall(self):
         cells = {(x, z) for x in range(10, 30) for z in range(10, 30) if 30 <= x + z <= 43}
         streets = [street(((0, 20), (20, 0)), highway='pedestrian')]
         _, plan = self._shop(shop='cafe', cells=cells, streets=streets)
@@ -505,18 +496,7 @@ class StreetFaceBuildTest(unittest.TestCase):
         self.assertTrue(fascia <= set(front))
         self.assertGreater(len({z for _x, z in fascia}), 1)
         self.assertGreater(len({x for x, _z in fascia}), 1)
-        awnings = [(x, y, z) for (x, y, z), state in plan.cells.items() if 'trapdoor' in state]
-        self.assertGreaterEqual(len(awnings), 3)
-        self.assertTrue(all(y <= 53 for x, y, z in awnings))
-        for x, y, z in awnings:
-            touched = [
-                (x + dx, z + dz) for dx, dz in F.N4
-                if (x + dx, z + dz) in front and (
-                    'concrete' in plan.cells.get((x + dx, y, z + dz), '')
-                    or 'bricks' in plan.cells.get((x + dx, y, z + dz), '')
-                )
-            ]
-            self.assertTrue(touched, (x, y, z))
+        self.assertFalse(any('trapdoor' in state for state in plan.cells.values()))
         doors = [(x, y, z, state) for (x, y, z), state in plan.cells.items()
                  if 'oak_door' in state and 'half=lower' in state]
         self.assertEqual(len(doors), 1)
@@ -526,12 +506,7 @@ class StreetFaceBuildTest(unittest.TestCase):
         for sx, sz in lateral:
             self.assertIn('bricks', plan.cells.get((dx + sx, dy, dz + sz), ''))
             self.assertIn('bricks', plan.cells.get((dx + sx, dy + 1, dz + sz), ''))
-        signs = [(x, y, z) for (x, y, z), state in plan.cells.items() if '_wall_sign[' in state]
-        self.assertEqual(len(signs), 1)
-        sx, sy, sz = signs[0]
-        self.assertTrue(any(
-            (sx + dx, sz + dz) in front and '_concrete' in plan.cells.get((sx + dx, sy, sz + dz), '')
-            for dx, dz in F.N4))
+        self.assertFalse(any('_wall_sign[' in state for state in plan.cells.values()))
 
     def test_a_door_on_a_recessed_column_moves_onto_the_run(self):
         cells = {(x, z) for x in range(10, 21) for z in range(20, 30)}
@@ -601,11 +576,10 @@ class StreetFaceBuildTest(unittest.TestCase):
         builder, plan = self._shop(shop='cafe', spec=spec)
         self.assertFalse(any('trapdoor' in state or 'oak_door' in state for state in plan.cells.values()))
         self.assertEqual(plan.signs, [])
-        self.assertIn('name sign "National Trade Supplies" not placed', builder.output)
 
     def test_dressed_shop_keeps_upper_storey_and_side_windows(self):
         _, plan = self._shop(shop='cafe')
-        self.assertTrue(any('trapdoor' in state for state in plan.cells.values()))
+        self.assertFalse(any('trapdoor' in state for state in plan.cells.values()))
         panes = {pos for pos, state in plan.cells.items() if 'glass_pane' in state}
         self.assertTrue(any(z == 20 and y == 55 for _x, y, z in panes), 'street face upper storey')
         self.assertTrue(any(z == 29 for _x, _y, z in panes), 'rear face')
@@ -620,8 +594,8 @@ class StreetFaceBuildTest(unittest.TestCase):
         }}}
         builder, plan = self._shop(shop='cafe', spec=spec)
         self.assertIn('street face shop:', builder.output)
-        self.assertTrue(any('trapdoor' in state for state in plan.cells.values()))
-        self.assertEqual(len(plan.signs), 1)
+        self.assertFalse(any('trapdoor' in state for state in plan.cells.values()))
+        self.assertEqual(plan.signs, [])
         doors = [p for p, state in plan.cells.items() if 'oak_door' in state and 'half=lower' in state]
         self.assertEqual(len(doors), 1)
         glass = {pos for pos, state in plan.cells.items() if 'glass' in state}
@@ -646,7 +620,7 @@ class StreetFaceBuildTest(unittest.TestCase):
 
 
     def _strip_support_late(self, replacement=None):
-        """Build a shop whose sign support is changed by a pass that runs after the street face."""
+        """Build a big box (shops carry no sign, #470) whose sign support is changed by a pass that runs after the street face."""
         original = F.Build._preserve_real_owners
 
         def late(builder):
@@ -660,10 +634,10 @@ class StreetFaceBuildTest(unittest.TestCase):
                         builder.p.cells[back] = replacement
 
         with mock.patch.object(F.Build, '_preserve_real_owners', late):
-            return self._shop(shop='cafe')
+            return self.build('retail', storeys=6)
 
     def test_wall_sign_is_planned_on_a_solid_face_and_written_after_it(self):
-        builder, plan = self._shop(shop='cafe')
+        builder, plan = self.build('retail', storeys=6)
         (pos, _lines, _colour, _glow), = plan.signs
         self.assertIn('wall signs: 1 planned on solid support, 0 refused', builder.output)
         back = (pos[0], pos[1], pos[2] + 1)
@@ -712,8 +686,7 @@ class StreetFaceBuildTest(unittest.TestCase):
         doors = [(y, z) for (_x, y, z), state in plan.cells.items()
                  if state.startswith('minecraft:oak_door') and 'half=lower' in state]
         self.assertEqual(doors, [(51, 20)])
-        (pos, _lines, _colour, _glow), = plan.signs
-        self.assertEqual((pos[1], pos[2]), (deck, 19))
+        self.assertEqual(plan.signs, [])
         self.assertIn('carpet 150 cells on solid blocks; dropped 0', builder.output)
 
 

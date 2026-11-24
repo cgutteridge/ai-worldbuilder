@@ -29,9 +29,9 @@ rule-file copy.
   - Axis-align long wall runs; square corners.
   - Square a shop row only when it lies within 15° of a cardinal axis.
     A steeper row keeps its stepped front (the Portswood Road parade sits
-    about 37° to 45° off axis). On that front the awning, the sign and the
-    door sit on each wall step, one block outward along that step's face,
-    so they still touch the wall.
+    about 37° to 45° off axis). On that front the door sits on each wall step,
+    one block outward along that step's face, so it still touches the wall
+    (shop fronts carry no awning or wall sign, #470).
   - Nudge/straighten ±1–2 blocks when street photo + aerial still agree.
   - Match party walls with the neighbour so semis meet cleanly.
   - Skip one-block map dents that make holes or knife-edge zigzags.
