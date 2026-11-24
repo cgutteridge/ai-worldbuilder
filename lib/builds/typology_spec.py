@@ -67,9 +67,6 @@ REAR_HIGHWAYS = frozenset({'service', 'track'})
 REAR_NEARER = 0.5
 # a row is spread along one axis when that spread is at least this many times the other
 ROW_AXIS_CLEAR = 2.0
-# The builder rhythm puts a pier on both ends of every straight wall run, so a run shorter than this
-# gets no windows from glazing rows. A stair-stepped front is all runs of one column.
-FACADE_MIN_RUN = 5
 PITCHED_RISE = 0.6
 FLAT_RISE = 0.0
 HOUSE_TAGS = frozenset({'house', 'residential', 'terrace', 'semidetached_house', 'detached'})
@@ -795,9 +792,10 @@ def _class_facade(ordered: list[dict], front: str | None) -> dict:
 
     A class's ``sign`` palette (wood, text colour) goes into ``signs`` for every label. Its ``facade``
     recipe becomes ``facade_plan`` only for a building the class ``street_face`` recipe does not
-    already dress (the builder drops that dressing, glass, door, fascia, sign and awning, and the storey
-    window grid, for any label with an evidenced facade face) and whose front has a straight run long
-    enough for the glazing rhythm (a stepped diagonal front would lose its grid windows and gain none).
+    already dress: a storey-1 row on a street face switches the builder's shopfront off, and the
+    generator cannot tell which faces the builder will treat as street faces (a corner shop has
+    two). A dressed shop keeps the storey window grid above its band and on its other faces (#466).
+    A stair-stepped front takes the rows too: the builder runs the rhythm along the steps.
     A class with neither key adds nothing.
     Both are defaults; a hand spec replaces a label's row.
 
@@ -815,7 +813,7 @@ def _class_facade(ordered: list[dict], front: str | None) -> dict:
             continue
         dressed = land_use.street_face_defaults(
             row['cls'], row['tags'], columns=len(row['cells']), height=row['levels'] * STOREY_M)
-        if not dressed and _straight_front_run(row['cells'], front) >= FACADE_MIN_RUN:
+        if not dressed:
             plan[row['label']] = _facade_plan(recipe, row['levels'], front)
     extra = {}
     if signs:
@@ -823,30 +821,6 @@ def _class_facade(ordered: list[dict], front: str | None) -> dict:
     if plan:
         extra['facade_plan'] = plan
     return extra
-
-
-def _straight_front_run(cells: set[tuple[int, int]], front: str) -> int:
-    """Length of the longest straight stretch of wall facing ``front``, in columns.
-
-    @param cells: footprint columns
-    @param front: ``N``/``S``/``E``/``W``
-    @returns: most columns sharing one edge line with open ground beyond them in that direction
-    """
-    dx, dz = {'N': (0, -1), 'S': (0, 1), 'E': (1, 0), 'W': (-1, 0)}[front]
-    edge = [(x, z) for x, z in cells if (x + dx, z + dz) not in cells]
-    along = 0 if front in 'NS' else 1
-    lines = defaultdict(list)
-    for cell in edge:
-        lines[cell[1 - along]].append(cell[along])
-    best = 0
-    for values in lines.values():
-        values.sort()
-        run = 1
-        for prev, nxt in zip(values, values[1:]):
-            run = run + 1 if nxt == prev + 1 else 1
-            best = max(best, run)
-        best = max(best, 1 if values else 0)
-    return best
 
 
 def _facade_plan(recipe: dict, storeys: int, front: str) -> dict:

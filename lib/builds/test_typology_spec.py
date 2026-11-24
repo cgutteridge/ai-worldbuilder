@@ -294,18 +294,18 @@ class TypologySpecs(unittest.TestCase):
         _built, text = self.plan_parade(shops, spec)
         self.assertNotIn('street face shop', text)
 
-    def test_a_stair_stepped_front_keeps_the_grid_because_glazing_rows_would_give_it_no_windows(self):
+    def test_a_stair_stepped_front_takes_the_rows_and_the_builder_glazes_its_steps(self):
         band = {(x, z) for x in range(30) for z in range(30) if 10 <= x + z <= 15}
-        self.assertEqual(T._straight_front_run(band, 'S'), 1)
-        self.assertEqual(T._straight_front_run(rect(0, 0, 6, 7), 'S'), 6)
-        self.assertEqual(T._straight_front_run(rect(0, 0, 6, 7) | rect(6, 0, 3, 4), 'S'), 6)
-        self.assertEqual(T._straight_front_run(set(), 'S'), 0)
         office = {'building': 'office', 'building:levels': '2'}
-        spec = T.generate([building(1, band, office, lidar=6.0)], STREET)['specs'][0]['spec']
-        self.assertNotIn('facade_plan', spec)
-        self.assertEqual(spec['signs'], {'a': {'wood': 'dark_oak', 'text_colour': 'white'}})
-        short = T.generate([building(1, rect(0, 0, 4, 7), office, lidar=6.0)], STREET)['specs'][0]['spec']
-        self.assertNotIn('facade_plan', short)
+        shops = [building(1, band, office, lidar=6.0)]
+        spec = T.generate(shops, STREET)['specs'][0]['spec']
+        front = spec['groups'][0]['front']
+        self.assertIn(front, spec['facade_plan']['a']['faces'])
+        built, _text = self.plan_parade(shops, spec)
+        dx, dz = {'N': (0, -1), 'S': (0, 1), 'E': (1, 0), 'W': (-1, 0)}[front]
+        stepped_glass = [(x, z) for (x, _y, z), state in built.cells.items()
+                         if 'glass' in state and (x, z) in band and (x + dx, z + dz) not in band]
+        self.assertTrue(stepped_glass)
 
     def test_only_the_undressed_label_in_a_mixed_row_gets_a_facade_plan(self):
         shops = [building(1, rect(0, 0, 6, 7), {'building': 'retail', 'building:levels': '2'}, lidar=6.0),

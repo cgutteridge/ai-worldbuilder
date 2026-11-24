@@ -145,6 +145,20 @@ class FacadeWindowsTest(unittest.TestCase):
             self.assertEqual(plan.cells[(12, 50 + dy, 25)], 'minecraft:bricks')
         self.assertTrue(any(state == 'minecraft:glass' for state in plan.cells.values()))
 
+    def test_pier_rows_glaze_a_stair_stepped_face(self):
+        """#466: one-column treads join into a flight, so the pier rhythm leaves windows."""
+        cells = {(x, z) for x in range(10, 20) for z in range(20, 25 + (x - 10))}
+        spec = self.spec({'A': {'S': [{'storey': 1, 'glazed_h': 2, 'pier': 1}]}})
+        spec['storeys'] = {'A': 1}
+        with redirect_stdout(io.StringIO()) as output:
+            plan = F.build(spec, footprints={'A': cells}, world=_StoneWorld())
+        glass = {(x, z) for (x, y, z), state in plan.cells.items() if state == 'minecraft:glass'}
+        self.assertTrue(glass, output.getvalue())
+        self.assertTrue(all(z == 24 + (x - 10) for x, z in glass), glass)
+        self.assertNotIn((10, 24), glass)
+        self.assertNotIn((19, 33), glass)
+        self.assertFalse(any('glass_pane' in state for state in plan.cells.values()))
+
     def test_one_storey_glazed_h1_gets_glass_under_eave(self):
         """#131: top-of-wall pane needs the eave as lintel; glazed_h=1 must still glaze."""
         # Rectangle so lateral neighbours are solid; only the above-check can fail.

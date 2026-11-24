@@ -335,13 +335,10 @@ Glazing and sign defaults are class data, beside `body`, in `config/land-use-cla
   Fascia colour is per building and never in the recipe.
 - Only the `feature_build` path takes them (houses and `house_build` bodies keep their windows). A class with
   neither key, or a row with no front, is generated as before; a hand spec's label row replaces the default.
-- **Gap, needs a builder change:** the builder treats any `facade_plan` face as evidence and switches off the class
-  street-face dressing (glass, door, fascia, sign, awning) and the storey window grid for that label. The
-  generator therefore emits `facade_plan` only for a building `land_use.street_face_defaults` does not dress
-  (offices, hotels, other commercial); tagged shops keep the street-face front and take only the sign palette.
-- **Second gap, also builder:** glazing rows give no windows on a stair-stepped (rotated) front. Each tread is a
-  one-column run and `facade_roles` puts a pier on both ends of every run, so the row yields no glass where the
-  unevidenced grid does. The generator emits `facade_plan` only when the front has a straight run of
-  `FACADE_MIN_RUN` (5) columns; a stepped front keeps the grid.
-  Upper-storey windows on dressed shops need the builder to let glazing rows for storeys above the shopfront coexist
-  with the street-face front.
+- **Builder gaps closed by #466:** a dressed shopfront owns only the ground storey of its street face, so a
+  tagged shop keeps the storey window grid above the band and on its other faces; facade rows on upper storeys or
+  other faces add glazing around the shopfront, and a storey-1 row on a street face switches it off. Glazing rows
+  run along a stair-stepped front, so the generator no longer needs a straight-run guard. It still emits
+  `facade_plan` only for a building `land_use.street_face_defaults` does not dress (offices, hotels, other
+  commercial): it cannot tell which faces the builder treats as street faces, and on a corner shop a storey-1
+  side row on the second street would switch the shopfront off. Tagged shops take only the sign palette.
