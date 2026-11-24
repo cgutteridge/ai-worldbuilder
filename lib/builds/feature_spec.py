@@ -168,21 +168,25 @@ def _validate_roof_stairs(path, spec: dict) -> None:
     """Validate optional ``roofs[label].stairs`` (absent = the heightfield's own stairs).
 
     ``"slope"`` keeps stairs only on the roof rim or on a real fitted slope (#434). It reads the
-    zone volumes, so it needs a pitched roof with ``zones[label]``.
+    zone volumes, so it needs a pitched roof with ``zones[label]``. ``"fit"`` designs the roof as a
+    half-block-cell volume and fits stairs, slabs and blocks to it (#472, ``feature_roof_fit``); it
+    works with or without zones but not with ``frame: "plot"`` (another hip design).
 
     @param path: spec path (for error text)
     @param spec: feature spec being loaded (zones already validated)
-    @raises SystemExit: on an unknown value, a flat roof or a label without zones
+    @raises SystemExit: on an unknown value, a flat roof, ``slope`` without zones or ``fit`` with a frame
     """
     for lab, roof in spec['roofs'].items():
         if 'stairs' not in roof:
             continue
-        if roof['stairs'] != 'slope':
-            raise SystemExit(f'{path}: roofs[{lab}].stairs must be "slope" when given')
+        if roof['stairs'] not in ('slope', 'fit'):
+            raise SystemExit(f'{path}: roofs[{lab}].stairs must be "slope" or "fit" when given')
         if roof.get('kind') != 'pitched':
             raise SystemExit(f'{path}: roofs[{lab}].stairs only applies to pitched roofs')
-        if lab not in (spec.get('zones') or {}):
+        if roof['stairs'] == 'slope' and lab not in (spec.get('zones') or {}):
             raise SystemExit(f'{path}: roofs[{lab}].stairs "slope" needs zones[{lab}] (it reads the roof volumes)')
+        if roof['stairs'] == 'fit' and 'frame' in roof:
+            raise SystemExit(f'{path}: roofs[{lab}].stairs "fit" designs its own hip; drop frame "plot"')
 
 
 def _validate_roof_frame(path, spec: dict) -> None:

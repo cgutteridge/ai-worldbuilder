@@ -1055,6 +1055,7 @@ class RoofZonePlanning:
             flat_cells = set()
             gy: dict = {}
             zl: dict = {}
+            zm: dict = {}
             for z in range(depth):
                 for x in range(width):
                     if not readable[z, x]:
@@ -1072,6 +1073,7 @@ class RoofZonePlanning:
                         roof[(wx, wz)] = eave_y
                     gy[(wx, wz)] = int(ground[z, x])
                     zl[(wx, wz)] = int(round(float(zone[z, x])))
+                    zm[(wx, wz)] = float(zone[z, x])
             if pitched:
                 half_h = snap_lone_odd_half_heights(regularise_roof_half_heights(half_h, zl), zl)
                 roof = {c: roof_block_y(h) for c, h in half_h.items()}
@@ -1090,6 +1092,7 @@ class RoofZonePlanning:
             f.zone_volume = {c: fitted[c][0] if c in fitted else f'level {zl[c]}' for c in roof}
             f.zone_ground = gy
             f.zone_level = zl
+            f.zone_level_m = zm    # metres AOD of each column's zone level (read by roofs[label].stairs "fit")
             f.roof_material_level = (
                 roof_material_levels(
                     f.roof, zl, label=f.no, known_levels=_levels,

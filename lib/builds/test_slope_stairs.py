@@ -292,7 +292,7 @@ class SlopeStairsSpecTest(unittest.TestCase):
     def test_bad_value_flat_roof_and_missing_zones_refuse(self):
         spec = self._spec()
         spec['roofs']['A']['stairs'] = 'octant'
-        with self.assertRaisesRegex(SystemExit, 'must be "slope"'):
+        with self.assertRaisesRegex(SystemExit, 'must be "slope" or "fit"'):
             self._load(spec)
         spec = self._spec()
         del spec['zones']

@@ -27,6 +27,7 @@ from feature_roof_zones import (
     roof_material_for_zone,
     roof_zone_colour_lines,
 )
+from feature_roof_fit import fit_hip, fit_roof, fit_states, zoned_top
 from feature_spec import STOREY_H, load_spec
 from feature_volumes import VolumePlanning
 from roof_geometry import (
@@ -377,7 +378,12 @@ class Build(RoofZonePlanning, VolumePlanning, DoorPlanning, FacadePlanning, Deta
         edge = f.roof.get('edge')
         datum = f.b
         pitched_states: dict[tuple[int, int], str] | None = None
-        if halfs is not None:
+        fit = getattr(f, 'zone_fit', None)
+        if fit is not None:
+            fitted_states = f.zone_fit_states
+            pitched_states = {c: fitted_states[(c[0], y, c[1])] for c, y in fit.tops.items()}
+            self._zone_pad_lines.append(fit.summary(f.no))
+        elif halfs is not None:
             mats = {
                 c: roof_material_for_zone(f.roof, material_levels.get(c)) for c in halfs
             }
@@ -438,6 +444,11 @@ class Build(RoofZonePlanning, VolumePlanning, DoorPlanning, FacadePlanning, Deta
                 self.set(x, ry + 1, z, edge['block'])
             else:
                 self.set(x, ry + 1, z, 'air')
+        if fit is not None:
+            # the roof's own faces under the tops (a stair's open half, a one-block step) take roof blocks
+            for x, y, z in sorted(fit.skin(roof)):
+                if (x, z) not in carpets:
+                    self._set_roof(x, y, z, fitted_states[(x, y, z)])
         if pitched_states is not None:
             self._back_roof_stair_edges(roof, pitched_states)
 
@@ -467,6 +478,10 @@ class Build(RoofZonePlanning, VolumePlanning, DoorPlanning, FacadePlanning, Deta
                 if c in f.zone_roof and halfs.get(c, 1) % 2 == 0
                 and (c not in surfaces or surfaces[c].kind == 'flat')
             }
+            fit = getattr(f, 'zone_fit', None)
+            if fit is not None:
+                # a fitted roof (stairs "fit") carpets only columns it tops with a full block
+                cols = {c for c in cols if fit.blocks[(c[0], fit.tops[c], c[1])] == ('full',)}
         return {
             c: carpet_block(roof_material_for_zone(f.roof, material_levels.get(c)), finish)
             for c in cols
@@ -553,6 +568,75 @@ class Build(RoofZonePlanning, VolumePlanning, DoorPlanning, FacadePlanning, Deta
         if planned:
             lines.append(f'wall signs: {planned - refused} planned on solid support, {refused} refused')
         return lines
+
+    def _fit_zoned_roofs(self) -> None:
+        """Fit zoned pitched roofs with ``roofs[label].stairs: "fit"`` to a designed volume (#472).
+
+        Runs before the shell, so the fitted top of each column (``zone_roof``, ``zone_roof_half``)
+        drives the walls, the clear height and the facade. A fit whose ridge would jog sideways
+        (``roof_lint.ridge_jogs``) is dropped with a dry-run line and the heightfield stairs stay.
+        """
+        import roof_lint
+        for f in self.features:
+            halfs = getattr(f, 'zone_roof_half', None)
+            if f.roof.get('stairs') != 'fit' or not halfs:
+                continue
+            surfaces = getattr(f, 'zone_surface', None) or {}
+            level_m = getattr(f, 'zone_level_m', None) or {}
+            base = {c: f.zone_eave[c] for c in halfs}
+            sloped = sum(1 for c in halfs if c in surfaces and surfaces[c].kind != 'flat')
+            top = zoned_top(halfs, base, getattr(f, 'zone_flat_cells', None) or set(),
+                            getattr(f, 'zone_volume', None) or {}, surfaces,
+                            {c: f.zone_eave[c] - level_m.get(c, f.zone_level[c]) for c in halfs})
+            fit = fit_roof(halfs, top, base, owned=halfs,
+                           source=f'surface: fitted slopes on {sloped} of {len(halfs)} columns, '
+                                  f'heightfield elsewhere')
+            material_levels = getattr(f, 'roof_material_level', None) or f.zone_level
+            states = fit_states(fit, lambda c: roof_material_for_zone(f.roof, material_levels.get(c)),
+                                self._roof_warnings)
+            if roof_lint.ridge_jogs(states):
+                self._zone_pad_lines.append(
+                    f'{f.no} roof stairs fit: the fitted ridge would jog; using the heightfield stairs')
+                continue
+            f.zone_fit, f.zone_fit_states = fit, states
+            f.zone_roof = dict(fit.tops)
+            f.zone_roof_half = fit.half_heights()
+
+    def _roof_pitched_fit(self, f: Feature, own: set, dist: dict, eave: int) -> bool:
+        """Unzoned pitched roof for ``roofs[label].stairs: "fit"`` (#472; ``feature_roof_fit.fit_hip``).
+
+        @param f: the roof's (first) feature
+        @param own: owned (x, z) columns of the roof
+        @param dist: edge distance per roof column (footprint plus eave ring)
+        @param eave: eave block Y
+        @returns: False when the fitted ridge would jog (the caller builds the default hip)
+        """
+        import roof_lint
+        fit = fit_hip(own, set(dist), eave)
+        rm = f.roof['material']
+        states = fit_states(fit, lambda _c: rm, self._roof_warnings)
+        if roof_lint.ridge_jogs(states):
+            self._roof_warnings.append(f'{f.no} roof stairs fit: the fitted ridge would jog; using the default hip')
+            return False
+        skin = fit.skin(dist)
+        for (x, z), y_top in fit.tops.items():
+            owned = (x, z) in self.owner
+            if owned:
+                for yy in range(eave, y_top):
+                    self.set(x, yy, z, self.wall)
+            for y in range(eave, y_top + 1):
+                pos = (x, y, z)
+                if pos not in fit.blocks or not (y == y_top or pos in skin or not owned):
+                    continue
+                if owned:
+                    self._set_roof(x, y, z, states[pos])
+                else:
+                    # an overhang never gets a wall under it; its bottom slabs still stay slabs
+                    self.set(x, y, z, states[pos])
+                    if is_bottom_half_slab(states[pos]):
+                        self.p.keep_slab_cells.add(pos)
+        self._roof_warnings.append(fit.summary(f.no))
+        return True
 
     @staticmethod
     def _slope_stair_rule(f: Feature) -> SlopeStairRule:
@@ -680,6 +764,8 @@ class Build(RoofZonePlanning, VolumePlanning, DoorPlanning, FacadePlanning, Deta
         half_heights = regularise_roof_half_heights(
             {c: 2 * (eave + d) for c, d in dist.items()},
         )
+        if features[0].roof.get('stairs') == 'fit' and self._roof_pitched_fit(features[0], own, dist, eave):
+            return
         materials = {c: rm for c in dist}
         states = pitched_roof_states(
             half_heights, materials, warnings=self._roof_warnings,
@@ -783,6 +869,7 @@ class Build(RoofZonePlanning, VolumePlanning, DoorPlanning, FacadePlanning, Deta
             if not self._feature_has_zones(f):
                 f.b = self.floor_y(f)
         self.prepare_zones()
+        self._fit_zoned_roofs()
         self.prepare_volumes()
         self.by_no_all_cells = set(self.owner) | self.foreign
         self.shared = {(x + dx, z + dz) for (x, z) in self.foreign for dx, dz in N8} - self.foreign - set(self.owner)

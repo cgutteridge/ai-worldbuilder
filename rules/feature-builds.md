@@ -34,7 +34,7 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   `zones`, this is the facade storey grid count (openings still use
   `STOREY_H=3` from the median-ground datum)
 - `roofs` — `{label: {kind: flat|pitched, material: <slab mat>,
-  edge?: {block, where: outer|all}, flat_tol_m?: <m>, stairs?: "slope", frame?: "plot",
+  edge?: {block, where: outer|all}, flat_tol_m?: <m>, stairs?: "slope"|"fit", frame?: "plot",
   finish?: "carpet"|"<dye>_carpet", zone_materials?: {<level_m_AOD>: <mat>},
   material_regions?: [{level: <m_AOD>, polygon: [[x,z], ...]}]}}`.
   Absent `edge` = no roof
@@ -304,6 +304,29 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   stairs take their shape from the stairs that stay. Off by default (existing builds and `house_build` roofs
   are unchanged). Dry run prints `<label> roof stairs slope: kept <n> stair(s) (rim .., slope ..); <m> made
   level blocks (flat layer .., step between volumes .., no fitted slope ..)`.
+
+  Optional `roofs[label].stairs: "fit"` (pitched roofs, with or without `zones[label]`; #472): design the
+  roof as a half-block-cell volume and fit blocks to it, the octant fit house roofs use (`roof_fit: "octant"`,
+  #415). Each block is matched to air, a full block, a bottom slab or a bottom stair (with the corner shape
+  its stair neighbours give it) by the half-block cells it gets wrong, so stairs come only where the surface
+  climbs across a block (a slope, or a layer's edge) and level blocks fill flat layers and one-block steps.
+  The surface: a fitted plane or gable (`zones[label].surface: "fit"`) where there is one, in block units,
+  not clipped to the next zone level and not flattened by `flat_tol_m` (lidar is a guide; where two sloped
+  volumes meet, the column beside the other volume takes the higher surface, so a wing runs into the main
+  roof); a flat layer at its built level; any other zoned column the built heightfield, interpolated within
+  its roof volume so a step between volumes stays a step. Without zones the roof is a hip at 1 block per
+  block: on the footprint's own rectangle when the rectangle follows the outline (as house roofs), else
+  rising from every edge of the outline (an L, a rhombus); the outer overhang ring holds one layer at the
+  eave. Rules: no top slab is ever placed (it would sit over air); a stair faces only a way the surface
+  rises across its block, never off the roof; an owned column's first layer is never air; a slot one or two
+  quarters wide between stairs (a gap where they meet) is filled by re-picking or raising the blocks
+  around it. Blocks under a column's top that the roof shows (through a stair's open half, or over a
+  one-block step) are roof blocks; gable ends and taller steps stay wall. The fitted top replaces
+  `zone_roof` before the walls are planned, so walls, clear height and carpets follow it; a carpet finish
+  only lands on a full top block. A fit whose ridge would jog falls back to the default stairs with a
+  dry-run line. Not with `frame: "plot"`. Off by default (existing builds and `house_build` roofs are
+  unchanged). Dry run prints `<label> roof stairs fit: <surface>; top blocks: <n> stair(s), <m> bottom
+  slab(s), <k> full; <c> of <t> half-block cells missed (<p>%)`.
 
   Optional `roofs[label].frame: "plot"` (pitched roofs without `zones[label]` only; #463): build the hip in the
   plot's own frame, for a footprint drawn at an angle to the grid. The default hip raises each column by its
