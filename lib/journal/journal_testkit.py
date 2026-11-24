@@ -380,6 +380,14 @@ class LiveApplyCase(unittest.TestCase):
             # Existing block-safety fixtures explicitly opt out of provider readiness.
             # Readiness integration tests replace this with a synthetic guarded policy.
             mock.patch('readiness_evidence.enforce_live', lambda reg, build, touched: {}),
+            # Feature dry-run survey (task 479) is the same opt-out: these fixtures
+            # exercise apply/clash/mask behaviour, not evidence preparation.
+            mock.patch('readiness_evidence.survey_feature_dry',
+                       lambda reg, build, touched, policy=None: {
+                           'plan': build.plan, 'primary': '0,0', 'ready': True,
+                           'lock': {'state': 'free', 'owner': None, 'task': None,
+                                    'claimed_at': None, 'gap': None, 'clear': None},
+                           'cells': [], 'gaps': [], 'feature_evidence': None}),
             mock.patch('mc_paced.Paced', FakePaced),
             mock.patch('osm_footprints.guard', lambda cells: {'outside': {}, 'blind': []}),
             mock.patch('roof_lint.ridge_jogs', lambda cells: []),

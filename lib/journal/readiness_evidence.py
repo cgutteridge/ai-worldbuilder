@@ -338,3 +338,22 @@ def require_feature_ready(plan):
     if not cells:
         raise SystemExit(f'needs-prep: feature {plan} has no cell plan; prepare its named cell first')
     require_ready(cells, 'feature', redoing=(plan,))
+
+
+def survey_feature_dry(registry, build, touched, *, policy=None):
+    """Read-only all-gaps readiness survey for a feature dry-run (task 479).
+
+    Does not claim or refresh the site lock and does not write journal notes.
+
+    @param registry: cell journal (view is enough)
+    @param build: the ``Build`` the dry-run would apply
+    @param touched: cells the footprint covers
+    @param policy: optional ``ReadinessPolicy`` (tests inject a synthetic one)
+    @returns: survey dict from :meth:`ReadinessPolicy.survey_feature`
+    """
+    from cell_readiness import ReadinessPolicy
+    if policy is None:
+        policy = policy_for(registry)
+    elif not isinstance(policy, ReadinessPolicy):
+        raise TypeError('policy must be a ReadinessPolicy')
+    return policy.survey_feature(build, touched)

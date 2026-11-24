@@ -101,3 +101,25 @@ remain in the orchestrator skill.
 
 No queue speed improvement is claimed; the regression guarantee is zero candidate
 generation on unchanged validated complete cells.
+
+## Feature dry-run: every readiness gap at once
+
+A feature dry-run (`site_kit.apply(..., dry=True)` for a feature pass, including
+`scripts/railway_build.py` without `--apply`) surveys every cell the footprint
+touches before the expensive plan scans. For each cell it reports:
+
+- ghost ground (`present` when ground is `ghost` or `generated`, else `missing`);
+- evidence the feature needs (`FEATURE_EVIDENCE` in `cell_readiness.py`: railway needs
+  map and lidar only; other features also need aerial), each as `present`, `missing`
+  or `waived`, plus whether validation is current;
+- journal state for the feature on that cell (`plan` planned/built/in-progress/absent,
+  `apply` begun/landed/mismatched/none, and the recover command when an unfinished
+  apply is left);
+- site lock status (free, held by you, stale, or held by another owner).
+
+It ends with one `ready` / `not ready` verdict and lists every gap with its `clear:`
+command (for example scoped
+`prepare --cell TX,TZ --apply --evidence-only --feature F`, or
+`site_recover.py recover`). The survey is read-only: no journal writes and no lock
+heartbeat refresh. The dry-run still prints the plan preview afterwards; fix every
+gap before `--apply` so a slow live apply is not refused one gap at a time.

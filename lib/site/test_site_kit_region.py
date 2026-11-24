@@ -124,13 +124,19 @@ class TestApplyRegionGate(unittest.TestCase):
     def test_dry_apply_skips_region_match_gate(self):
         plan = site_kit.Plan('gate-dry')
         plan.set(0, 64, 0, 'stone')
+        ready = {'plan': plan.name, 'primary': '0,0', 'ready': True,
+                 'lock': {'state': 'free', 'owner': None, 'task': None,
+                          'claimed_at': None, 'gap': None, 'clear': None},
+                 'cells': [], 'gaps': [], 'feature_evidence': None}
         with mock.patch.object(
             site_kit, 'ensure_region_matches_open_world'
         ) as gate, mock.patch.dict('os.environ', {'AI_WORLDBUILDER_REGISTRY_ROOT': self.tmp}), mock.patch(
             'osm_footprints.guard', return_value={'outside': {}, 'blind': []}
         ), mock.patch.object(site_kit, 'door_frame_issues', return_value=[]), mock.patch(
             'roof_lint.ridge_jogs', return_value=[]
-        ), mock.patch.object(site_kit.World, 'block', return_value='minecraft:stone'):
+        ), mock.patch.object(site_kit.World, 'block', return_value='minecraft:stone'), mock.patch(
+            'readiness_evidence.survey_feature_dry', return_value=ready
+        ), mock.patch('cell_readiness.format_feature_dry_readiness', return_value='ready'):
             site_kit.apply(plan, dry=True)
         gate.assert_not_called()
 
