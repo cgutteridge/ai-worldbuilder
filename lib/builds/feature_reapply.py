@@ -168,12 +168,26 @@ def main(argv=None) -> int:
             before_seq = max((e.seq for e in registry.entries()), default=0)
             subprocess.run(cmd + ['--apply'], cwd=TOOL_ROOT, check=True)
             entries = registry.entries()
-            if any(e.status == 'begun' for e in entries):
+            # Only this feature, this run's owner, and seqs the rebuild itself wrote.
+            # Another session's begun entry (a different plan, owner, or an older seq)
+            # is information: it must not fail a rebuild that landed cleanly (#467).
+            run_owner = os.environ.get('SITE_OWNER') or args.owner
+            ours = [e for e in entries
+                    if e.status == 'begun' and e.plan == args.feature
+                    and e.owner == run_owner and e.seq > before_seq]
+            if ours:
                 raise RuntimeError('builder left an in-flight journal entry')
             builds = [e for e in entries if e.seq > before_seq and e.plan == args.feature
                       and e.kind == 'build' and e.pass_ == 'feature']
             if not builds or any(e.status != 'landed' or e.undone or e.mismatches for e in builds):
                 raise RuntimeError('builder did not land a new feature entry with zero mismatches')
+            for e in entries:
+                if e.status != 'begun':
+                    continue
+                print(f'reapply {args.feature}: another session has an in-flight journal entry '
+                      f'(cell {e.cell[0]},{e.cell[1]} stage {e.pass_} plan {e.plan} '
+                      f'owner {e.owner} since {e.ts}); this rebuild is unaffected',
+                      file=sys.stderr)
         return 0
     except (OSError, RuntimeError, subprocess.CalledProcessError, SystemExit, KeyboardInterrupt) as exc:
         if undone:

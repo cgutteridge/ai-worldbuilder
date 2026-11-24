@@ -470,3 +470,60 @@ class TestLockLapseBetweenUndoAndRebuild(unittest.TestCase):
         self.assertIn('registry readiness gate (every touched cell', err.getvalue())
         self.assertIn('51,-36: feature plans: 2 eligible groups unaccounted', err.getvalue())
         self.assertIn('No undo attempted', err.getvalue())
+
+
+class TestForeignInFlight(unittest.TestCase):
+    """#467: another session's begun entry is not this rebuild's failure."""
+
+    def test_foreign_in_flight_entry_does_not_fail_a_clean_rebuild(self):
+        import cellmath
+        from cell_journal import Build, Undo
+        with JournalWorld() as jw:
+            path = world_root() / 'site/builds/shop.json'
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({
+                'name': 'shop', 'ways': {'1': 'A'}, 'storeys': {'A': 1},
+                'roofs': {'A': {'kind': 'flat', 'material': 'smooth_stone'}},
+                'groups': [{'nos': ['A'], 'front': 'N'}]}))
+            cells = {(1, 60, 1): 'minecraft:stone'}
+            jw.build('shop', 'feature', cells, meta={'builder': {'kind': 'spec', 'path': str(path)}})
+            # Another cell: a begun entry on the shop's cell would refuse the rebuild.
+            foreign_x = 1 + cellmath.cell_size()
+            with mock.patch.dict(reapply_feature.os.environ, {'SITE_OWNER': 'claude'}):
+                jw.reg.begin(Build('railway_54_m34', 'feature',
+                                   {(foreign_x, 60, 1): 'minecraft:oak_planks'}))
+
+            def process(cmd, **kwargs):
+                if '--apply' not in cmd:
+                    return
+                if cmd[1].endswith('element_undo.py'):
+                    jw.reg.change(Undo('shop'), jw.apply)
+                else:
+                    ticket = jw.reg.begin(Build('shop', 'feature', cells))
+                    jw.apply(ticket.writes)
+                    ticket.finish(jw.blocks.read_many(cells))
+
+            err = io.StringIO()
+            with mock.patch.object(reapply_feature, 'activate_world_from_args'), \
+                    mock.patch('site_lock.check'), \
+                    mock.patch('world_discovery.require_running_world'), \
+                    mock.patch('readiness_evidence.require_feature_ready'), \
+                    mock.patch('element_undo.require_rebuild_ready'), \
+                    mock.patch('site_lock.hold', return_value='held'), \
+                    mock.patch.object(reapply_feature.subprocess, 'run', side_effect=process), \
+                    redirect_stderr(err):
+                code = reapply_feature.main(['--world', 'unit-test', 'shop', '--apply', '--locked',
+                                             '--owner', 'reapply-1'])
+            message = err.getvalue()
+            self.assertEqual(code, 0, message)
+            self.assertIn('another session has an in-flight journal entry', message)
+            self.assertIn('stage feature plan railway_54_m34 owner claude since ', message)
+            self.assertIn('this rebuild is unaffected', message)
+            self.assertNotIn('stopped during rebuild', message)
+            self.assertNotIn('builder left an in-flight', message)
+            flying = [e for e in jw.reg.entries() if e.status == 'begun']
+            self.assertEqual([e.plan for e in flying], ['railway_54_m34'])
+            landed = [e for e in jw.reg.entries()
+                      if e.plan == 'shop' and e.kind == 'build' and not e.undone]
+            self.assertTrue(landed)
+            self.assertTrue(all(e.status == 'landed' and e.mismatches == 0 for e in landed))
