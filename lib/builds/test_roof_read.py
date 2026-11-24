@@ -268,7 +268,7 @@ class ProposalTest(unittest.TestCase):
         self.assertEqual(len(spec['zones']['a']['regions']), 3)
         self.assertEqual(spec['zones']['a']['surface'], 'fit')
         self.assertEqual(spec['roofs']['a'], {'kind': 'pitched', 'material': 'stone_brick',
-                                              'stairs': 'slope', 'finish': 'carpet'})
+                                              'stairs': 'fit', 'finish': 'carpet'})
         self.assertEqual(spec['storeys'], {'a': 2})
         store = spec['volumes']['a'][0]
         self.assertEqual((store['kind'], store['storeys']), ('flat', 1))

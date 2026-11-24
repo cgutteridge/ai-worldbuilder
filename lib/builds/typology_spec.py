@@ -91,7 +91,7 @@ ROOF_SHAPES = {
 SHOP_BUILDINGS = frozenset({'retail', 'supermarket', 'kiosk', 'commercial'})
 
 
-def generate(buildings, streets=(), reader=None) -> dict:
+def generate(buildings, streets=(), reader=None, plans=None) -> dict:
     """Turn footprints, lidar height, map tags and a district profile into specs.
 
     Each building mapping needs ``way_id``, ``cells`` (block columns), ``tags``,
@@ -105,8 +105,13 @@ def generate(buildings, streets=(), reader=None) -> dict:
     @param reader: optional ``(building, streets) -> record`` (:mod:`row_read`), called once per building of a
         feature-path (commercial) row. Its storeys, roof and other label keys go into the spec; where it is
         unsure or has no image the building keeps its own lidar and class values, never a neighbour's (#474)
-    @returns: ``specs`` (``builder`` plus ``spec``), ``needs_designer`` (``way_id`` plus ``reason``) and, when
-        a reader ran, ``reads`` (one record per read building) and ``read_summary`` (dry-run lines)
+    @param plans: optional ``{way_id: plan name}`` of ways a built feature plan already covers (:mod:`plan_specs`).
+        A feature-path building named here gets its own one-way spec called by that plan name, so the
+        plan is re-laid from the regenerated read (``reapply_feature``); the row's other buildings stay
+        one row spec. Houses are not split (#461)
+    @returns: ``specs`` (``builder`` plus ``spec``; ``plan`` when the spec is a built plan's), ``needs_designer``
+        (``way_id`` plus ``reason``) and, when a reader ran, ``reads`` (one record per read building) and
+        ``read_summary`` (dry-run lines)
     """
     prepared = []
     seen = set()
@@ -132,7 +137,7 @@ def generate(buildings, streets=(), reader=None) -> dict:
             for row in group:
                 row['reason'] = reason
             continue
-        specs.append(_emit(group, axis, streets, reader, reads))
+        specs.extend(_emit(group, axis, streets, reader, reads, plans))
     needs = [{'way_id': row['way_id'], 'reason': row['reason']}
              for row in prepared if row.get('reason')]
     report = {
@@ -219,23 +224,28 @@ def load_buildings(index, *, way_ids=None, bbox=None, lidar=None, profile_at=Non
     return buildings, streets
 
 
-def write_specs(report: dict, directory: Path) -> list[str]:
-    """Write each builder spec. An existing spec file is left untouched.
+def write_specs(report: dict, directory: Path, replace: dict | None = None) -> list[str]:
+    """Write each builder spec. An existing spec file is left untouched, except a built plan's own.
 
     Needs-designer rows stay in the printed report. They are not written as
     spec files.
 
     @param report: :func:`generate` result
     @param directory: output directory, created when missing
+    @param replace: ``{plan: path}`` (:func:`plan_specs.replace_paths`): a spec for one of these plans is
+        written over its recorded spec file, wherever that is, so a rebuild of the plan uses it (#461)
     @returns: spec paths written
-    @raises SystemExit: when a spec path already exists
+    @raises SystemExit: when any other spec path already exists
     """
     directory = Path(directory)
-    directory.mkdir(parents=True, exist_ok=True)
-    paths = [directory / f"{item['spec']['name']}.json" for item in report['specs']]
-    existing = [path for path in paths if path.exists()]
+    replace = replace or {}
+    paths = [Path(replace[item['plan']]) if item.get('plan') in replace
+             else directory / f"{item['spec']['name']}.json" for item in report['specs']]
+    existing = [path for item, path in zip(report['specs'], paths)
+                if path.exists() and item.get('plan') not in replace]
     if existing:
         raise SystemExit(f'{existing[0]}: already exists; not replacing a spec')
+    directory.mkdir(parents=True, exist_ok=True)
     for item, path in zip(report['specs'], paths):
         path.write_text(json.dumps(item['spec'], indent=2) + '\n')
     return [str(path) for path in paths]
@@ -265,6 +275,11 @@ def main(argv=None) -> int:
     parser.add_argument('--fascia-read', action='store_true',
                         help='also read each shop fascia colour from street-level imagery (fetches up to two frames '
                              'per shop from the street-level providers: needs the owner OK per the provider licence)')
+    parser.add_argument('--replan', action='store_true',
+                        help='write one spec per way a built feature plan already covers, named for that plan; '
+                             'with --write each replaces the plan\'s recorded spec, so reapply_feature re-lays the '
+                             'plan from this read (the world repo\'s git diff is the record). Other ways stay one '
+                             'row spec. Never places blocks')
     args = parser.parse_args(argv)
     if (args.ways is None) == (args.bbox is None):
         parser.error('pass exactly one of --ways or --bbox')
@@ -279,11 +294,24 @@ def main(argv=None) -> int:
         import row_read
         reader = row_read.default_reader((buildings, streets), cache_dir=args.read_cache,
                                         fascia=args.fascia_read)
-    report = generate(buildings, streets, reader)
+    built, way_plan = {}, None
+    skipped = []
+    if args.replan:
+        import plan_specs
+        built, skipped = plan_specs.built_plans()
+        way_plan, more = plan_specs.way_plans(built)
+        skipped += more
+    report = generate(buildings, streets, reader, way_plan)
+    replace = None
+    if args.replan:
+        replace = plan_specs.replace_paths(report, built)
+        report['plan_summary'] = [plan_specs.summary_line(item, replace.get(item['plan']))
+                                  for item in report['specs'] if item.get('plan')]
+        report['plans_skipped'] = skipped
     if args.write:
         from script_env import ROOT
         out = args.out or (Path(ROOT) / 'site' / 'builds')
-        report = {**report, 'wrote': write_specs(report, out)}
+        report = {**report, 'wrote': write_specs(report, out, replace)}
     print(json.dumps(report, indent=2))
     return 0
 
@@ -772,8 +800,8 @@ def _closest(origin: tuple[float, float], streets) -> tuple[float, float, float]
     return best
 
 
-def _emit(group: list[dict], axis: str | None, streets, reader=None, reads=None) -> dict:
-    """One house_build or feature_build spec for a decided row."""
+def _emit(group: list[dict], axis: str | None, streets, reader=None, reads=None, plans=None) -> list[dict]:
+    """The house_build or feature_build spec(s) for a decided row: one, or one per built plan plus the rest."""
     ordered = _order(group, axis)
     front, _reason = _row_front(group, streets, axis)
     labels = []
@@ -789,8 +817,8 @@ def _emit(group: list[dict], axis: str | None, streets, reader=None, reads=None)
     if ordered[0]['path'] == 'house':
         pitch = PITCHED_RISE if ordered[0]['form'] in PITCHED_FORMS else FLAT_RISE
         if kind == 'terrace':
-            return {'builder': 'house_build', 'spec': _terrace_spec(
-                name, note, ordered, ways, labels, front, pitch)}
+            return [{'builder': 'house_build', 'spec': _terrace_spec(
+                name, note, ordered, ways, labels, front, pitch)}]
         spec = {
             'name': name,
             'notes': note,
@@ -799,9 +827,9 @@ def _emit(group: list[dict], axis: str | None, streets, reader=None, reads=None)
             'roof_pitch': {row['label']: pitch for row in ordered},
             'groups': [{'nos': labels, 'mode': 'each', 'front': front}],
         }
-        return {'builder': 'house_build', 'spec': spec}
+        return [{'builder': 'house_build', 'spec': spec}]
     if ordered[0]['path'] == 'body' and reader is None:
-        return {'builder': 'house_build', 'spec': _body_spec(name, note, ordered, ways, front)}
+        return [{'builder': 'house_build', 'spec': _body_spec(name, note, ordered, ways, front)}]
     # A shop row that would take the terrace-body recipe is read per building instead (#474): the read's
     # storeys, roof kind and zones are feature_build keys; a building with no read keeps the lidar storeys
     # and ridge the body evidence gave it, never a neighbour's.
@@ -810,7 +838,7 @@ def _emit(group: list[dict], axis: str | None, streets, reader=None, reads=None)
             record = reader(row, streets)
             reads.append(record)
             _apply_read(row, record)
-        note = ' '.join([_note(ordered, phrase)] + [x['read']['notes'] for x in ordered if x['read'].get('notes')])
+        note = _read_note(ordered, phrase)
     spec = {
         'name': name,
         'notes': note,
@@ -826,7 +854,75 @@ def _emit(group: list[dict], axis: str | None, streets, reader=None, reads=None)
     spec.update(_class_facade(ordered, front))
     for row in ordered:
         _merge_patch(spec, row['label'], row.get('read', {}).get('patch', {}))
-    return {'builder': 'feature_build', 'spec': spec}
+    _default_roof_stairs(spec)
+    return _split_plans(spec, ordered, plans or {}, phrase)
+
+
+def _read_note(rows: list[dict], phrase: str) -> str:
+    """The spec note for these buildings with each one's own read notes appended."""
+    return ' '.join([_note(rows, phrase)] + [x['read']['notes'] for x in rows if x.get('read', {}).get('notes')])
+
+
+def _default_roof_stairs(spec: dict) -> None:
+    """Every pitched roof fits its stairs (``stairs: "fit"``, #472) unless a spec already chose a rule or a frame.
+
+    One block higher is an accepted cost, and an unattended run must not ask. A flat roof carries no
+    stair rule (the loader refuses one). The read's ``slope`` rule is replaced by the read itself.
+    """
+    for roof in spec['roofs'].values():
+        if roof.get('kind') != 'pitched':
+            roof.pop('stairs', None)
+        elif 'frame' not in roof:
+            roof['stairs'] = 'fit'
+
+
+def _split_plans(spec: dict, ordered: list[dict], plans: dict, phrase: str) -> list[dict]:
+    """One spec per building a built feature plan covers (named for the plan), then the rest as the row spec.
+
+    A rebuild re-lays each existing plan from its own spec, so a row spec that no plan is named for is
+    never built (#461). Each split spec keeps the row's front and its building's own tables under a
+    fresh label ``a``; the notes name the one way. With no ``plans`` the row spec comes back whole.
+    """
+    covered = [row for row in ordered if str(row['way_id']) in plans]
+    if not covered:
+        return [{'builder': 'feature_build', 'spec': spec}]
+    out = []
+    for row in covered:
+        note = _read_note([row], phrase)
+        plan = plans[str(row['way_id'])]
+        out.append({'builder': 'feature_build', 'plan': plan,
+                    'spec': _subset(spec, plan, note, {row['label']: 'a'})})
+    rest = [row for row in ordered if row not in covered]
+    if rest:
+        name = f"typology_{_kind(rest)[0]}_{_slug(rest[0]['way_id'])}"
+        note = _read_note(rest, phrase)
+        out.append({'builder': 'feature_build',
+                    'spec': _subset(spec, name, note, {row['label']: row['label'] for row in rest})})
+    return out
+
+
+def _subset(spec: dict, name: str, note: str, relabel: dict[str, str]) -> dict:
+    """A spec holding only the labels in ``relabel`` (old label -> new), with every label-keyed table cut to them.
+
+    A table is label-keyed when it is a mapping whose keys are all labels of the row; any other key
+    (``wall``, lists) is copied as it is.
+    """
+    labels = set(spec['ways'].values())
+    out = {'name': name, 'notes': note,
+           'ways': {way: relabel[label] for way, label in spec['ways'].items() if label in relabel}}
+    for key, value in spec.items():
+        if key in ('name', 'notes', 'ways'):
+            continue
+        if key == 'groups':
+            out['groups'] = [{**group, 'nos': [relabel[n] for n in group['nos'] if n in relabel]}
+                             for group in value if any(n in relabel for n in group['nos'])]
+        elif isinstance(value, dict) and value and set(value) <= labels:
+            table = {relabel[label]: item for label, item in value.items() if label in relabel}
+            if table:
+                out[key] = table
+        else:
+            out[key] = value
+    return out
 
 
 def _apply_read(row: dict, record: dict) -> None:
