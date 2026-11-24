@@ -46,7 +46,7 @@
       "blockedBy": [
         
         471,
-        472,
+        
         473,
         
         475,
@@ -62,7 +62,7 @@
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [
-        472
+        
       ],
       "builderTask": false,
       "notes": "Follow-up to #434 (owner decision, 2026-11-23). #434 builds its new stairs-and-blocks rule for feature roofs only, behind an opt-in spec key, so house roofs do not change. The owner also says the house roof rim rule (roof_octant.RIM_OPTIONS, #414) over-applies: stairs where full blocks belong on house roofs. This task decides, once #434 has landed and the owner has checked it in game on Papa John's, whether the same rule becomes the default for house_build roofs and for feature roofs.\n\nShared code: pitched_roof_states and align_stair_shapes (lib/builds/roof_geometry.py) are called from house_build.py (about lines 772, 778 and 871) and feature_build.py; roof_octant.py holds RIM_OPTIONS.\n\nNeeded: re-read #434's rule and the owner's verdict on it; apply it to house roofs (octant rim and the terrace-edge rule) and make it the default for feature roofs if the owner agrees; house_build tests and a dry run of at least one house plan and one feature roof, with stair, slab and block counts before and after. Non-builder: fixtures and dry runs, no live apply. Acceptance: tests, the dry-run counts, and the owner's in-game check on one house after a rebuild (a separate world step).\n\nHandoff: docs/plans/roof-and-frontage-swarm.md (section \"#434 scope\").\n\nFrom the #434 review (merged 6e01e17, 2026-11-23): two known weaknesses of the opt-in stairs \"slope\" rule to settle before making it the default. (1) The slope test compares the gradient component along the stair's facing with MIN_SLOPE 0.15 m/block, so a gentle roof at about 45 degrees to the grid (0.15 to 0.21 m/m, which passes the fit) has a component near 0.12 and every interior stair is levelled; compare the gradient magnitude or scale the threshold, and add a gentle rotated fixture. (2) 'Step between volumes' is checked before 'slope', so a real slope stair on a continuous roof cut by a region seam is flattened (one case on Papa John's, 6523,-4563 facing N, fitted rise 0.44 m/m); let a fitted rise win when both volumes are fitted, and add a seam fixture. Also: stairs \"slope\" does not require zones surface fit (only documented); consider a warning."
@@ -108,16 +108,7 @@
       "builderTask": true,
       "notes": "Owner snags 2026-11-24 (world issue I-066, S-124 Papa John's, S-125 Chaiiwala). The ground-floor shopfront is built in front of the wall rather than in place of it: glass has brick behind it, and the door is recessed in a brick frame that looks added at the end. Wanted: the street-face storey-1 front is 2-high glass and the door only, flush on the front line, with the glass replacing the wall block (nothing behind it). Owner also prefers a copper (green) door over oak for this frontage: make the shop door material a recipe/spec choice (default from the land-use class sign/facade palette, config/land-use-classes.json). Code: lib/builds/feature_facade.py _dress_shop_front, fit_straight_runs fill, _shop_floor (#436 door floor) and _stair_flights/_shop_band_tops (#466). Keep what the owner said is good: the Chaiiwala frontage angle and the 2-high glass. Done: dry runs of w149814013 and w122706795 show no wall block directly behind front glass and no brick jamb proud of or recessed around the door; tests pin it on a squared run and a stepped row. Record the fix on I-066 with a check per snag."
     , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/471-shopfront-replaces-wall"},
-    {
-      "id": 472,
-      "title": "Feature roofs: octant-style fit for stairs, slabs and blocks on pitched and stepped shop roofs",
-      "status": "doing",
-      "priority": "high",
-      "complexity": "l",
-      "blockedBy": [],
-      "builderTask": true,
-      "notes": "Owner verdict 2026-11-24 after the Papa John's live rebuild (w149814013, roofs.a.stairs 'slope' from #434): 'roof still shows lack of octet level design' (world issue I-064, snag S-119). The swarm steer was an octant-style way to map stairs and slabs neatly, not necessarily the same code; #434 delivered only a rim/slope stair rule and that is not enough. House roofs already have the octant fit (lib/builds/roof_octant.py, #415: design the roof as a half-block-cell volume, then match each block to air, full, bottom/top slab or bottom stair with neighbour-derived shapes). Bring that approach to feature roofs (feature_build roof zones, roof_surface.Surface, roof_geometry pitched_roof_states/align_stair_shapes): lidar gives levels as a guide, the fit may deviate for clean joins and looks; stairs only on a layer edge or a real slope, blocks inside flat layers and at one-block steps; top slabs never over air unless an intended overhang; carpet stays a flat-roof finish. Generic, no shop-specific code; fixtures stand in for the parade. Evidence and prototypes: worlds/southampton-build/site/task-447-papa-johns-* (smooth_roof.py, fit_dry.py, roof_compare*.png). Behind a spec key first (like #434), then #462 decides the default. Done: dry run of w149814013 and the hotpot w122706803 show a stair/slab arrangement the fit chose with no gaps where stairs meet; tests on a rotated L and a stepped flat-plus-pitch roof; preview image for the owner. Record the fix on I-064 with a check for S-119."
-    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/472-feature-roof-octant-fit"},
+    
     {
       "id": 473,
       "title": "Feature windows: glaze the wall above a lower part of the same building",
