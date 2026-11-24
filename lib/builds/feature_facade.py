@@ -345,6 +345,8 @@ def _stair_flights(runs: list, face: str) -> list[list]:
     ends of every run leaves no window (#466). Treads whose columns follow on
     along the face become one flight, and the row's rhythm runs along the flight
     instead; its two ends stay piers. A longer straight run keeps its own rhythm.
+    Only the pier rhythm uses flights: an explicit ``rhythm`` string already
+    glazes a short run from its first letter.
 
     @param runs: ordered runs from :meth:`FacadePlanning.face_runs`
     @param face: ``N``/``S``/``E``/``W``
@@ -536,7 +538,7 @@ class FacadePlanning:
                 if facades and not row:
                     continue
                 base = f.b + storey * STOREY_H
-                for run in (_stair_flights(runs, face) if row and stepped else runs):
+                for run in (_stair_flights(runs, face) if row and stepped and not row.get('rhythm') else runs):
                     roles = self.facade_roles(row, len(run)) if row else [
                         'W' if (c[0] if face in 'NS' else c[1]) % 2 == 0 else '_' for c in run]
                     corner_cells = {tuple(v['at']) for v in (row or {}).get('corner_glazing', [])}

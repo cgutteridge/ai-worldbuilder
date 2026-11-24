@@ -140,7 +140,7 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   and below-sill or unknown outside ground are still refused.
   On a stair-stepped face, consecutive treads of one or two columns form one flight and the
   row's pier rhythm runs along the flight (its two ends stay piers), so a rotated front gets
-  windows from rows too (#466).
+  windows from rows too (#466). A row with an explicit `rhythm` keeps it per run.
   A rule-built shopfront (land-use class `street_face` shop) owns only the ground storey of
   its street face: upper storeys and the other faces keep their windows, from rows or from the
   unevidenced storey grid. A storey-1 row on a street face is evidence and switches the
