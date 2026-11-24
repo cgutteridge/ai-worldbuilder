@@ -76,7 +76,7 @@
     "glazed_storeys": 2,
     "shop": {
      "glass_height": 2,
-     "door": "oak_door",
+     "door": "oxidized_copper_door",
      "sign_wrap": 15,
      "kinds": {
       "cafe": {"awning": true},

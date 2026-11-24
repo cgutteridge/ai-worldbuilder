@@ -152,14 +152,25 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   "text_colour": "white"}}`. `wood` is a wall-sign / hanging-sign family
   (default `oak`). `fascia_colour` overrides the hashed concrete band
   (default unchanged; any catalogue dye including black, gray and cyan).
+  `door` (#471) is the shop door block (`*_door`, in the target version's
+  block list, e.g. `oxidized_copper_door` for the green copper door); omit it
+  to use the land-use class default, `street_face.shop.door` in
+  `config/land-use-classes.json` (now `oxidized_copper_door`, validated by
+  `lib/sources/land_use.py`). Copper doors exist in 26.2; an explicit
+  `facade_plan` entrance block on a moved door still wins.
   `text_colour` is a dye judged against the **board** map colour, not the
   fascia; omit it to pick the better of black and white. A low-contrast
   wood/text pair is refused at load (same catalogue gate style as roof
   materials). Class recipes and world data supply palette values (#431);
   this key only accepts them. The big-box name sign path honours all of
-  these keys. A shop front (shop recipe) places no wall sign and no trapdoor
+  these keys. The shop frontage is glass and the door only, in place of the
+  wall (#471): no brick jamb beside the door, no wall block behind the glass
+  (side-wall corners at a run end are exempt; a recessed notch is opened behind it, a stepped row glazes its risers), and
+  the fascia runs unbroken over the door; only the building's own corner keeps
+  wall behind its end column. On a diagonal shell a door may carry an off-footprint glass cell and
+  fascia beside it where a brick jamb used to be. A shop front (shop recipe) places no wall sign and no trapdoor
   awning (#470, owner decision: signs fixed to buildings look bad): its two
-  rows above the glass are plain fascia in `fascia_colour`, so only that key
+  rows above the glass are plain fascia in `fascia_colour`, so only that key and `door`
   matters there; the per-kind `awning` flag in the land-use table is now
   inert. Example:
 
