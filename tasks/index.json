@@ -77,13 +77,13 @@
     {
       "id": 467,
       "title": "reapply_feature: a foreign in-flight journal entry is reported as this rebuild's failure",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "s",
       "blockedBy": [],
       "builderTask": false,
       "notes": "Found in the live Chaiiwala rebuild (2026-11-24, after #458 merged at 61733d5). `python3 scripts/reapply_feature.py --world southampton-build w122706795 --apply` undid the old build and the rebuild landed (journal seq 2298 build w122706795 owner reapply-82465 -> seq 2299 landed, 03:26:37Z), yet the wrapper printed \"reapply w122706795: stopped during rebuild: builder left an in-flight journal entry. Undo completed; rebuild did not complete cleanly ... To re-lay it ...\". The in-flight entry it saw belonged to another session: `site_recover.py status` -> \"in-flight: cell 54,-34 stage feature plan railway_54_m34 owner claude since 2026-11-24T02:04:03Z\".\n\nFix in lib/builds/feature_reapply.py: the post-rebuild in-flight check must only count journal entries for this feature's plan (and this run's owner / seq range), not any in-flight entry in the world; report another session's in-flight entry as information, not as this run's failure. Add a test with a foreign in-flight entry present while the rebuild lands cleanly (expect success), next to the existing #458 lapse tests in scripts/test_reapply_feature.py. Also update the recovery text in rules/slow-commands.md if it says otherwise.\n\nNon-builder: fixtures only, no live apply. Acceptance: the test, and a clean success line when only a foreign entry is in flight.\n"
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/467-reapply-foreign-inflight"},
     {
       "id": 468,
       "title": "Test suite: supported wait for a busy full suite (stop endless agent wait loops)",
