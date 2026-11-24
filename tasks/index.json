@@ -64,16 +64,7 @@
     
     
     
-    {
-      "id": 456,
-      "title": "feature_build: add flat volumes outside the OSM way (bin store, rear extensions)",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "m",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "From the Papa John's review (2026-11-23, #447 session). Evidence: world site/task-447-papa-johns-read-vs-build.md.\n\nLidar shows a flat volume at 23.5 m (2.5 m above ground), about 6 to 7 m long along the plot axis, beyond the end of OSM way 149814018: the owner's one-storey flat-roofed bin store finishing the property. The way stops short of it. feature_build builds only inside the way (exclude can only remove columns) and apply_regions refuses a polygon with no readable columns, so the building cannot grow a volume the map does not draw.\n\nNeeded: a general spec key to add columns outside the way when lidar shows mass and a polygon (from the image or the owner) names the volume, with its own form (flat or pitched) and storeys. Keep the cross-cell footprint and ownership rules (#288) and the overlap checks with neighbouring ways. Related: zones[label].regions and zones[label].surface (merged in #447).\n\nNon-builder: fixtures and a dry run, no live apply. Acceptance: tests for a flat volume beyond the way, dry run on Papa John's showing the bin store, and the owner's in-game check.\n\n\nWave handoff (files, order, worker brief, live-world protocol): docs/plans/roof-and-frontage-swarm.md."
-    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/456-volumes-outside-way"},
+    
     
     
     {
@@ -84,7 +75,7 @@
       "complexity": "l",
       "blockedBy": [
         
-        456
+        
       ],
       "builderTask": true,
       "notes": "From the Papa John's review (2026-11-23, #447 session). Evidence and prototypes: world site/task-447-papa-johns-read-vs-build.md and site/task-447-papa-johns-staged-test/ (staged.py, reconcile_proto.py, smooth_roof.py).\n\nOwner steer: the image identifies zones, lidar gives heights, flats and lows, a model makes a small per-building decision from the image with tokens used sparingly, and no single source is always right (trees can hide lidar and the overhead image).\n\nPapa John's read-step findings: lidar in the plot frame shows four volumes (flat front 24.4 m; main range with the ridge parallel to the road at 30.26 m; a perpendicular rear wing falling about 0.6 m/m to the south; a flat bin store beyond the way). Tags give nothing about roof parts, no street view exists for the cell, and the shadowed street end hides the front in the aerial.\n\nNeeded: (1) segment the lidar profile along the plot axis into volumes (flat, ridge across the plot, slope along it); (2) one model call per building with the rotated aerial crop and the profile table to label each volume's roof form and colour (and dormer or bay at the front); (3) per-attribute trust checks: lidar roughness against a 3x3 median (clean real roofs: median 0.13, 90th percentile 0.21 over 150 houses; staged threshold 0.45; one real outlier of 0.58 at 6744,-5516 sits outside aerial coverage and is unverified), comparison with the row neighbours at the same position, aerial green or deep shadow; record agree, disagree or silent per source on each volume and fall back to the row or the class default when both sources are degraded; (4) test on a real canopy case.\n\nKnown limits: no real canopy case exists yet (the hand-read crowns in reference/trees-aerial-crowns.json never overlap footprints; the highest aerial green share inside any of 155 houses is 9%); the staged damage tests caught 7 of 7 cases but the thresholds are tuned on one building and a uniform canopy over a whole volume would pass the roughness check; the model-labelling step has not been exercised. The aerial mean over Papa John's footprint is blue-grey (hue about 266 deg, saturation 0.22), not red: roof type grey_tile or grey_slate.\n\nBuilder task: uses a model on an image. Acceptance: a recorded run on Papa John's and one other building, with token cost, the labels, the trust flags and an owner review of the result.\n\n\nWave handoff (files, order, worker brief, live-world protocol): docs/plans/roof-and-frontage-swarm.md.\n\nFrom #447 (re-scoped 2026-11-23): its leftover item 'storeys and bay from evidence' belongs here. The labelling step should also read storeys (lidar eave against tags and the aerial) and whether the front has a bay or dormer, per volume, using the terrace-body recipe's eave and ridge rules (lib/builds/terrace_body.py) as the deterministic part; most parade bodies were still read as 1 storey.\n\nFrom #457 (merged 090c188, 2026-11-23): with the row front now W, way 149814018's body eave reads 4.2 m (1 storey; ridge 9.05 m); the 5.7 m in #457's notes did not reproduce. Likely cause to check first: terrace_body.front_strip is axis-aligned (its docstring still says rotated footprints are task 427), so on this ~34 degree footprint the 3-column front strip may cut the wrong columns and leave the low flat front in the body's eave sample."
@@ -101,7 +92,7 @@
         
         
         
-        456
+        
       ],
       "builderTask": false,
       "notes": "Split out of #447 (re-scoped 2026-11-23). The owner-gated live step: rebuild the Portswood Road parade shops in cell 50,-36 with the fixed generator and builders and look at them in game. Check on ONE shop first, in game (Papa John's, plan w149814013, spec site/builds/w149814013.json), then the group. Owner looks at the roof near 6518, 39, -4568, the street end 6512, 36, -4574 and the rear.\n\nFollows the roof and frontage swarm: stairs and blocks (#434), flat-roof carpet finish (#455), door floor (#436), typology row front direction (#457). Handoff and live-world protocol (site lock, take turns, registry gates for cells 50,-36 and 51,-36, undo plus rebuild in one lock command, do not move the owner's player): docs/plans/roof-and-frontage-swarm.md. A rebuild of w149814013 overwrites any hand edits there (the owner said earlier scratch edits may be erased).\n\nNon-builder: a live build run with readback, owner review. Acceptance: the owner's in-game verdict on one shop, then on the group, with snags filed for anything wrong.\n\nFrom wave 1 (2026-11-23): the stair rule (#434) is opt-in: set roofs[label].stairs \"slope\" on the Papa John's spec (with zones surface fit) before the rebuild, as a world spec change with the owner's OK. In a dry run it levels only 2 of 26 stairs; the four interior steps the owner flagged (6518,-4567; 6518,-4568; 6519,-4569; 6520,-4570) are stairs on the fitted gable and are kept, so tell the owner before they look. Shop doors (#436) now stand on the pavement (S-107 parade shops b 31 -> 32); check S-107 in game. #458 means reapply_feature --apply now holds its lock across undo and rebuild."
