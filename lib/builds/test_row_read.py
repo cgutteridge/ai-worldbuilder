@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
+import fascia_read as FR
 import row_read as RW
 import test_roof_read as TR
 import typology_spec as T
@@ -21,6 +22,17 @@ def flat_shop(s, t):
     """A flat one-storey roof over the plot, nothing beyond."""
     s, t = np.asarray(s, dtype=float), np.asarray(t, dtype=float)
     return np.where((np.abs(t) <= 2.5) & (s >= -9.5) & (s < 9.5), 3.3, 0.0)
+
+
+def setUpModule():
+    # the fascia step is in STEPS: these tests never reach a street-level provider (test_fascia_read covers it)
+    global _sources
+    _sources = FR.default_sources
+    FR.default_sources = lambda: []
+
+
+def tearDownModule():
+    FR.default_sources = _sources
 
 
 class Runner:

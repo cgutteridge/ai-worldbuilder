@@ -24,6 +24,7 @@ from pathlib import Path
 
 import numpy as np
 
+import fascia_read as FR
 import roof_read as RR
 
 MIN_IMAGE_SHARE = 0.5   # less of the crop covered by aerial than this and no ask is made
@@ -148,7 +149,7 @@ def _zone_mass(ctx: Ctx) -> bool:
     return bool(RR.roof_columns(ctx.cells, ctx.evidence.columns, mass_m=FZ.ZONE_LIDAR_MASS_M))
 
 
-STEPS = [roof_step]
+STEPS = [roof_step, FR.fascia_step]
 
 
 def read_building(way_id, wall, *, loader, role_id, cache_dir=None, runner=None, steps=None) -> dict:
@@ -194,7 +195,7 @@ def cost(record: dict) -> dict:
 def summary_line(record: dict) -> str:
     """One dry-run line: the building, what was read and what it cost."""
     parts = [f"way {record['way_id']}: {record['status']}"]
-    for key in ('storeys', 'roof_kind', 'roof_material'):
+    for key in ('storeys', 'roof_kind', 'roof_material', 'fascia_colour'):
         field = record['fields'].get(key)
         if field:
             parts.append(f"{key} {field['value']} ({field['rests_on']})")
