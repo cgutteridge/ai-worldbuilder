@@ -161,7 +161,7 @@ def _nearest_indices(path, reference):
     return [int(np.argmin(np.sum((points - p) ** 2, axis=1))) for p in path]
 
 
-def _clip(path, box, entry, centre):
+def _clip(path, box, entry):
     """One connected visit to the box, pointed along an incoming join if any.
 
     @returns: ``(oriented, a, b, before, after, error)``: the whole track in travel order,
@@ -202,8 +202,13 @@ def _clip(path, box, entry, centre):
         runs.append((start, len(path)))
     if not runs:
         return [], 0, 0, None, None, 'track does not enter the planning box'
-    a, b = (min(runs, key=lambda r: min(math.dist(p, centre) for p in path[r[0]:r[1]]))
-            if not entry else runs[0])
+    if len(runs) > 1:
+        # A second visit would be planned by no feature (its cells lie inside this box).
+        out, back = path[runs[0][1] - 1], path[runs[1][0]]
+        return [], 0, 0, None, None, (
+            f'track leaves the planning box at {out[0]},{out[1]} and re-enters it at {back[0]},{back[1]}: '
+            'choose a start cell whose box holds the whole bend (docs/plans/railway.md decision 17)')
+    a, b = runs[0]
     before = path[a - 1] if a else incoming_before
     after = path[b] if b < len(path) else None
     return path, a, b, before, after, None
@@ -672,7 +677,7 @@ def plan_line(
         except ValueError as exc:
             fail(start_cell, str(exc))
             snapped = []
-        full, a, b, before, nxt, error = _clip(snapped, box, entries.get(ti), centre)
+        full, a, b, before, nxt, error = _clip(snapped, box, entries.get(ti))
         path = full[a:b]
         if error or len(path) < 2:
             fail(path[0] if path else start_cell, error or 'track needs at least two rail cells')

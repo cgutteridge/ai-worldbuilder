@@ -417,7 +417,7 @@ differently. Metadata lists each junction gap under `junctions` (side line, main
 
 **Box edges (#464).** A join is live until its next column lies inside a landed box; only live
 joins lead a feature, two live joins of one track in one box (a hole between built features) and
-a track that meets an earlier box with no recorded join are refused. A structure gap wholly inside
+a track that meets an earlier box with no recorded join are refused (a hole shorter than the box cannot be fixed by another start cell: it is for a person), as is a track that leaves the box and re-enters it (choose a start cell whose box holds the whole bend). A structure gap wholly inside
 the box is recorded as above; one wholly outside is the neighbour's; one that starts at the cut
 after a join is the next feature's, with the earlier feature's last rail as its first end record
 (`from_join`). A gap that straddles the box edge, or ends on the last inside column, fails

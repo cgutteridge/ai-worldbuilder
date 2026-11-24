@@ -201,6 +201,11 @@ None of these may be lost when the tickets are written. Each ticket should quote
       Two live joins of one track inside one box (a hole between two built features) are refused with both
       coordinates; so is a track that runs from an earlier box into new ground with no recorded join (a start cell
       whose box misses the join). Start from the cell of the live join instead.
+      When the hole is shorter than the box, any start cell whose box includes one join also includes the other, so
+      choosing another start cell does not resolve it; that hole is a job for a person.
+    - **Re-entering tracks.** A track that leaves the box and re-enters it (a U or S bend across the edge), with or
+      without an incoming join, is refused with the exit and re-entry coordinates: its second visit would lie inside
+      this box and be planned by no feature. Choose a start cell whose box holds the whole bend.
     - **Proposals.** A cell on the edge of a landed box is only partly covered. It is proposed only when a through
       line has a block in the uncovered part of the cell.
     - **Gaps are found on the visit plus a 64-block margin** (`railway_plan.EDGE_MARGIN`). A crossing, bridge, tunnel

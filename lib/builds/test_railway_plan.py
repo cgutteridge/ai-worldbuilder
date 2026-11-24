@@ -497,6 +497,25 @@ class BoxEdgeGapTest(unittest.TestCase):
     def wide(self):
         return ground(x0=-300, width=1500, depth=110)
 
+    def test_a_track_that_leaves_the_box_and_comes_back_fails_loudly_with_both_coordinates(self):
+        u = line(((0, 0), (400, 0), (400, 50), (0, 50)))
+        g = ground(x0=-300, width=800, depth=110)
+        p = self.plan(u, g)
+        (failure,) = p['failures']
+        self.assertIn('leaves the planning box at 319,0 and re-enters it at 319,50', failure['reason'])
+        self.assertIn('choose a start cell', failure['reason'])
+        self.assertEqual((p['rails'], p['joins']), ([], []))
+        entry = [{'line_id': 'fixture-line', 'tracks': [
+            {'track_index': 0, 'next': [0, 0], 'level': 31, 'direction': 'east', 'run': 0}]}]
+        p = self.plan(u, g, incoming=entry)
+        self.assertIn('leaves the planning box at 319,0 and re-enters it at 319,50', p['failures'][0]['reason'])
+        self.assertEqual(p['rails'], [])
+
+    def test_a_track_that_only_runs_along_the_box_edge_still_plans(self):
+        p = self.plan(line(((319, -50), (319, 50))), ground(x0=-300, width=800, depth=220))
+        self.assertEqual(p['failures'], [])
+        self.assertEqual(len(p['rails']), 101)
+
     def test_a_crossing_wholly_inside_the_box_is_a_gap_with_two_ends(self):
         p = self.plan(self.crossed(200), self.wide(), crossing_roads=self.ROADS)
         self.assertEqual(p['failures'], [])
