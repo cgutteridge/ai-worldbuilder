@@ -598,8 +598,10 @@ class StreetFaceBuildTest(unittest.TestCase):
         spec = fixtures.build_spec( storeys=2)
         spec['facade_plan'] = {'A': {'faces': {'N': {'glazing': [
             {'storey': 1, 'glazed_h': 1, 'pier': 2}]}}}}
-        _, plan = self._shop(shop='cafe', spec=spec)
+        builder, plan = self._shop(shop='cafe', spec=spec)
         self.assertFalse(any('trapdoor' in state or 'oak_door' in state for state in plan.cells.values()))
+        self.assertEqual(plan.signs, [])
+        self.assertIn('name sign "National Trade Supplies" not placed', builder.output)
 
     def test_dressed_shop_keeps_upper_storey_and_side_windows(self):
         _, plan = self._shop(shop='cafe')
@@ -642,6 +644,53 @@ class StreetFaceBuildTest(unittest.TestCase):
         self.assertFalse(any('trapdoor' in state or 'oak_door' in state or '_wall_sign[' in state
                              for state in plan.cells.values()))
 
+
+    def _strip_support_late(self, replacement=None):
+        """Build a shop whose sign support is changed by a pass that runs after the street face."""
+        original = F.Build._preserve_real_owners
+
+        def late(builder):
+            original(builder)
+            for (x, y, z), state in list(builder.p.cells.items()):
+                if '_wall_sign[' in state:
+                    back = (x + 1 if 'facing=west' in state else x, y, z + 1 if 'facing=north' in state else z)
+                    if replacement is None:
+                        del builder.p.cells[back]
+                    else:
+                        builder.p.cells[back] = replacement
+
+        with mock.patch.object(F.Build, '_preserve_real_owners', late):
+            return self._shop(shop='cafe')
+
+    def test_wall_sign_is_planned_on_a_solid_face_and_written_after_it(self):
+        builder, plan = self._shop(shop='cafe')
+        (pos, _lines, _colour, _glow), = plan.signs
+        self.assertIn('wall signs: 1 planned on solid support, 0 refused', builder.output)
+        back = (pos[0], pos[1], pos[2] + 1)
+        self.assertIn('_concrete', plan.cells[back])
+        boxes = plan.boxes()
+        sign_at = next(i for i, (lo, hi, st) in enumerate(boxes) if '_wall_sign[' in st)
+        support_at = next(i for i, (lo, hi, st) in enumerate(boxes)
+                          if lo[0] <= back[0] <= hi[0] and lo[1] <= back[1] <= hi[1]
+                          and lo[2] <= back[2] <= hi[2])
+        self.assertGreater(sign_at, support_at)
+
+    def test_sign_loses_its_support_to_a_later_pass_and_is_refused_by_name(self):
+        builder, plan = self._strip_support_late()
+        self.assertEqual(plan.signs, [])
+        self.assertFalse(any('_wall_sign[' in state for state in plan.cells.values()))
+        self.assertIn('refused: back block', builder.output)
+        self.assertIn('wall signs: 0 planned on solid support, 1 refused', builder.output)
+
+    def test_sign_on_a_glass_or_trapdoor_face_is_refused(self):
+        for support in ('minecraft:glass', 'minecraft:oak_trapdoor[facing=north,half=top,open=false]',
+                        'minecraft:smooth_stone_slab[type=bottom]'):
+            with self.subTest(support=support):
+                builder, plan = self._strip_support_late(support)
+                self.assertEqual(plan.signs, [])
+                self.assertFalse(any('_wall_sign[' in state for state in plan.cells.values()))
+                self.assertIn('refused: back block', builder.output)
+                self.assertIn(support.split('[')[0].removeprefix('minecraft:'), builder.output)
 
     def test_carpet_finish_makes_the_deck_row_the_fascia_of_a_single_storey_shop(self):
         spec = fixtures.build_spec(storeys=1, material='light_gray_concrete')

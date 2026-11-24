@@ -60,7 +60,7 @@ from site_kit import (
     is_bottom_half_slab,
     preview,
 )
-from stoop import GROUND
+from stoop import FACE, GROUND
 import footprint_overlap
 import land_use
 import osm_footprints
@@ -515,6 +515,45 @@ class Build(RoofZonePlanning, VolumePlanning, DoorPlanning, FacadePlanning, Deta
             )
         return lines
 
+    def _check_sign_support(self) -> list[str]:
+        """Refuse any wall sign whose back block is not a full solid block the plan keeps (#435).
+
+        A wall sign pops off when the block behind it (opposite its facing) is air, glass,
+        a trapdoor, an awning slab or any other non-full face. Planning checks the fascia
+        when it places a sign, but later steps (real-owner prunes, door frames, other
+        recipes) can still change that block. The back block is read from the finished plan,
+        or from the live world where the plan leaves it alone; a sign that fails is turned
+        back into air and named. Support is written before the sign because
+        :meth:`Plan.boxes` puts attachables last.
+
+        @returns: dry-run lines: one refusal per sign, then a count line when signs exist
+        """
+        facing_dir = {name: DIRS[letter] for letter, name in FACE.items()}
+        lines = []
+        planned = refused = 0
+        text = {tuple(row[0]): ' '.join(t for t in row[1] if t) for row in self.p.signs}
+        for pos, state in sorted(self.p.cells.items()):
+            if '_wall_sign[' not in state:
+                continue
+            planned += 1
+            facing = state_props(state).get('facing')
+            step = facing_dir.get(facing)
+            if step is None:
+                reason = f'facing {facing!r} is not a wall direction'
+            else:
+                back = (pos[0] - step[0], pos[1], pos[2] - step[1])
+                held = self.p.cells.get(back) or self.live.block(*back)
+                if carpet_support_ok(held, {self.wall, self.floor_mat}):
+                    continue
+                reason = f'back block {back} is {held or "air"}, not a full solid block'
+            refused += 1
+            self.set(*pos, 'air')
+            label = f' "{text[pos]}"' if pos in text else ''
+            lines.append(f'wall sign{label} at {pos} refused: {reason}')
+        if planned:
+            lines.append(f'wall signs: {planned - refused} planned on solid support, {refused} refused')
+        return lines
+
     @staticmethod
     def _slope_stair_rule(f: Feature) -> SlopeStairRule:
         """Stair rule for ``roofs[label].stairs: "slope"``: rim or fitted slope only (#434).
@@ -808,12 +847,15 @@ class Build(RoofZonePlanning, VolumePlanning, DoorPlanning, FacadePlanning, Deta
             if self.p.cells.get((x, y, z)) != state:
                 self.set(x, y, z, state)
         carpet_lines = self._check_carpet_support()
+        sign_lines = self._check_sign_support()
         for line in stair_effect_lines(self.p.cells, self.live.block):
             print(line)
         self.p.signs = [row for row in self.p.signs if '_wall_sign[' in self.p.cells.get(row[0], '')]
         for line in self._zone_pad_lines:
             print(line)
         for line in carpet_lines:
+            print(line)
+        for line in sign_lines:
             print(line)
         for line in self._volume_lines:
             print(line)
