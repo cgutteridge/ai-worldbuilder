@@ -566,6 +566,41 @@ class StreetFaceBuildTest(unittest.TestCase):
         self.assertIn('_concrete', plan.cells[(13, 53, 20)])
         self.assertEqual(self._glass_rows_behind(plan, (0, -1), [(x, 20) for x in range(11, 24)]), [])
 
+    def _sealed_at(self, plan, cells, ys):
+        """Flood from outside the footprint at each y: no interior cell may be reachable."""
+        def open_(x, y, z):
+            return plan.cells.get((x, y, z), 'minecraft:air') == 'minecraft:air'
+        xs = [x for x, _ in cells]
+        zs = [z for _, z in cells]
+        lo_x, hi_x, lo_z, hi_z = min(xs) - 2, max(xs) + 2, min(zs) - 2, max(zs) + 2
+        for y in ys:
+            seen, todo = set(), [(lo_x, lo_z)]
+            while todo:
+                x, z = todo.pop()
+                if (x, z) in seen or not (lo_x <= x <= hi_x and lo_z <= z <= hi_z) or not open_(x, y, z):
+                    continue
+                seen.add((x, z))
+                todo += [(x + 1, z), (x - 1, z), (x, z + 1), (x, z - 1)]
+            interior = {(x, z) for x, z in seen if all((x + ox, z + oz) in cells for ox, oz in ((1, 0), (-1, 0), (0, 1), (0, -1)))}
+            self.assertEqual(interior, set(), f'room leaks at y={y}')
+
+    def test_an_end_notch_in_the_front_keeps_the_side_wall_sealed(self):
+        base = {(x, z) for x in range(10, 25) for z in range(20, 30)}
+        for name, gone in {'left end': {(10, 20)}, 'right end': {(24, 20)},
+                           'both ends': {(10, 20), (24, 20)},
+                           'two-wide end': {(10, 20), (11, 20)}}.items():
+            with self.subTest(name):
+                cells = base - gone
+                _, plan = self._shop(shop='books', cells=cells)
+                self._sealed_at(plan, cells, (51, 52))
+
+    def test_mid_and_corner_notches_stay_sealed(self):
+        base = {(x, z) for x in range(10, 25) for z in range(20, 30)}
+        for gone in ({(13, 20)}, {(13, 20), (14, 20)}, {(10, 20), (10, 21), (11, 20)}):
+            cells = base - gone
+            _, plan = self._shop(shop='books', cells=cells)
+            self._sealed_at(plan, cells, (51, 52))
+
     def test_a_stepped_front_has_no_brick_riser_or_jamb_at_glass_height(self):
         cells = {(x, z) for x in range(10, 30) for z in range(10, 30) if 30 <= x + z <= 43}
         streets = [street(((0, 20), (20, 0)), highway='pedestrian')]

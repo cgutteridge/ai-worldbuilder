@@ -925,6 +925,11 @@ class FacadePlanning:
                 if cell in run['fill']:
                     chain = []
                     while behind in run['fill'] or behind in run['sources']:
+                        # a side or party wall is not behind the glass: never open a cell that
+                        # touches the outside, or the room leaks at a run end
+                        if not all((behind[0] + ox, behind[1] + oz) in f.cells
+                                   or (behind[0] + ox, behind[1] + oz) in rows for ox, oz in N4):
+                            break
                         chain.append(behind)
                         behind = (behind[0] - dx, behind[1] - dz)
                 elif (behind in f.cells and behind not in rows and behind not in risers
