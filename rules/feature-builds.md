@@ -445,6 +445,31 @@ way whose height rests on lidar).
   `roof:shape` its form family). Fallback order: lidar (height, form), the image (form, colour), the row, the
   land-use class default. A value resting on one source is flagged (`height rests on lidar alone`).
 
+## Row read: typology specs read each shop on its own (#474)
+
+`python3 scripts/typology_spec.py --world <w> --ways ...` reads every building of a commercial (feature)
+row by default; houses are not read. `lib/builds/row_read.py` loads that building's lidar and aerial, runs the
+read step above with **one designer ask per building** (the `config/build-roles.json` designer, no
+hard-coded model) and writes its own storeys, roof kind (`pitched` or `flat`), roof material and, for a
+pitched roof, `zones[label]` (`surface: "fit"`, regions) and `volumes[label]` into the spec. Nothing is
+copied from a neighbour or the district default where the read has an answer.
+
+- `--no-read` skips the read (class and district defaults, as before). `--read-cache DIR` sets the cache
+  (default: the world's `instance/row-read-cache`, not committed).
+- Asks are cached by building, plan table, image bytes and designer id; a re-run with the same plan and
+  image costs nothing. Failed asks are never cached.
+- Unsure or missing evidence is said, not hidden: no aerial over the plot means no ask and lidar plus the
+  class default (`no aerial image over the plot`); a failed ask means the same; an unreadable building keeps
+  its class default (`read unavailable`). The trust flags of the main volume (`height rests on lidar alone`
+  and the like) are listed as `unsure`.
+- The dry-run report gains `reads` (per building: status, fields with value, `rests_on`, flags and evidence,
+  asks with model, effort, tokens, cost, elapsed seconds and `cached`, unsure, patch) and `read_summary`
+  (one line per building and a total of tokens, dollars and seconds actually spent).
+- Adding another per-building field (fascia colour, roof material from the aerial): write a step
+  `step(ctx, record)` and append it to `row_read.STEPS`. `ctx.ask(key, png, prompt)` is the cached designer
+  ask (cost recorded on the record); the step adds `record['fields'][name]` and label-keyed spec keys to
+  `record['patch']` (a dict value merges over the generated one for that label). The generator needs no change.
+
 ## Railway line features
 
 A through railway is a named feature, `railway_<tx>_<tz>` (negative cell coordinates

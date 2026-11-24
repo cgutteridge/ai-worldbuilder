@@ -953,13 +953,17 @@ def note(result: dict) -> str:
 # ---------------------------------------------------------------- world evidence (CLI only)
 
 
-def load(way_id: str) -> dict:
-    """Footprint, tags, street, lidar and aerial for one map way, as :class:`Evidence` plus context."""
+def load(way_id: str, loaded=None) -> dict:
+    """Footprint, tags, street, lidar and aerial for one map way, as :class:`Evidence` plus context.
+
+    @param loaded: ``(buildings, streets)`` as :func:`typology_spec.load_buildings` returns them, when the
+        caller already has them (a row read loads the map once, not once per building)
+    """
     import aerial_coverage
     import lidar_provider as lp
     import osm_footprints
     import typology_spec
-    buildings, streets = typology_spec.load_buildings(
+    buildings, streets = loaded or typology_spec.load_buildings(
         osm_footprints.OSMIndex(), way_ids=[way_id],
         lidar=lambda _c: None, profile_at=lambda _c: None, rises=lambda _c: {})
     me = next((b for b in buildings if b['way_id'] == str(way_id) and not b.get('absent')), None)
@@ -1021,9 +1025,12 @@ def load(way_id: str) -> dict:
     return {'evidence': ev, 'tags': me['tags'], 'front': front, 'cells': cells}
 
 
-def roof_columns(cells: set, columns: dict) -> set:
+def roof_columns(cells: set, columns: dict, mass_m: float = MASS_M) -> set:
     """The footprint columns the builder treats as roof: squared footprint with lidar mass, small pieces
-    dropped (the same helpers ``feature_build`` zones use)."""
+    dropped (the same helpers ``feature_build`` zones use).
+
+    @param mass_m: rise a column needs to count (``feature_build`` zones use 3 m)
+    """
     import feature_roof_zones as FZ
     xs_ = [x for x, _z in cells]
     zs_ = [z for _x, z in cells]
@@ -1033,7 +1040,7 @@ def roof_columns(cells: set, columns: dict) -> set:
     for z in range(depth):
         for x in range(width):
             col = columns.get((x0 + x, z0 + z))
-            if mask[z, x] and not (col is not None and np.isfinite(col[2]) and col[2] >= MASS_M):
+            if mask[z, x] and not (col is not None and np.isfinite(col[2]) and col[2] >= mass_m):
                 mask[z, x] = False
     gz, gx = np.mgrid[z0:z0 + depth, x0:x0 + width]
     mask, _dropped = FZ.drop_small_footprint_pieces(mask, gx, gz)

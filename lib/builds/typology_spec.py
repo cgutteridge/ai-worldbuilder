@@ -91,7 +91,7 @@ ROOF_SHAPES = {
 SHOP_BUILDINGS = frozenset({'retail', 'supermarket', 'kiosk', 'commercial'})
 
 
-def generate(buildings, streets=()) -> dict:
+def generate(buildings, streets=(), reader=None) -> dict:
     """Turn footprints, lidar height, map tags and a district profile into specs.
 
     Each building mapping needs ``way_id``, ``cells`` (block columns), ``tags``,
@@ -102,8 +102,11 @@ def generate(buildings, streets=()) -> dict:
 
     @param buildings: one mapping per footprint
     @param streets: polylines, each a sequence of (x, z) points
-    @returns: ``specs`` (``builder`` plus ``spec``) and ``needs_designer``
-        (``way_id`` plus ``reason``)
+    @param reader: optional ``(building, streets) -> record`` (:mod:`row_read`), called once per building of a
+        feature-path (commercial) row. Its storeys, roof and other label keys go into the spec; where it is
+        unsure or has no image the building keeps its own lidar and class values, never a neighbour's (#474)
+    @returns: ``specs`` (``builder`` plus ``spec``), ``needs_designer`` (``way_id`` plus ``reason``) and, when
+        a reader ran, ``reads`` (one record per read building) and ``read_summary`` (dry-run lines)
     """
     prepared = []
     seen = set()
@@ -122,19 +125,34 @@ def generate(buildings, streets=()) -> dict:
         prepared.append(_prepare(raw, way_id, streets))
     groups = _components(prepared)
     specs = []
+    reads = []
     for group in groups:
         reason, axis = _row_reason(group, streets)
         if reason:
             for row in group:
                 row['reason'] = reason
             continue
-        specs.append(_emit(group, axis, streets))
+        specs.append(_emit(group, axis, streets, reader, reads))
     needs = [{'way_id': row['way_id'], 'reason': row['reason']}
              for row in prepared if row.get('reason')]
-    return {
+    report = {
         'specs': sorted(specs, key=lambda item: item['spec']['name']),
         'needs_designer': sorted(needs, key=lambda item: (item['way_id'], item['reason'])),
     }
+    if reads:
+        import row_read
+        report['reads'] = reads
+        report['read_summary'] = [row_read.summary_line(rec) for rec in reads] + [_read_total(reads)]
+    return report
+
+
+def _read_total(reads: list[dict]) -> str:
+    """The dry-run total line for a row read: asks, tokens, dollars and seconds actually spent."""
+    import row_read
+    costs = [row_read.cost(rec) for rec in reads]
+    return (f"read total: {len(reads)} building(s), {sum(c['asks'] for c in costs)} ask(s) "
+            f"({sum(c['cached'] for c in costs)} cached), {sum(c['tokens'] for c in costs)} tokens, "
+            f"${round(sum(c['cost_usd'] for c in costs), 4)}, {round(sum(c['elapsed_s'] for c in costs), 1)} s")
 
 
 def load_buildings(index, *, way_ids=None, bbox=None, lidar=None, profile_at=None, rises=None):
@@ -239,6 +257,11 @@ def main(argv=None) -> int:
                         help='inclusive block box')
     parser.add_argument('--out', type=Path, help='spec directory (default: the world site/builds)')
     parser.add_argument('--write', action='store_true', help='write spec files (default: print only)')
+    parser.add_argument('--no-read', action='store_true',
+                        help='skip the per-building read of shop rows (lidar, aerial and one designer ask each, '
+                             'cached); rows then use the class and district defaults')
+    parser.add_argument('--read-cache', type=Path,
+                        help='directory for cached read asks (default: the world instance/row-read-cache)')
     args = parser.parse_args(argv)
     if (args.ways is None) == (args.bbox is None):
         parser.error('pass exactly one of --ways or --bbox')
@@ -248,7 +271,11 @@ def main(argv=None) -> int:
         way_ids=args.ways,
         bbox=tuple(args.bbox) if args.bbox is not None else None,
     )
-    report = generate(buildings, streets)
+    reader = None
+    if not args.no_read:
+        import row_read
+        reader = row_read.default_reader((buildings, streets), cache_dir=args.read_cache)
+    report = generate(buildings, streets, reader)
     if args.write:
         from script_env import ROOT
         out = args.out or (Path(ROOT) / 'site' / 'builds')
@@ -741,7 +768,7 @@ def _closest(origin: tuple[float, float], streets) -> tuple[float, float, float]
     return best
 
 
-def _emit(group: list[dict], axis: str | None, streets) -> dict:
+def _emit(group: list[dict], axis: str | None, streets, reader=None, reads=None) -> dict:
     """One house_build or feature_build spec for a decided row."""
     ordered = _order(group, axis)
     front, _reason = _row_front(group, streets, axis)
@@ -769,8 +796,17 @@ def _emit(group: list[dict], axis: str | None, streets) -> dict:
             'groups': [{'nos': labels, 'mode': 'each', 'front': front}],
         }
         return {'builder': 'house_build', 'spec': spec}
-    if ordered[0]['path'] == 'body':
+    if ordered[0]['path'] == 'body' and reader is None:
         return {'builder': 'house_build', 'spec': _body_spec(name, note, ordered, ways, front)}
+    # A shop row that would take the terrace-body recipe is read per building instead (#474): the read's
+    # storeys, roof kind and zones are feature_build keys; a building with no read keeps the lidar storeys
+    # and ridge the body evidence gave it, never a neighbour's.
+    if reader is not None:
+        for row in ordered:
+            record = reader(row, streets)
+            reads.append(record)
+            _apply_read(row, record)
+        note = ' '.join([_note(ordered, phrase)] + [x['read']['notes'] for x in ordered if x['read'].get('notes')])
     spec = {
         'name': name,
         'notes': note,
@@ -784,7 +820,35 @@ def _emit(group: list[dict], axis: str | None, streets) -> dict:
         'wall': ordered[0]['wall'],
     }
     spec.update(_class_facade(ordered, front))
+    for row in ordered:
+        _merge_patch(spec, row['label'], row.get('read', {}).get('patch', {}))
     return {'builder': 'feature_build', 'spec': spec}
+
+
+def _apply_read(row: dict, record: dict) -> None:
+    """Take a building's own read into its row before the spec is written (storeys, roof kind, family).
+
+    The record's ``patch`` carries the label-keyed spec keys; :func:`_merge_patch` writes them after the
+    class facade so a read key wins over a class default for that label only.
+    """
+    row['read'] = record
+    patch = record.get('patch') or {}
+    if 'storeys' in patch:
+        row['levels'] = patch['storeys']
+        row['levels_source'] = 'read'
+    roofs = patch.get('roofs')
+    if roofs:
+        row['form'] = 'gable' if roofs.get('kind') == 'pitched' else 'flat'
+        row['family'] = roofs.get('material', row['family'])
+        row['roof_source'] = 'read'
+
+
+def _merge_patch(spec: dict, label: str, patch: dict) -> None:
+    """Write one building's label-keyed patch into the spec; a dict value merges over the generated one."""
+    for key, value in patch.items():
+        table = spec.setdefault(key, {})
+        old = table.get(label)
+        table[label] = {**old, **value} if isinstance(old, dict) and isinstance(value, dict) else value
 
 
 def _class_facade(ordered: list[dict], front: str | None) -> dict:
@@ -959,6 +1023,8 @@ def _roof_sentence(group: list[dict]) -> str:
         'class': 'the land-use class default',
     }
     sources = {row['roof_source'] for row in group}
+    if 'read' in sources:
+        return "Roof kind and storeys per building from its own read (lidar and aerial), not from its neighbours."
     if len(sources) == 1:
         source = labels[next(iter(sources))]
     else:
@@ -972,6 +1038,8 @@ def _roof_sentence(group: list[dict]) -> str:
 def _material_sentence(group: list[dict]) -> str:
     """Palette provenance. A class-table fallback is named; a district profile keeps its own name."""
     row = group[0]
+    if all(r.get('roof_source') == 'read' for r in group):
+        return ''
     if row.get('section_source') == 'class':
         return f"Material {row['family']} from the land-use class default ({row['cls']})."
     return f"Material {row['family']} from the district palette ({row['profile_name']})."
