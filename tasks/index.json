@@ -44,7 +44,7 @@
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [
-        470,
+        
         471,
         472,
         473,
@@ -97,16 +97,7 @@
       "builderTask": true,
       "notes": "Agents waiting for a busy full suite wrote shell loops that never ended (some ran for days):\n- `until ! pgrep -f <pattern>` matched the loop's own zsh -c command line, so it always found itself.\n- `until [ ! -e .git/ai-worldbuilder-full-suite.lock ]` never ends: run_tests.py uses an advisory flock on a file that persists (it has existed since 27 Oct), so the file is never removed.\n\nFix:\n1. Add `run_tests.py --wait [--timeout SECS]`: block on the flock itself (not just fail fast), then run; exit non-zero with a clear message after the timeout. Default timeout is bounded (e.g. 30 min).\n2. Use it in ship_branch.py where it retries on \"already running\".\n3. One line in the agent docs (docs/agents/world-and-live-commands.md slow-command section, and the ship-branch / parallel-task-wave skills): never wait on pgrep or on lock-file existence; use `--wait`.\nDone when: tests cover wait-then-run and timeout, the docs line has landed, and ship_branch no longer needs its own retry loop.\n"
     },
-    {
-      "id": 470,
-      "title": "Shop fronts: stop placing trapdoor awnings and wall signs",
-      "status": "doing",
-      "priority": "high",
-      "complexity": "s",
-      "blockedBy": [],
-      "builderTask": true,
-      "notes": "Owner decision 2026-11-24 after the Papa John's and Chaiiwala rebuilds: give up on trapdoor awnings and on signs fixed to buildings ('signs just look bad. stop putting signposts on buildings'). Reference photos show no awning on either shop. World issue I-065 (snags S-122, S-123). Code: lib/builds/feature_facade.py _dress_shop_front and _shop_dressing place the awning row and the oak wall sign; sign support lives in feature_build._check_sign_support (#435) and sign_options.py. Keep the fascia band and its colour (signs.<label>.fascia_colour stays; owner confirmed Papa John's lime fascia). Decide whether the freed awning/sign rows become fascia or wall, and say so in the dry-run summary. Done: no trapdoor or wall sign on any shop front from the shop recipe; dry run of w149814013 and w122706795 shows none; tests cover a dressed shop with a mapped name. Record the fix on I-065 with a check per snag."
-    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/470-no-shop-awnings-signs"},
+    
     {
       "id": 471,
       "title": "Shop fronts: glass and door replace the wall, with no brick frame or wall behind",

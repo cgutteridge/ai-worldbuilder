@@ -4494,5 +4494,16 @@
       "claimedBy": "cursor",
       "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/478-site-apply"
     }
+  ,
+    {
+      "id": 470,
+      "title": "Shop fronts: stop placing trapdoor awnings and wall signs",
+      "status": "done",
+      "priority": "high",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": true,
+      "notes": "Owner decision 2026-11-24 after the Papa John's and Chaiiwala rebuilds: give up on trapdoor awnings and on signs fixed to buildings ('signs just look bad. stop putting signposts on buildings'). Reference photos show no awning on either shop. World issue I-065 (snags S-122, S-123). Code: lib/builds/feature_facade.py _dress_shop_front and _shop_dressing place the awning row and the oak wall sign; sign support lives in feature_build._check_sign_support (#435) and sign_options.py. Keep the fascia band and its colour (signs.<label>.fascia_colour stays; owner confirmed Papa John's lime fascia). Decide whether the freed awning/sign rows become fascia or wall, and say so in the dry-run summary. Done: no trapdoor or wall sign on any shop front from the shop recipe; dry run of w149814013 and w122706795 shows none; tests cover a dressed shop with a mapped name. Record the fix on I-065 with a check per snag.\n\nClosed at 64ae36b811fcec7a799409722fe28e8a3cbdd7ab: Shop recipe no longer places trapdoor awnings or wall signs; freed rows stay fascia (fascia_colour kept). Dry runs: Papa John's trapdoor/sign 2/1 -> 0/0, Chaiiwala 6/1 -> 0/0. Follow-up: drop inert land-use 'awning' flag and stale awning/sign docstrings in feature_facade.\n\n[tasks CLI] Delivery evidence recorded; subject to human review."
+    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/470-no-shop-awnings-signs"}
   ]
 }
