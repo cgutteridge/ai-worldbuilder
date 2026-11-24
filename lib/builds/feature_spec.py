@@ -96,6 +96,7 @@ def load_spec(path) -> dict:
     _validate_signs(path, spec, labels)
     _validate_zones(path, spec, labels)
     _validate_roof_stairs(path, spec)
+    _validate_roof_frame(path, spec)
     _validate_roof_finish(path, spec)
     _validate_exclude(path, spec, labels)
     _validate_volumes(path, spec, labels)
@@ -182,6 +183,27 @@ def _validate_roof_stairs(path, spec: dict) -> None:
             raise SystemExit(f'{path}: roofs[{lab}].stairs only applies to pitched roofs')
         if lab not in (spec.get('zones') or {}):
             raise SystemExit(f'{path}: roofs[{lab}].stairs "slope" needs zones[{lab}] (it reads the roof volumes)')
+
+
+def _validate_roof_frame(path, spec: dict) -> None:
+    """Validate optional ``roofs[label].frame`` (absent = the grid hip from the outline).
+
+    ``"plot"`` designs an unzoned pitched roof as a hip on the footprint's own fitted rectangle (#463).
+
+    @param path: spec path (for error text)
+    @param spec: feature spec being loaded (zones already validated)
+    @raises SystemExit: on an unknown value, a flat roof or a zoned label
+    """
+    for lab, roof in spec['roofs'].items():
+        if 'frame' not in roof:
+            continue
+        if roof['frame'] != 'plot':
+            raise SystemExit(f'{path}: roofs[{lab}].frame must be "plot" when given')
+        if roof.get('kind') != 'pitched':
+            raise SystemExit(f'{path}: roofs[{lab}].frame only applies to pitched roofs')
+        if lab in (spec.get('zones') or {}):
+            raise SystemExit(f'{path}: roofs[{lab}].frame "plot" is for roofs without zones[{lab}] '
+                             '(a zoned roof follows its lidar)')
 
 
 def _validate_roof_finish(path, spec: dict) -> None:
