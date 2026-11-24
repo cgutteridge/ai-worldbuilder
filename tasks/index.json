@@ -101,13 +101,13 @@
     {
       "id": 471,
       "title": "Shop fronts: glass and door replace the wall, with no brick frame or wall behind",
-      "status": "todo",
+      "status": "doing",
       "priority": "high",
       "complexity": "m",
       "blockedBy": [],
       "builderTask": true,
       "notes": "Owner snags 2026-11-24 (world issue I-066, S-124 Papa John's, S-125 Chaiiwala). The ground-floor shopfront is built in front of the wall rather than in place of it: glass has brick behind it, and the door is recessed in a brick frame that looks added at the end. Wanted: the street-face storey-1 front is 2-high glass and the door only, flush on the front line, with the glass replacing the wall block (nothing behind it). Owner also prefers a copper (green) door over oak for this frontage: make the shop door material a recipe/spec choice (default from the land-use class sign/facade palette, config/land-use-classes.json). Code: lib/builds/feature_facade.py _dress_shop_front, fit_straight_runs fill, _shop_floor (#436 door floor) and _stair_flights/_shop_band_tops (#466). Keep what the owner said is good: the Chaiiwala frontage angle and the 2-high glass. Done: dry runs of w149814013 and w122706795 show no wall block directly behind front glass and no brick jamb proud of or recessed around the door; tests pin it on a squared run and a stepped row. Record the fix on I-066 with a check per snag."
-    },
+    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/471-shopfront-replaces-wall"},
     {
       "id": 472,
       "title": "Feature roofs: octant-style fit for stairs, slabs and blocks on pitched and stepped shop roofs",
