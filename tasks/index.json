@@ -112,13 +112,13 @@
     {
       "id": 463,
       "title": "feature_build roofs: clean stairs on rotated hip roofs without zones (Xionqi Hotpot S-105)",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
       "builderTask": false,
       "notes": "Split from #434 (closed 2026-11-23, merged 6e01e17). Parade snag S-105 (issue I-022 roof stair rotation): the owner saw poor stair rotation on the roof of the Xionqi Hotpot (w122706803, a hand full spec built by feature_build). Its roof has no zones: a hip built from the footprint on a diagonal outline, which gives alternating east/north stair zigzags (56 stairs with no higher neighbour around them in #434's dry run; 0 shape or facing mismatches by roof_lint). The #434 slope rule does not apply (it needs zones[label]); with zones plus surface fit every zone fails the fit (a hip is not flat, plane or gable), so raw heights are kept.\n\nNeeded (generic, any rotated hip roof): either a hip shape in the surface fit (lib/builds/roof_surface.py, four planes or a hip with a ridge, fitted per volume in the plot frame) so the slope rule can read it, or an octant-style block choice for rotated hips without zones (lib/builds/roof_octant.py fits one rectangle and one plane; house_build's roof_fit octant falls back to columns unless the footprint is near a rectangle). Diagnose which, state the rule, keep it opt-in.\n\nNon-builder: fixtures and a dry run on site/builds/w122706803.json, no live apply. Acceptance: stair counts before and after on the hotpot, a rotated-hip fixture through Build, and the owner's in-game check of S-105 after a rebuild (a separate world step).\n"
-    },
+    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/463-rotated-hip-roofs"},
     
     {
       "id": 465,
@@ -135,12 +135,12 @@
     {
       "id": 466,
       "title": "Shop fronts: keep upper-storey and side windows on dressed shops, and glazing rows on stepped fronts",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
       "builderTask": false,
       "notes": "Found by two workers in the roof and frontage swarm (2026-11-23): #455 (flat-roof carpet) and #431 (glazing recipe). Builder gaps in lib/builds/feature_facade.py; generic, any dressed shop.\n\n1. A dressed shopfront switches off every other window. When the street-face recipe dresses a shop, _suppress_window_grid drops the storey window grid on all faces: on Papa John's (w149814013) with roofs finish carpet on, the 26 solid-glass windows on the upper storey, sides and rear (from #447) fall to 2 glass cells. And the reverse: any facade_plan[label].faces makes _suppress_window_grid and street_face return early for that label, so the shop loses glass, door, fascia, sign and awning. Upper-storey and side windows should coexist with the street-face shopfront (the shop band owns the ground storey of the street face only), and a facade_plan should be able to add glazing rows above the shopfront without removing it. #431's generator currently emits facade_plan only for undressed buildings because of this; lift that guard once fixed.\n2. Glazing rows give no windows on a stair-stepped (rotated) front: each tread is a one-column run and facade_roles puts a pier at both ends of every run, so no candidates come out (way 149814018 with rows: 0 glazed on every face). The solid-glass stepped-wall windows of #447 solve this for the unevidenced grid; glazing rows need the same treatment. #431's generator guards with a 5-column straight run (FACADE_MIN_RUN) until then.\n\nNon-builder: fixtures through Build and dry runs (Papa John's spec with finish carpet in a scratch copy; a rule-built parade shop), no live apply. Acceptance: a dressed shop keeps its upper-storey and side windows; a facade_plan adds rows without stripping the shopfront; rows on a stepped front give windows; existing builds without these keys unchanged unless the owner agrees; the owner's in-game look after the #461 rebuild.\n"
-    }
+    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/466-dressed-shop-windows"}
   ]
 }
