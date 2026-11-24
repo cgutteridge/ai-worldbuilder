@@ -391,7 +391,29 @@ class FacadePlanning:
     Used by feature_build.Build; methods share its feature-plan state.
     """
 
-    def face_runs(self, f: Feature, face: str) -> list[list]:
+    def step_sill(self, f: Feature, c: tuple[int, int], face: str) -> int | None:
+        """Top y of the lower part of the same feature beside a wall column, else ``None``.
+
+        A zone step (#473): the neighbour in ``face`` direction belongs to this feature
+        and its roof is lower, so the wall between them is a window face above that roof.
+        Only windows use it; :meth:`exposed` (doors, house builds) is unchanged. The
+        sill counts a finish carpet laid on the lower deck.
+
+        @param f: feature mass
+        @param c: wall column ``(x, z)``
+        @param face: ``N``/``S``/``E``/``W``
+        @returns: highest solid y of the lower neighbour, or ``None`` when not a step face
+        """
+        roof = getattr(f, 'zone_roof', None)
+        if not roof or c not in roof:
+            return None
+        dx, dz = DIRS[face]
+        n = (c[0] + dx, c[1] + dz)
+        if n not in roof or n not in f.cells or roof[n] >= roof[c]:
+            return None
+        return roof[n] + (1 if n in (getattr(f, 'carpet_cells', None) or {}) else 0)
+
+    def face_runs(self, f: Feature, face: str, steps: bool = False) -> list[list]:
         """Contiguous straight wall runs exposed to ``face``, each sorted along the face.
 
         An L-shaped or notched mass yields several runs (one per constant edge
@@ -400,9 +422,16 @@ class FacadePlanning:
 
         @param f: feature mass
         @param face: ``N``/``S``/``E``/``W``
+        @param steps: keep only the columns whose ``face`` side is a lower part of the
+            same feature (:meth:`step_sill`) instead of the outside ones; window planning only.
+            The glazing-share report counts outside faces only.
         @returns: list of ordered ``(x, z)`` runs
         """
-        cand = [c for c in f.walls if self.exposed(c, face)]
+        def wanted(c):
+            if steps:
+                return self.step_sill(f, c, face) is not None and not self.exposed(c, face)
+            return self.exposed(c, face)
+        cand = [c for c in f.walls if wanted(c)]
         if not cand:
             return []
         by_edge: dict = {}
@@ -529,16 +558,20 @@ class FacadePlanning:
                 for dx, dz in DIRS.values():
                     protected.add((x + dx, y, z + dz))
         for face in sorted(facades or DIRS):
-            runs = self.face_runs(f, face)
             edge = 1 if face in 'NS' else 0
-            stepped = len({c[edge] for run in runs for c in run}) > 1
+            # A zone-step wall (#473) is planned apart from the outside wall: its own runs,
+            # pier rhythm and staircase test, so outside windows stay where they were.
+            groups = [(runs, len({c[edge] for run in runs for c in run}) > 1)
+                      for runs in (self.face_runs(f, face), self.face_runs(f, face, steps=True))]
             rows = {r['storey']: r for r in facades.get(face, [])}
             for storey in range(f.storeys):
                 row = rows.get(storey + 1)
                 if facades and not row:
                     continue
                 base = f.b + storey * STOREY_H
-                for run in (_stair_flights(runs, face) if row and stepped and not row.get('rhythm') else runs):
+                for run, stepped in ((r, stepped) for runs, stepped in groups
+                                     for r in (_stair_flights(runs, face)
+                                               if row and stepped and not row.get('rhythm') else runs)):
                     roles = self.facade_roles(row, len(run)) if row else [
                         'W' if (c[0] if face in 'NS' else c[1]) % 2 == 0 else '_' for c in run]
                     corner_cells = {tuple(v['at']) for v in (row or {}).get('corner_glazing', [])}
@@ -548,10 +581,13 @@ class FacadePlanning:
                         if not row and any(abs(c[0] - q[0]) + abs(c[1] - q[1]) < 3 for q in door):
                             continue
                         ry = self._column_roof_y(f, c)
+                        sill = self.step_sill(f, c, face)
                         for dy in range(STOREY_H):
                             y = base + dy
                             if ry is not None and y >= ry:
                                 continue
+                            if sill is not None and y <= sill:
+                                continue  # below the lower roof of the same building
                             if c in shop_band and y <= shop_band[c]:
                                 continue  # the shopfront band owns this part of the street face
                             pos = (c[0], y, c[1])
@@ -563,10 +599,16 @@ class FacadePlanning:
         positions = {(w.pos[0] + DIRS[w.face][0], w.pos[2] + DIRS[w.face][1])
                      for w in candidates}
         ground = outside_ground(positions, self.zone_data.get(f.no))
+        for w in candidates:
+            sill = self.step_sill(f, (w.pos[0], w.pos[2]), w.face)
+            if sill is not None:  # the lower roof is the sill, not terrain
+                ground[w.pos[0] + DIRS[w.face][0], w.pos[2] + DIRS[w.face][1]] = sill
+        def step_face(c, d):
+            return self.step_sill(f, c, d) is not None
         def block(x, y, z):
             return self.p.cells.get((x, y, z), 'minecraft:air')
         writes, report = choose_windows(candidates, block=block, walls=f.walls,
-            exposed=self.exposed, outside_ground=ground, protected=protected)
+            exposed=self.exposed, outside_ground=ground, protected=protected, step=step_face)
         for pos, state in writes.items():
             self.set(*pos, state)
         self._window_lines.extend(report_lines(f.no, report))
