@@ -1018,6 +1018,8 @@ class FacadePlanning:
         """
         lines = []
         for f in self.features:
+            if getattr(f, 'volume_of', None):
+                continue  # volumes outside the map way are plain masses with no glazing
             facades = facade_plan_mod.glazing_by_face(self.spec.get('facade_plan'), f.no) or {}
             for face in sorted('NSEW'):
                 run = self.face_run(f, face)
