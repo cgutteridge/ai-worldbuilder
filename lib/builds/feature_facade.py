@@ -423,12 +423,15 @@ class FacadePlanning:
         @param f: feature mass
         @param face: ``N``/``S``/``E``/``W``
         @param steps: keep only the columns whose ``face`` side is a lower part of the
-            same feature (:meth:`step_sill`) instead of the outside ones; window planning only
+            same feature (:meth:`step_sill`) instead of the outside ones; window planning only.
+            The glazing-share report counts outside faces only.
         @returns: list of ordered ``(x, z)`` runs
         """
-        cand = [c for c in f.walls if (self.step_sill(f, c, face) is not None
-                                       and not self.exposed(c, face)) == steps
-                and (steps or self.exposed(c, face))]
+        def wanted(c):
+            if steps:
+                return self.step_sill(f, c, face) is not None and not self.exposed(c, face)
+            return self.exposed(c, face)
+        cand = [c for c in f.walls if wanted(c)]
         if not cand:
             return []
         by_edge: dict = {}

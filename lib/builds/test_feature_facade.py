@@ -256,6 +256,35 @@ class StepWallWindowsTest(unittest.TestCase):
             for y in self.glass(plan, c):
                 self.assertTrue(45 < y < 50, (c, y))
 
+    def test_step_pass_never_costs_outside_glass_or_glazes_corner_piers(self):
+        from unittest import mock
+        fixtures = {
+            'straight': {(x, z) for x in range(10, 18) for z in range(20, 25)},
+            'stair': {(x, z) for x in range(10, 18) for z in range(20, 30) if x - 10 >= 2 * (z - 20)},
+            'corner': {(x, z) for x in range(10, 15) for z in range(20, 25)},
+        }
+        for name, high in fixtures.items():
+            with self.subTest(name):
+                plan, f = self.build(high)
+                with mock.patch.object(F.Build, 'step_sill', return_value=None):
+                    base, _ = self.build(high)
+                lost = {k for k, st in base.cells.items()
+                        if 'glass' in st and plan.cells.get(k) != st}
+                self.assertEqual(lost, set())
+                near = {'N': (0, -1), 'S': (0, 1), 'W': (-1, 0), 'E': (1, 0)}
+                piers = set()
+                for c in f.walls:
+                    out = [d for d, (dx, dz) in near.items() if (c[0] + dx, c[1] + dz) not in f.cells]
+                    step = [d for d, (dx, dz) in near.items()
+                            if (c[0] + dx, c[1] + dz) in f.cells
+                            and f.zone_roof[(c[0] + dx, c[1] + dz)] < f.zone_roof[c]]
+                    if out and step:
+                        piers.add(c)
+                self.assertTrue(piers)
+                for k, st in plan.cells.items():
+                    if (k[0], k[2]) in piers and 'glass' in st:
+                        self.assertIn('glass', base.cells.get(k, ''), (name, k))
+
     def test_step_lower_than_one_window_row_gets_no_glass(self):
         high = {(x, z) for x in range(10, 18) for z in range(20, 25)}
         plan, f = self.build(high, high_y=47)

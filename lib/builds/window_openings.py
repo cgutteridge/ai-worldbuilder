@@ -39,8 +39,9 @@ def choose_windows(candidates, *, block, walls, exposed, outside_ground, protect
     @param walls: shell wall columns
     @param exposed: callback (column, face) for exterior geometry
     @param step: optional callback (column, face) for a wall above a lower part of the same
-        building (#473); it counts as a face for the tread rule and, on a column with no
-        outside face, for corners. A column with one outside face keeps it as before.
+        building (#473); it counts as a face for the tread rule and, on a column with
+        no outside face, for corners. On a column that also has an outside face the step face is a
+        convex corner of the upper volume: a pier, never glazed; the outside face is judged as before.
     @param outside_ground: mapping exterior (x, z) to known terrain Y or None
     @param protected: door/frame positions that must remain intact
     @returns: (position-to-block writes, per-face Counter of outcomes/reasons).
@@ -82,11 +83,20 @@ def choose_windows(candidates, *, block, walls, exposed, outside_ground, protect
     active = {}
     for pos, choices in sorted(grouped.items()):
         # A corner with two evidenced faces still has one deterministic material.
-        w = min(choices, key=lambda v: (not v.corner_evidence, v.face))
+        # Prefer an outside face over a zone-step face, so frames and offsets stay where they were.
         x, y, z = pos
         c = (x, z)
         outside = sum(exposed(c, d) for d in DIRS)
+        # A zone-step face on a column that also has an outside face is a convex corner of the
+        # upper volume: it stays a pier, and the outside face is judged exactly as without steps.
+        kept = [v for v in choices if not outside or exposed(c, v.face)]
+        pier = not kept
+        choices = kept or choices
+        w = min(choices, key=lambda v: (not v.corner_evidence, v.face))
         corner = outside > 1 or (outside == 0 and sum(step(c, d) for d in DIRS) > 1)
+        if pier and pos not in protected and structural(block(*pos)):
+            record(pos, 'corner pier / tread too short')
+            continue
         if pos in protected:
             reason = 'protected entrance'
         elif not structural(block(*pos)):

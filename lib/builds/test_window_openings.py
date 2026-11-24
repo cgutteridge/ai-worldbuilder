@@ -357,6 +357,7 @@ class StepFaceTreadTest(unittest.TestCase):
         blocks = {(1, y, 1): 'bricks' for y in range(6)}
         writes, report = choose_windows(
             [Window((1, 3, 1), 'S')], block=lambda x, y, z: blocks.get((x, y, z), 'air'),
-            walls={(1, 1)}, exposed=lambda c, d: d == 'S', outside_ground={(1, 2): 3})
+            walls={(1, 1)}, exposed=lambda c, d: False, step=lambda c, d: d == 'S',
+            outside_ground={(1, 2): 3})
         self.assertEqual(writes, {})
         self.assertEqual(report['S'], {'below outside sill': 1})
