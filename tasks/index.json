@@ -105,13 +105,13 @@
     {
       "id": 479,
       "title": "Feature dry-run lists every readiness gap (ghost, evidence, journal, lock) with next commands",
-      "status": "todo",
+      "status": "doing",
       "priority": "medium",
       "complexity": "m",
       "blockedBy": [],
       "builderTask": false,
       "notes": "GOAL. A dry-run of a feature apply reports every readiness gap at once, so none surprises the real apply. Found in #384 trial D, where the ticket said ghost ground existed for the whole corridor (11 cells lacked it) and the readiness gate refused the apply three times (aerial coverage 0% on 42 cells, evidence validation, a begun entry with mismatches), each found only after a slow attempt.\n\nCHANGE. The feature dry-run (scripts/railway_build.py dry-run, and the shared path in lib/site/site_kit.py) lists, for every cell the footprint touches: ghost ground present or missing; evidence the feature needs (per feature type: railway needs map and lidar, see FEATURE_EVIDENCE in lib/journal/cell_readiness.py) present, missing or unvalidated; journal state (planned, begun, landed, unfinished apply left by an earlier attempt, with the recover command to run); and whether the site lock is held and by whom. End with a single ready / not ready verdict and the exact next command for each gap (for example the scoped `cell_registry.py prepare --cell C --evidence-only --feature F`, or the ghost command). Read-only: no live writes beyond the existing read scans, no journal writes.\n\nCHECKS. MemoryBlocks and journal fixtures: all ready; missing ghost cell; missing evidence; unvalidated evidence; unfinished apply entry; lock held by another owner. The output names every gap, not just the first. Update docs/cell-readiness.md.\n"
-    },
+    , "claimedBy": "cursor", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/479-feature-dry-readiness"},
     {
       "id": 480,
       "title": "Railway planner: corner shape at junction join cells (run end next to another track)",
