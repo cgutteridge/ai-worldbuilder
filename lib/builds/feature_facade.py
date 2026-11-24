@@ -333,6 +333,38 @@ def _stepped_shop_runs(cells: set, fronts: dict) -> list[dict]:
     ]
 
 
+STAIR_TREAD_MAX = 2
+"""Longest wall run that counts as one tread of a stair-stepped face: the pier rhythm of
+:meth:`FacadePlanning.facade_roles` leaves no window on a run this short."""
+
+
+def _stair_flights(runs: list, face: str) -> list[list]:
+    """Join consecutive short treads of a stair-stepped face into flights for glazing rows.
+
+    A rotated front exposes one or two columns per wall step, so a pier on both
+    ends of every run leaves no window (#466). Treads whose columns follow on
+    along the face become one flight, and the row's rhythm runs along the flight
+    instead; its two ends stay piers. A longer straight run keeps its own rhythm.
+
+    @param runs: ordered runs from :meth:`FacadePlanning.face_runs`
+    @param face: ``N``/``S``/``E``/``W``
+    @returns: runs and flights, each ordered along the face
+    """
+    along = 0 if face in 'NS' else 1
+    out, flight = [], []
+    for run in sorted(runs, key=lambda r: r[0][along]):
+        if len(run) > STAIR_TREAD_MAX:
+            out.append(run)
+            continue
+        if flight and run[0][along] != flight[-1][along] + 1:
+            out.append(flight)
+            flight = []
+        flight = flight + list(run)
+    if flight:
+        out.append(flight)
+    return out
+
+
 def _shop_door_cell(runs: list) -> tuple[int, int]:
     """Column for a shop door when the plan did not register one.
 
@@ -481,7 +513,8 @@ class FacadePlanning:
         from window_openings import Window, choose_windows, report_lines
         facades = facade_plan_mod.glazing_by_face(self.spec.get('facade_plan'), f.no)
         if not facades and self._suppress_window_grid(f):
-            return  # a dressed class street face replaces the unevidenced all-face storey grid
+            return  # an industrial or big-box street face replaces the unevidenced all-face storey grid
+        shop_band = self._shop_band_tops(f)
         door = self._door_keepout(f)
         candidates = []
         # Preserve actual door leaves and their lateral framing, including jambs
@@ -503,7 +536,7 @@ class FacadePlanning:
                 if facades and not row:
                     continue
                 base = f.b + storey * STOREY_H
-                for run in runs:
+                for run in (_stair_flights(runs, face) if row and stepped else runs):
                     roles = self.facade_roles(row, len(run)) if row else [
                         'W' if (c[0] if face in 'NS' else c[1]) % 2 == 0 else '_' for c in run]
                     corner_cells = {tuple(v['at']) for v in (row or {}).get('corner_glazing', [])}
@@ -517,6 +550,8 @@ class FacadePlanning:
                             y = base + dy
                             if ry is not None and y >= ry:
                                 continue
+                            if c in shop_band and y <= shop_band[c]:
+                                continue  # the shopfront band owns this part of the street face
                             pos = (c[0], y, c[1])
                             if row and row.get('wall') and pos not in protected and c not in door:
                                 self.set(*pos, row['wall'])
@@ -583,22 +618,60 @@ class FacadePlanning:
     def _suppress_window_grid(self, f: Feature) -> bool:
         """Whether the unevidenced storey grid should stay off this shell.
 
-        Industrial and big-box rules always replace that grid. A shop replaces it
-        only when a street front is actually dressed; a shop with no mapped street,
-        or a shell too low for the fascia, keeps the grid.
+        Industrial and big-box rules replace that grid. A shop never does: its
+        dressed band owns only the ground storey of the street face
+        (:meth:`_shop_band_tops`), and upper storeys and the other faces keep
+        their windows (#466).
 
         @param f: feature mass
         @returns: True when the grid must not run
         """
         rule = self._street_face_rule(f)
-        if not rule:
-            return False
-        if rule['kind'] != 'shop':
-            return True
-        if (self.spec.get('facade_plan') or {}).get(f.no, {}).get('faces'):
-            return False
+        return bool(rule) and rule['kind'] != 'shop'
+
+    def _shop_dressing(self, f: Feature):
+        """Street-face columns and recipe when a shopfront will be dressed on this shell.
+
+        A shop is dressed when it has a mapped street front, the shell is tall
+        enough for the fascia band, and no evidenced facade row glazes storey 1 of
+        a street-facing face (that row wins). Facade rows on upper storeys or other
+        faces add glazing around the shopfront (#466).
+
+        @param f: feature mass
+        @returns: ``(fronts, rule)`` or ``None``
+        """
+        rule = self._street_face_rule(f)
+        if not rule or rule['kind'] != 'shop':
+            return None
         fronts = self._fronts_for(f)
-        return bool(fronts) and self._shop_front_fits(f, fronts, rule)
+        if not fronts or not self._shop_front_fits(f, fronts, rule):
+            return None
+        facades = facade_plan_mod.glazing_by_face(self.spec.get('facade_plan'), f.no)
+        street = set(fronts.values())
+        if any(row.get('storey') == 1 for face in street for row in facades.get(face, [])):
+            return None
+        return fronts, rule
+
+    def _shop_band_tops(self, f: Feature) -> dict:
+        """Top row the dressed shopfront owns on each street-face column, for window planning.
+
+        The band runs from the shop floor through the glass, awning and sign rows,
+        and never ends below the ground storey: windows stay off it, so the upper
+        storeys and the other faces keep theirs.
+
+        @param f: feature mass
+        @returns: ``{(x, z): top y}``; empty when no shopfront is dressed
+        """
+        dressing = self._shop_dressing(f)
+        if dressing is None:
+            return {}
+        fronts, rule = dressing
+        glass_h = rule['glass_height']
+        ground_top = f.b + STOREY_H - 1
+        return {
+            cell: max(ground_top, self._shop_floor(f, cell, face, glass_h) + glass_h + 2)
+            for cell, face in fronts.items()
+        }
 
     def _shop_column_ok(self, f: Feature, cell: tuple[int, int]) -> bool:
         """False when a squared-front cell belongs to another building or the room inside.
@@ -851,17 +924,22 @@ class FacadePlanning:
         or an unevidenced lawn.
         """
         rule = self._street_face_rule(f)
-        if not rule or (self.spec.get('facade_plan') or {}).get(f.no, {}).get('faces'):
+        if not rule:
+            return
+        has_faces = bool((self.spec.get('facade_plan') or {}).get(f.no, {}).get('faces'))
+        if has_faces and rule['kind'] != 'shop':
             return
         tags = self.building_tags.get(f.no, {})
         fronts = self._fronts_for(f)
         if not fronts:
-            print(f'{f.no} street face {rule["kind"]}: no mapped street front')
+            if not has_faces:
+                print(f'{f.no} street face {rule["kind"]}: no mapped street front')
             return
         name = tags.get('name') or tags.get('brand') or tags.get('addr:unit') or ''
         if rule['kind'] == 'shop':
-            if not self._shop_front_fits(f, fronts, rule):
-                print(f'{f.no} street face shop: shell too low for a fascia band; left the window grid')
+            if self._shop_dressing(f) is None:
+                if not has_faces:
+                    print(f'{f.no} street face shop: shell too low for a fascia band; left the window grid')
                 return
             self._dress_shop_front(f, fronts, rule, name)
             print(

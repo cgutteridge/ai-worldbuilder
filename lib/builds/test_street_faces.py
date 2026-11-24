@@ -415,7 +415,8 @@ class StreetFaceBuildTest(unittest.TestCase):
         self.assertFalse(any('trapdoor' in state for state in plan.cells.values()))
         self.assertEqual(plan.cells[(24, 51, 25)], 'minecraft:bricks')
         self.assertEqual(plan.cells[(15, 51, 29)], 'minecraft:bricks')
-        self.assertEqual(plan.cells[(12, 55, 20)], 'minecraft:bricks')
+        # The band owns the ground storey of the street face only (#466).
+        self.assertIn('glass_pane', plan.cells[(12, 55, 20)])
 
     def test_sign_options_override_wood_fascia_and_text(self):
         spec = fixtures.build_spec(storeys=2)
@@ -599,6 +600,33 @@ class StreetFaceBuildTest(unittest.TestCase):
             {'storey': 1, 'glazed_h': 1, 'pier': 2}]}}}}
         _, plan = self._shop(shop='cafe', spec=spec)
         self.assertFalse(any('trapdoor' in state or 'oak_door' in state for state in plan.cells.values()))
+
+    def test_dressed_shop_keeps_upper_storey_and_side_windows(self):
+        _, plan = self._shop(shop='cafe')
+        self.assertTrue(any('trapdoor' in state for state in plan.cells.values()))
+        panes = {pos for pos, state in plan.cells.items() if 'glass_pane' in state}
+        self.assertTrue(any(z == 20 and y == 55 for _x, y, z in panes), 'street face upper storey')
+        self.assertTrue(any(z == 29 for _x, _y, z in panes), 'rear face')
+        self.assertTrue(any(x in (10, 24) and y == 52 for x, y, _z in panes), 'side faces, ground storey')
+        self.assertFalse(any(z == 20 and y <= 54 for _x, y, z in panes), 'no grid inside the shop band')
+
+    def test_upper_facade_rows_glaze_above_a_dressed_shop_front(self):
+        spec = fixtures.build_spec(storeys=2)
+        spec['facade_plan'] = {'A': {'faces': {
+            'N': {'glazing': [{'storey': 2, 'glazed_h': 1, 'pier': 1}]},
+            'E': {'glazing': [{'storey': 1, 'glazed_h': 2, 'pier': 1}]},
+        }}}
+        builder, plan = self._shop(shop='cafe', spec=spec)
+        self.assertIn('street face shop:', builder.output)
+        self.assertTrue(any('trapdoor' in state for state in plan.cells.values()))
+        self.assertEqual(len(plan.signs), 1)
+        doors = [p for p, state in plan.cells.items() if 'oak_door' in state and 'half=lower' in state]
+        self.assertEqual(len(doors), 1)
+        glass = {pos for pos, state in plan.cells.items() if 'glass' in state}
+        self.assertTrue(any(z == 20 and y == 55 for _x, y, z in glass), 'storey 2 row on the street face')
+        self.assertTrue(any(x == 24 and y < 53 for x, y, _z in glass), 'side row on the east face')
+        self.assertFalse(any(z == 29 for _x, _y, z in glass), 'a face with no rows stays blank')
+        self.assertEqual({y for _x, y, z in glass if z == 20 and y < 55}, {51, 52})
 
     def test_shop_without_a_street_keeps_the_window_grid(self):
         builder, plan = self._shop(shop='cafe', streets=[])
