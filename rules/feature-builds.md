@@ -399,6 +399,37 @@ aerial crop), and record the sheet path in the build review
 If something looks wrong, fix the **spec** (or `feature_build.py` if the bug
 is shared) and re-apply the same build name. Never stack `_b`/`_c` patch builds.
 
+## Read step: roof volumes for one way (#459)
+
+`python3 scripts/roof_read.py --world <world> --way <map way id> --out <dir> [--ask | --answer <file>]`
+reads one building and writes four files under `--out` (refused under `site/builds`): the rotated aerial
+crop the designer sees (`read-<way>-crop.png`, street at the bottom, plot band in white, volumes in
+yellow), the question (`-prompt.txt`), the read with trust flags (`read-<way>.json`) and a
+`feature_build` spec proposal (`-proposal.json`). It never edits a world spec; copying the proposal into
+`site/builds/<planned id>.json` is a designer's choice. No new spec keys: the proposal uses `zones[label]`
+`regions` and `surface: "fit"`, `roofs[label].stairs: "slope"` (pitched), `roofs[label].finish: "carpet"`
+(when a volume inside the way is flat on a zoned pitched roof) and `volumes[label]` (a volume beyond the
+way whose height rests on lidar).
+
+- Volumes come from the lidar profile along the plot axis (street end first): flat, ridge across the
+  plot, slope along it, falling across it, hip. A wall step between volumes is split between them; mass
+  beyond the way is kept only when it joins the way. Each volume's form is a `roof_surface` fit (or the
+  profile kind when no clean shape fits), eave and top from the fit, storeys from the eave
+  (`terrace_body.storeys_from_eave`, per volume, so a low front or rear wing no longer drags the body).
+- `--ask` makes one designer-model call (`config/build-roles.json` designer, through the CLI with no tools)
+  with the crop and a short lidar table; the answer labels each volume's form, roof type, hidden or not,
+  storeys when visible, and bay, dormer or none at the front. Token use is measured and stored in the
+  read. `--answer` replays a stored answer (an agent's own read of the crop, or an earlier call).
+- Trust, per volume and attribute (height, form, colour, storeys, front): each source is `agree`,
+  `disagree` or `silent` against the chosen value, with `rests_on` and the flags. Lidar is degraded when
+  its roughness (mean distance to the 3x3 median of the volume's own columns) is above 0.45 m (clean roofs
+  about 0.1 to 0.3 m), or a flat reading spreads over 1.5 m; the image when leaf green covers over 25% of
+  the volume, it is under 0.6 of the local roofs' brightness, or the model says hidden. Green plus a row
+  disagreement makes smooth lidar suspect. The row speaks only when both neighbours' columns at the same
+  position agree within 1 m. Map tags check the main volume only (`building:levels` its storeys,
+  `roof:shape` its form family). Fallback order: lidar (height, form), the image (form, colour), the row, the
+  land-use class default. A value resting on one source is flagged (`height rests on lidar alone`).
+
 ## Railway line features
 
 A through railway is a named feature, `railway_<tx>_<tz>` (negative cell coordinates
