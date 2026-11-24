@@ -167,18 +167,7 @@
       "builderTask": true,
       "notes": "Owner 2026-11-24 (world I-067, Papa John's w149814013): 'roof uses stone brick as its main material -- soft fail, why not deepslate?'. Process fix wanted. feature_roof_zones.py (about line 940) only prints 'roof colour mean rgb=... suggest <name>' from nearest_preview_colour, and the spec carries a hand-chosen material. Widen the candidate roof materials to the stair-and-slab families that suit UK roofs (deepslate tiles/bricks, cobbled deepslate, polished blackstone, stone, andesite and the rest), keep stair/slab/block variants available (roof_material.family_variants), and have spec generation write the chosen material per roof zone with the measured colour as evidence. Mind the aerial season and lighting caveat: colour picks a material family, it is not proof; say where it rests on one source. Done: Papa John's zones choose a dark family for rgb about (98,96,130); tests on the colour mapping; dry run lists the choice and why. Record the fix on I-067."
     },
-    {
-      "id": 478,
-      "title": "Live apply wrapper: claim lock, log, always release, one result line",
-      "status": "doing",
-      "priority": "medium",
-      "complexity": "s",
-      "blockedBy": [],
-      "builderTask": false,
-      "notes": "GOAL. One supported command for a live feature apply that claims the site lock, runs the apply with output to a log file, always releases the lock, and prints one result line (APPLY_EXIT=<n>, lock released, result report path). Found in #384 trial D, where the by-hand sequence cost hours.\n\nWHAT WENT WRONG (all seen 2026-11-23/24):\n- `site_lock.py run ...` gave its child no lock for scripts/railway_build.py (\"World lock not held by claude: None\"); cause not found. Worked round by `site_lock.py --world X claim`, then `SITE_OWNER=claude python3 ... --apply`, then `release`.\n- `site_recover.py recover <cell> --apply` does nothing if the same owner has already claimed the lock (a fresh own lock looks like a live run). The wrapper must not pre-claim before a recover.\n- Chaining with `;` after a recover ran the apply anyway, which refused with \"unfinished apply\"; nothing was written, but a chain should stop on a failed step.\n- A hand-started background apply was reported as still running after it had finished, because nothing emitted a clear end marker.\n\nCHANGE. A script (for example scripts/site_apply.py, name to follow the layout in docs/agents/layout.md) that: refuses if another owner holds the lock (print who, since several build threads share it); claims; runs the named apply command with SITE_OWNER set; writes a log; always releases (including on failure or interrupt); prints the final marker line last. Also find and fix why `site_lock.py run` loses the lock for railway_build.py, or remove the wrapper if the new script replaces it. A recover mode that runs without a pre-claimed lock and stops on failure.\n\nCHECKS. Tests with a fake apply command: success releases; failure releases; interrupt releases; busy lock refuses without writing; recover mode does not pre-claim. No live world. Update docs/agents/world-and-live-commands.md.\n",
-      "claimedBy": "cursor",
-      "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/478-site-apply"
-    },
+    
     {
       "id": 479,
       "title": "Feature dry-run lists every readiness gap (ghost, evidence, journal, lock) with next commands",
