@@ -54,11 +54,15 @@ class Ctx:
             return 0.0
         return float(np.isfinite(img[..., 0]).mean())
 
-    def ask(self, key: str, png: Path, prompt: str) -> dict:
+    def ask(self, key: str, png: Path, prompt: str, validate=None) -> dict:
         """One designer ask, cached by the image bytes, the prompt (which holds the plan) and the role.
 
+        @param validate: optional ``call -> any`` run on a fresh answer before it is cached; it raises
+            (``ValueError``) to reject an answer that cannot be used, and a rejected answer is not cached
+            (its cost is still recorded on ``asks``)
         @returns: the :func:`designer_ask.ask` result plus ``cached`` and ``elapsed_s``; also appended to ``asks``
         @raises RuntimeError: when the call fails (nothing is cached)
+        @raises ValueError: when ``validate`` rejects the answer (nothing is cached)
         """
         import designer_ask
         digest = hashlib.sha256(Path(png).read_bytes() + b'\0' + prompt.encode() + b'\0'
@@ -72,13 +76,16 @@ class Ctx:
             call = designer_ask.ask(Path(png), prompt, role_id=self.role_id, runner=self.runner)
             call['elapsed_s'] = round(time.monotonic() - began, 1)
             call['cached'] = False
-            if stored is not None:
-                stored.parent.mkdir(parents=True, exist_ok=True)
-                stored.write_text(json.dumps(call, indent=2) + '\n')
         self.asks.append({'key': key, 'model': call.get('model'), 'effort': call.get('effort'),
                           'tokens': call.get('total_tokens'), 'cost_usd': call.get('cost_usd'),
                           'elapsed_s': call.get('elapsed_s'), 'cached': call['cached'],
                           'measured': call.get('measured')})
+        if not call['cached']:
+            if validate is not None:
+                validate(call)      # a rejected answer raises here, before anything is stored
+            if stored is not None:
+                stored.parent.mkdir(parents=True, exist_ok=True)
+                stored.write_text(json.dumps(call, indent=2) + '\n')
         return call
 
 
@@ -102,7 +109,7 @@ def roof_step(ctx: Ctx, record: dict) -> None:
         png = ctx.work_dir / f'{ctx.way_id}-roof.png'
         RR.crop_png(ev, vols, png)
         try:
-            call = ctx.ask('roof', png, question)
+            call = ctx.ask('roof', png, question, validate=lambda c: RR.parse_answer(c['text'], vols, types))
             answer = RR.parse_answer(call['text'], vols, types)
         except (RuntimeError, ValueError) as exc:
             record['unsure'].append(f'designer ask failed ({str(exc)[:120]}): lidar and class default only')
@@ -112,6 +119,7 @@ def roof_step(ctx: Ctx, record: dict) -> None:
     mass = RR.roof_columns(ctx.cells, ev.columns, mass_m=FZ.ZONE_LIDAR_MASS_M)   # the builder's own zone threshold
     proposal = RR.proposal(result, name='read', way_id=ctx.way_id, front=ctx.front, wall=ctx.wall, mass_cells=mass)
     main = next(v for v in result['volumes'] if v['id'] == result['main'])
+    ctx.main_volume = main          # the colour step reads its measured aerial colour
     tr = main['trust']
     roofs = proposal['roofs']['a']
     if roofs['kind'] == 'pitched':
@@ -149,7 +157,51 @@ def _zone_mass(ctx: Ctx) -> bool:
     return bool(RR.roof_columns(ctx.cells, ctx.evidence.columns, mass_m=FZ.ZONE_LIDAR_MASS_M))
 
 
-STEPS = [roof_step]  # the fascia step is opt-in (default_reader fascia=True): it fetches street-level frames
+def roof_colour_step(ctx: Ctx, record: dict) -> None:
+    """Roof material from the measured aerial colour of the main volume (#476); no extra ask.
+
+    The mean colour over the building's roof pixels picks a family through
+    :func:`roof_material.pick_from_colour` (a wider palette: deepslate, blackstone, stone, brick, timber,
+    copper). It rests on one aerial source, whose season and light differ from the lidar's, so it picks a
+    family and is not proof. It overrides the type-derived material unless that already is the pick (or, for
+    a weak pick, its runner-up). Nothing is changed when there is no usable colour (no image, leaf cover or
+    deep shadow over the volume).
+    """
+    main = getattr(ctx, 'main_volume', None)
+    roofs = record['patch'].get('roofs')
+    if not main or not roofs:
+        return
+    rgb = main.get('rgb')
+    if rgb is None or ctx.image_share() < MIN_IMAGE_SHARE:
+        return
+    if (main.get('green') or 0) > RR.GREEN_MAX:
+        record['unsure'].append('roof colour not used: leaf cover over the roof pixels')
+        return
+    if (main.get('lum_ratio') or 1.0) < RR.SHADOW_RATIO:
+        record['unsure'].append('roof colour not used: roof in deep shadow')
+        return
+    from roof_material import pick_from_colour
+    mean = tuple(int(round(float(c) * 255)) for c in rgb)
+    slope = 'pitched' if roofs['kind'] == 'pitched' else 'flatish'
+    pick = pick_from_colour(mean, slope)
+    before = roofs.get('material')
+    flags = list(record['fields'].get('roof_material', {}).get('flags', []))
+    flags.append('roof material rests on one aerial source (colour picks a family, not proof)')
+    keep = before == pick['family'] or (pick['close'] and before == pick['runner_up'])
+    chosen = before if keep else pick['family']
+    why = (f"measured aerial rgb={mean}, nearest roof look {pick['family']} (distance {pick['distance']}"
+           + (f"; weak, {pick['runner_up']} is nearly as near" if pick['close'] else '') + ')')
+    if keep:
+        why += f'; kept {before}'
+    elif before:
+        why += f'; replaces {before}'
+    record['fields']['roof_material'] = {'value': chosen, 'rests_on': 'image (measured colour)',
+                                         'flags': flags, 'evidence': why}
+    record['patch']['roofs'] = {**roofs, 'material': chosen}
+
+
+# the fascia step is opt-in (default_reader fascia=True): it fetches street-level frames
+STEPS = [roof_step, roof_colour_step]
 
 
 def read_building(way_id, wall, *, loader, role_id, cache_dir=None, runner=None, steps=None) -> dict:

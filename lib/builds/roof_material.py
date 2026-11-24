@@ -39,6 +39,8 @@ TEXTURES = frozenset({'smooth', 'rough', 'tile-like', 'shingle-like', 'ridged'})
 SUGGESTION_LIMIT = 3
 # Same-texture families win unless another colour is far closer than this.
 TEXTURE_MISMATCH_PENALTY = 40_000
+# A colour pick whose runner-up is within this RGB distance is weak (say so).
+CLOSE_MARGIN = 12.0
 # The sixteen vanilla dye colours; each has a ``<dye>_carpet`` block.
 CARPET_DYES = frozenset({
     'white', 'light_gray', 'gray', 'black', 'brown', 'red', 'orange', 'yellow',
@@ -166,6 +168,44 @@ def carpet_block(material: str, finish: str = 'carpet', *, catalogue: dict | Non
             'name the carpet, e.g. "gray_carpet"'
         )
     return f"{family['carpet']}_carpet"
+
+
+def pick_from_colour(
+    rgb: tuple[float, float, float], slope: str = 'pitched', *, catalogue: dict | None = None,
+) -> dict:
+    """Roof family whose look from the air is nearest a measured aerial colour (#476).
+
+    Candidates are the catalogue families that carry an ``aerial`` colour (how a real
+    roof of that kind reads in an aerial photo; ``colour`` stays the block's own texture colour) and
+    that the slope accepts (a pitched roof needs a triad). A pick from colour only
+    chooses a *family*: aerial dates, sun and haze shift the colour, so it is a
+    suggestion that rests on one source, never proof of the material.
+
+    @param rgb: mean aerial colour, 0..255 per channel
+    @param slope: ``flatish`` or ``pitched``
+    @param catalogue: optional loaded catalogue
+    @returns: ``family`` (best), ``distance`` (RGB distance to it), ``runner_up`` (next family or None)
+        and ``close`` (True when the runner-up is nearly as near, so the pick is weak)
+    @raises ValueError: when no family offers an aerial colour for this slope
+    """
+    cat = catalogue or load_catalogue()
+    scored = []
+    for fam_id, fam in cat['families'].items():
+        aerial = fam.get('aerial')
+        if aerial is None or not roof_blocks(fam_id, slope, catalogue=cat)['ok']:
+            continue
+        scored.append((sum((a - b) ** 2 for a, b in zip(aerial, rgb)) ** 0.5, fam_id))
+    if not scored:
+        raise ValueError('no roof family offers an aerial colour for this slope')
+    scored.sort()
+    best = scored[0]
+    second = scored[1] if len(scored) > 1 else None
+    return {
+        'family': best[1],
+        'distance': round(best[0], 1),
+        'runner_up': second[1] if second else None,
+        'close': bool(second and second[0] - best[0] < CLOSE_MARGIN),
+    }
 
 
 def roof_type_names(*, catalogue: dict | None = None) -> list[str]:
@@ -367,7 +407,7 @@ def _validate_catalogue(data: dict, path: Path) -> None:
     families = data.get('families')
     if not isinstance(families, dict) or not families:
         raise ValueError(f'{path}: families must be a non-empty object')
-    allowed = {'full', 'slab', 'stairs', 'colour', 'texture', 'triad', 'carpet'}
+    allowed = {'full', 'slab', 'stairs', 'colour', 'aerial', 'texture', 'triad', 'carpet'}
     for family_id, family in families.items():
         if not isinstance(family_id, str) or not family_id:
             raise ValueError(f'{path}: family id must be a non-empty string')
@@ -391,6 +431,13 @@ def _validate_catalogue(data: dict, path: Path) -> None:
                        and 0 <= channel <= 255 for channel in colour)
         ):
             raise ValueError(f'{path}: families[{family_id!r}].colour must be three 0..255 ints')
+        aerial = family.get('aerial')
+        if aerial is not None and (
+            not isinstance(aerial, list) or len(aerial) != 3
+            or not all(isinstance(channel, int) and not isinstance(channel, bool)
+                       and 0 <= channel <= 255 for channel in aerial)
+        ):
+            raise ValueError(f'{path}: families[{family_id!r}].aerial must be three 0..255 ints')
         if 'carpet' in family and family['carpet'] not in CARPET_DYES:
             raise ValueError(
                 f'{path}: families[{family_id!r}].carpet must be one of {sorted(CARPET_DYES)}'

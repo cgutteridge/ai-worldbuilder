@@ -1028,7 +1028,10 @@ def _roof_sentence(group: list[dict]) -> str:
     }
     sources = {row['roof_source'] for row in group}
     if 'read' in sources:
-        return "Roof kind and storeys per building from its own read (lidar and aerial), not from its neighbours."
+        unread = [row['way_id'] for row in group if row['roof_source'] != 'read']
+        tail = f" Not read, class or district default: ways {', '.join(unread)}." if unread else ''
+        return ("Roof kind and storeys per building from its own read (lidar and aerial, where read), "
+                f"not from its neighbours.{tail}")
     if len(sources) == 1:
         source = labels[next(iter(sources))]
     else:

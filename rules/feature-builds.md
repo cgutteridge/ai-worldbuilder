@@ -480,10 +480,14 @@ hard-coded model) and writes its own storeys, roof kind (`pitched` or `flat`), r
 pitched roof, `zones[label]` (`surface: "fit"`, regions) and `volumes[label]` into the spec. Nothing is
 copied from a neighbour or the district default where the read has an answer.
 
-- `--no-read` skips the read (class and district defaults, as before). `--read-cache DIR` sets the cache
+- Commercial rows on the terrace-body path become `feature_build` specs when read (a per-building `zones`/
+  `volumes` body, not a `house_build` body spec); `--no-read` skips the read and restores the `house_build`
+  body spec (class and district defaults, as before). `--read-cache DIR` sets the cache
   (default: the world's `instance/row-read-cache`, not committed).
 - Asks are cached by building, plan table, image bytes and designer id; a re-run with the same plan and
-  image costs nothing. Failed asks are never cached.
+  image costs nothing. Failed asks are never cached: a call that errors, or whose answer a step rejects
+  (`ctx.ask(..., validate=fn)` raises before the answer is stored, e.g. text the read cannot parse), is asked
+  again next run; its cost is still reported.
 - Unsure or missing evidence is said, not hidden: no aerial over the plot means no ask and lidar plus the
   class default (`no aerial image over the plot`); a failed ask means the same; an unreadable building keeps
   its class default (`read unavailable`). The trust flags of the main volume (`height rests on lidar alone`
@@ -491,6 +495,24 @@ copied from a neighbour or the district default where the read has an answer.
 - The dry-run report gains `reads` (per building: status, fields with value, `rests_on`, flags and evidence,
   asks with model, effort, tokens, cost, elapsed seconds and `cached`, unsure, patch) and `read_summary`
   (one line per building and a total of tokens, dollars and seconds actually spent).
+- **Roof material from the measured aerial colour (#476)**: `row_read.roof_colour_step` (after the read, no
+  extra ask) takes the mean aerial colour over the building's main-volume roof pixels and picks a family with
+  `roof_material.pick_from_colour(rgb, slope)`. The pick overrides the type-derived `roof_material` (kept when it
+  already is the pick, or the runner-up of a weak pick) and is written as `fields.roof_material` (value,
+  `rests_on` `image (measured colour)`, flags, evidence with the rgb, distance and what it replaced) and the
+  patch `roofs[label].material`. Skipped, and said in `unsure`, under leaf cover or deep shadow. One colour per
+  building, not per roof zone (zone levels are only known when the builder runs).
+  **Palette**: `config/roof-materials.json` families that carry an `aerial` colour (three 0..255 ints: how a
+  roof of that kind reads from the air, separate from the block's own `colour`) are the candidates: deepslate
+  tile, cobbled deepslate, polished blackstone (dark and slate roofs), stone, andesite, tuff brick, brick, mud
+  brick, dark oak, spruce, weathered cut copper, stone brick. A pitched roof only takes a full/slab/stairs triad.
+  Stair, slab and block variants stay in `roof_material.family_variants`. Added families: `cobbled_deepslate`,
+  `blackstone`, `polished_blackstone_brick`. Colour picks a *family*, it is not proof: aerial date, sun and haze
+  shift it, the `aerial` values are calibrated by eye (deepslate_tile from the Papa John's slate, rgb about
+  (98,96,130)), and the pick rests on one aerial source.
+- `feature_build` dry run prints, per roof zone, `roof colour mean rgb=... suggest <family> (distance, weak
+  runner-up); spec uses <material> (agrees|differs)` from the same palette. A hand-written spec is not rewritten:
+  read the line and set `roofs[label].material` (or `zone_materials` per plateau level) yourself.
 - Adding another per-building field (fascia colour, roof material from the aerial): write a step
   `step(ctx, record)` and append it to `row_read.STEPS`. `ctx.ask(key, png, prompt)` is the cached designer
   ask (cost recorded on the record); the step adds `record['fields'][name]` and label-keyed spec keys to

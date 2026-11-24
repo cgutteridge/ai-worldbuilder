@@ -6,6 +6,7 @@
       "slab": "andesite_slab",
       "stairs": "andesite_stairs",
       "colour": [135, 135, 135],
+      "aerial": [172, 172, 170],
       "carpet": "light_gray",
       "texture": "rough",
       "triad": true
@@ -24,6 +25,7 @@
       "slab": "brick_slab",
       "stairs": "brick_stairs",
       "colour": [151, 98, 83],
+      "aerial": [165, 100, 85],
       "carpet": "brown",
       "texture": "rough",
       "triad": true
@@ -51,6 +53,7 @@
       "slab": "dark_oak_slab",
       "stairs": "dark_oak_stairs",
       "colour": [65, 45, 25],
+      "aerial": [70, 52, 35],
       "carpet": "brown",
       "texture": "shingle-like",
       "triad": true
@@ -78,6 +81,7 @@
       "slab": "deepslate_tile_slab",
       "stairs": "deepslate_tile_stairs",
       "colour": [70, 70, 75],
+      "aerial": [105, 102, 128],
       "carpet": "gray",
       "texture": "tile-like",
       "triad": true
@@ -87,6 +91,7 @@
       "slab": "mud_brick_slab",
       "stairs": "mud_brick_stairs",
       "colour": [137, 104, 79],
+      "aerial": [150, 115, 90],
       "carpet": "brown",
       "texture": "rough",
       "triad": true
@@ -114,6 +119,7 @@
       "slab": "polished_blackstone_slab",
       "stairs": "polished_blackstone_stairs",
       "colour": [45, 40, 48],
+      "aerial": [52, 50, 58],
       "carpet": "black",
       "texture": "smooth",
       "triad": true
@@ -168,6 +174,7 @@
       "slab": "spruce_slab",
       "stairs": "spruce_stairs",
       "colour": [100, 75, 45],
+      "aerial": [110, 85, 60],
       "carpet": "brown",
       "texture": "shingle-like",
       "triad": true
@@ -177,6 +184,7 @@
       "slab": "stone_slab",
       "stairs": "stone_stairs",
       "colour": [125, 125, 125],
+      "aerial": [150, 150, 148],
       "carpet": "light_gray",
       "texture": "rough",
       "triad": true
@@ -186,6 +194,7 @@
       "slab": "stone_brick_slab",
       "stairs": "stone_brick_stairs",
       "colour": [120, 120, 120],
+      "aerial": [135, 133, 130],
       "carpet": "gray",
       "texture": "rough",
       "triad": true
@@ -204,6 +213,7 @@
       "slab": "tuff_brick_slab",
       "stairs": "tuff_brick_stairs",
       "colour": [98, 103, 95],
+      "aerial": [112, 116, 108],
       "carpet": "gray",
       "texture": "rough",
       "triad": true
@@ -259,6 +269,34 @@
       "carpet": "white",
       "texture": "smooth",
       "triad": false
+    },
+    "cobbled_deepslate": {
+      "full": "cobbled_deepslate",
+      "slab": "cobbled_deepslate_slab",
+      "stairs": "cobbled_deepslate_stairs",
+      "colour": [77, 77, 80],
+      "aerial": [82, 82, 88],
+      "carpet": "gray",
+      "texture": "rough",
+      "triad": true
+    },
+    "blackstone": {
+      "full": "blackstone",
+      "slab": "blackstone_slab",
+      "stairs": "blackstone_stairs",
+      "colour": [42, 36, 41],
+      "carpet": "black",
+      "texture": "rough",
+      "triad": true
+    },
+    "polished_blackstone_brick": {
+      "full": "polished_blackstone_bricks",
+      "slab": "polished_blackstone_brick_slab",
+      "stairs": "polished_blackstone_brick_stairs",
+      "colour": [48, 43, 50],
+      "carpet": "black",
+      "texture": "rough",
+      "triad": true
     },
     "polished_andesite": {
       "full": "polished_andesite",
@@ -319,6 +357,7 @@
       "slab": "weathered_cut_copper_slab",
       "stairs": "weathered_cut_copper_stairs",
       "colour": [109, 145, 108],
+      "aerial": [115, 150, 120],
       "carpet": "green",
       "texture": "smooth",
       "triad": true

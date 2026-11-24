@@ -137,6 +137,43 @@ class ReadBuilding(unittest.TestCase):
         self.assertNotEqual(record['patch']['roofs']['material'], 'smooth_stone')
         self.assertTrue(any('not a pitched roof triad' in u for u in record['unsure']))
 
+    def _coloured(self, rgb255):
+        rgb = np.array(rgb255) / 255.0
+        ev = loaded(TR.shop)
+        ev['evidence'] = TR.evidence(TR.shop, colour=lambda _s, _t, img: img * 0 + rgb)
+        return ev
+
+    def test_measured_blue_grey_roof_picks_deepslate_and_writes_evidence(self):
+        record = self.read(self._coloured((98, 96, 130)), Runner(pitched_text()))
+        field = record['fields']['roof_material']
+        self.assertEqual(field['value'], 'deepslate_tile')
+        self.assertEqual(record['patch']['roofs']['material'], 'deepslate_tile')
+        self.assertEqual(record['patch']['roofs']['kind'], 'pitched')
+        self.assertIn('rgb=(98, 96, 130)', field['evidence'])
+        self.assertTrue(any('one aerial source' in f for f in field['flags']))
+        self.assertEqual(record['patch']['roofs']['stairs'], 'slope')     # the rest of the roof is kept
+        self.assertEqual(len(record['asks']), 1)                          # no extra ask
+
+    def test_a_roof_in_leaf_cover_keeps_the_type_material_and_says_so(self):
+        from test_roof_read import LEAF
+        record = self.read(self._coloured([c * 255 for c in LEAF]), Runner(pitched_text()))
+        self.assertNotEqual(record['fields']['roof_material']['value'], 'deepslate_tile')
+        self.assertTrue(any('leaf cover' in u for u in record['unsure']))
+
+    def test_a_rejected_answer_is_not_cached_but_a_good_one_is(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = Runner('not json at all')
+            record = self.read(loaded(TR.shop), runner, Path(tmp))
+            self.assertTrue(any('designer ask failed' in u for u in record['unsure']))
+            self.assertEqual(list(Path(tmp).glob('*.json')), [])
+            self.assertEqual(record['asks'][0]['cached'], False)       # the spend is still recorded
+            runner.text = pitched_text()
+            again = self.read(loaded(TR.shop), runner, Path(tmp))
+            self.assertEqual(runner.calls, 2)                          # asked again, not served from cache
+            self.assertEqual(again['status'], 'read')
+            self.read(loaded(TR.shop), runner, Path(tmp))
+            self.assertEqual(runner.calls, 2)                          # the good answer is cached
+
     def test_a_later_step_plugs_in_with_its_own_cached_ask_and_patch(self):
         def fascia(ctx, record):
             call = ctx.ask('fascia', ctx.work_dir / '1-roof.png', 'colour?')
@@ -183,6 +220,29 @@ class Generator(unittest.TestCase):
         self.assertEqual(len(report['read_summary']), 3)
         self.assertIn('read total: 2 building(s), 2 ask(s) (0 cached), 2110 tokens', report['read_summary'][-1])
         self.assertIn('own read', spec['notes'])
+
+    def test_the_measured_colour_reaches_each_shops_own_roof_material_in_the_spec(self):
+        def coloured(rgb255):
+            ev = loaded(TR.shop)
+            ev['evidence'] = TR.evidence(TR.shop, colour=lambda _s, _t, img: img * 0 + np.array(rgb255) / 255.0)
+            return ev
+        evidence = {'1': coloured((98, 96, 130)), '2': coloured((165, 100, 85))}
+        reader = RW.make_reader(loader=lambda way: evidence[way], role_id=ROLE, runner=Runner(pitched_text()))
+        report = T.generate(self.row(), STREET, reader)
+        spec = report['specs'][0]['spec']
+        self.assertEqual((spec['roofs']['a']['material'], spec['roofs']['b']['material']), ('deepslate_tile', 'brick'))
+        self.assertIn('rgb=(98, 96, 130)', report['reads'][0]['fields']['roof_material']['evidence'])
+        self.assertIn('roof_material deepslate_tile (image (measured colour))', report['read_summary'][0])
+
+    def test_the_roof_note_names_ways_that_were_not_read(self):
+        def loader(way):
+            if way == '2':
+                raise SystemExit('not in the vector map')
+            return loaded(TR.shop)
+        reader = RW.make_reader(loader=loader, role_id=ROLE, runner=Runner(pitched_text()))
+        notes = T.generate(self.row(), STREET, reader)['specs'][0]['spec']['notes']
+        self.assertIn('where read', notes)
+        self.assertIn('Not read, class or district default: ways 2.', notes)
 
     def test_no_reader_leaves_the_row_as_before(self):
         spec = T.generate(self.row(), STREET)['specs'][0]['spec']

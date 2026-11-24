@@ -180,6 +180,6 @@ and the designer call with a runner double). The full suite runs on each commit.
 - **Front feature.** Bay or dormer is recorded per building, but `feature_build` has no bay or dormer key;
   only `house_build`'s `body` can build one.
 - **Row check** needs both neighbours at the same position; an end-of-terrace or detached house gets none.
-- **Typology integration.** The read is a separate opt-in script; `typology_spec` does not call it, and its
-  body storeys for this shop are still 1.
+- **Typology integration.** `typology_spec` now calls the read per building for commercial (feature-path)
+  rows (#474, `lib/builds/row_read.py`); `--no-read` restores the class and district defaults. Houses are not read.
 - **Token use** is dominated by the image; a smaller crop would cut it if the labels hold.
