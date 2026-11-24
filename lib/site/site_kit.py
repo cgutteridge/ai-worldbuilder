@@ -403,21 +403,6 @@ PREVIEW_COLOURS: list[tuple[str, tuple[int, int, int]]] = [
 ]
 
 
-def nearest_preview_colour(rgb: tuple[int, int, int]) -> tuple[str, tuple[int, int, int]]:
-    """Nearest named entry in ``PREVIEW_COLOURS`` to an 0..255 RGB triple.
-
-    Used by feature_build dry-run to suggest a roof block from aerial mean colour
-    (suggestion only — not a gate).
-
-    @param rgb: target colour (R, G, B) each 0..255
-    @returns: ``(name, table_rgb)`` of the closest table entry
-    """
-    return min(
-        PREVIEW_COLOURS,
-        key=lambda t: sum((a - b) ** 2 for a, b in zip(t[1], rgb)),
-    )
-
-
 def colour(s):
     b = bid(s)[10:]
     if b in (*AIR_IDS[:2], *_LIGHT_EXTRAS, *AIR_IDS[2:]):

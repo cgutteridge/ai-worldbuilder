@@ -1422,6 +1422,13 @@ class SampleColumnsRgbTest(unittest.TestCase):
         lines = FZ.roof_zone_colour_lines([feat], aerial_rgb={(1, 1): (98 / 255, 96 / 255, 130 / 255)})
         self.assertIn('spec uses deepslate_tile (agrees)', lines[0])
 
+    def test_dry_run_colour_line_handles_region_keys_and_float_levels(self):
+        roof = {'kind': 'pitched', 'material': 'stone_brick', 'zone_materials': {'24.5': 'deepslate_tile'},
+                'material_regions': [{'material': 'deepslate_tile'}]}
+        self.assertIn('(agrees)', FZ.roof_colour_choice_text((98, 96, 130), roof, 'region:0'))
+        self.assertIn('(agrees)', FZ.roof_colour_choice_text((98, 96, 130), roof, 24.5))
+        self.assertIn('(differs)', FZ.roof_colour_choice_text((98, 96, 130), roof, 30.0))
+
     def test_dry_run_says_when_colour_suggestions_are_skipped(self):
         import aerial_coverage as aerial
         feat = mock.Mock(no='A', cells={(1, 1)}, zone_level={(1, 1): 45})

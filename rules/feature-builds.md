@@ -507,7 +507,10 @@ copied from a neighbour or the district default where the read has an answer.
   tile, cobbled deepslate, polished blackstone (dark and slate roofs), stone, andesite, tuff brick, brick, mud
   brick, dark oak, spruce, weathered cut copper, stone brick. A pitched roof only takes a full/slab/stairs triad.
   Stair, slab and block variants stay in `roof_material.family_variants`. Added families: `cobbled_deepslate`,
-  `blackstone`, `polished_blackstone_brick`. Colour picks a *family*, it is not proof: aerial date, sun and haze
+  `blackstone`, `polished_blackstone_brick`. Only `cobbled_deepslate` has an `aerial` colour; `blackstone` and
+  `polished_blackstone_brick` are catalogue-only (nameable in a spec, never picked from colour). All three carry
+  `membrane_match: false`, so `roof_aerial.nearest_roof_material` (flat-roof membrane, `roofs[label].material`
+  from `roof_aerial derive`) ignores them and answers as before. Colour picks a *family*, it is not proof: aerial date, sun and haze
   shift it, the `aerial` values are calibrated by eye (deepslate_tile from the Papa John's slate, rgb about
   (98,96,130)), and the pick rests on one aerial source.
 - `feature_build` dry run prints, per roof zone, `roof colour mean rgb=... suggest <family> (distance, weak

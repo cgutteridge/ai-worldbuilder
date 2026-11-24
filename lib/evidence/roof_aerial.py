@@ -54,12 +54,15 @@ MIN_COVERAGE = 0.9       # share of roof columns the aerial must cover (else the
 def nearest_roof_material(rgb) -> str:
     """Closest flat-roof material family to an aerial colour.
 
+    Families with ``membrane_match: false`` in the catalogue (the ones added for the
+    aerial pick, #476) never compete, so this answers as it did before they existed.
+
     @param rgb: (r, g, b) 0..255
     @returns: material family name for ``roofs[label].material``
     """
     from roof_material import load_catalogue
     palette = [(name, row['colour']) for name, row in load_catalogue()['families'].items()
-               if row.get('slab')]
+               if row.get('slab') and row.get('membrane_match', True)]
     return min(palette, key=lambda t: sum((a - b) ** 2 for a, b in zip(t[1], rgb)))[0]
 
 

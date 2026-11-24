@@ -909,7 +909,7 @@ def roof_colour_choice_text(mean, roof, level=None) -> str:
 
     @param mean: mean aerial colour 0..255
     @param roof: the feature's ``roofs[label]`` dict (kind, material, zone_materials) or None
-    @param level: the zone level, for a ``zone_materials`` override
+    @param level: the zone level or ``region:<i>`` key, for a ``zone_materials`` / ``material_regions`` override
     @returns: one line, ending in the one-source caveat
     """
     from roof_material import normalise_material, pick_from_colour
@@ -920,8 +920,7 @@ def roof_colour_choice_text(mean, roof, level=None) -> str:
     if pick['close']:
         text += f"; weak, {pick['runner_up']} is nearly as near"
     text += ')'
-    zone_mats = roof.get('zone_materials') or {}
-    used = zone_mats.get(level) or zone_mats.get(str(level)) or roof.get('material')
+    used = roof_material_for_zone(roof, level) if roof.get('material') else None
     if used:
         same = normalise_material(str(used)) == pick['family']
         text += f"; spec uses {used}" + (' (agrees)' if same else ' (differs)')
@@ -932,7 +931,8 @@ def roof_zone_colour_lines(
     features: list,
     aerial_rgb: dict[tuple[int, int], tuple[float, float, float]] | None = None,
 ) -> list[str]:
-    """Dry-run lines: mean aerial colour + nearest site_kit preview block per zone.
+    """Dry-run lines: mean aerial colour + suggested catalogue roof family per zone,
+    with whether the spec's material for that zone agrees.
 
     Suggestion only — missing aerial / empty zone skips that zone silently.
 
@@ -945,18 +945,18 @@ def roof_zone_colour_lines(
         zl = getattr(f, 'zone_level', None)
         if not zl:
             continue
-        by_level: dict[int, list[tuple[int, int]]] = {}
+        by_level: dict[int | float | str, list[tuple[int, int]]] = {}
         for c, level in zl.items():
             if c not in f.cells:
                 continue
-            by_level.setdefault(int(level), []).append(c)
+            by_level.setdefault(level, []).append(c)
         need = [c for cols in by_level.values() for c in cols]
         try:
             rgb_map = aerial_rgb if aerial_rgb is not None else sample_columns_rgb(need)
         except AerialSourceMissing as exc:
             lines.append(f'roof colour suggestions skipped: {exc}')
             return lines
-        for level in sorted(by_level):
+        for level in sorted(by_level, key=str):
             samples = [rgb_map[c] for c in by_level[level] if c in rgb_map]
             mean = mean_rgb_255(samples)
             if mean is None:

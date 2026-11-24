@@ -46,6 +46,7 @@ class Ctx:
         self.runner = runner
         self.work_dir = work_dir
         self.asks: list[dict] = []
+        self.main_volume = None     # set by roof_step; the colour step reads its measured aerial colour
 
     def image_share(self) -> float:
         """Share of the aerial crop that has pixels (0 when there is no image)."""
@@ -167,7 +168,7 @@ def roof_colour_step(ctx: Ctx, record: dict) -> None:
     a weak pick, its runner-up). Nothing is changed when there is no usable colour (no image, leaf cover or
     deep shadow over the volume).
     """
-    main = getattr(ctx, 'main_volume', None)
+    main = ctx.main_volume
     roofs = record['patch'].get('roofs')
     if not main or not roofs:
         return

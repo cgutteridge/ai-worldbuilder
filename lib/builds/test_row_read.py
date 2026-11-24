@@ -297,5 +297,47 @@ class Generator(unittest.TestCase):
         self.assertEqual((called, 'reads' in report), ([], False))
 
 
+class RoofColourStep(unittest.TestCase):
+    """roof_colour_step on its own: a stub context and a record holding the type-derived roof."""
+
+    def run_step(self, rgb255, before, *, kind='pitched', **main):
+        from types import SimpleNamespace
+        volume = {'rgb': [c / 255.0 for c in rgb255], 'green': 0.0, 'lum_ratio': 1.0, **main}
+        ctx = SimpleNamespace(main_volume=volume, image_share=lambda: 1.0)
+        roofs = {'kind': kind, 'material': before, 'stairs': 'slope'}
+        record = {'fields': {'roof_material': {'value': before, 'flags': []}},
+                  'patch': {'roofs': roofs}, 'unsure': []}
+        RW.roof_colour_step(ctx, record)
+        return record
+
+    def test_a_type_material_that_is_the_pick_is_kept(self):
+        record = self.run_step((98, 96, 130), 'deepslate_tile')
+        self.assertEqual(record['patch']['roofs']['material'], 'deepslate_tile')
+        self.assertIn('; kept deepslate_tile', record['fields']['roof_material']['evidence'])
+        self.assertNotIn('replaces', record['fields']['roof_material']['evidence'])
+
+    def test_the_runner_up_of_a_weak_pick_is_kept(self):
+        record = self.run_step((95, 95, 115), 'tuff_brick')       # deepslate_tile by a hair over tuff_brick
+        self.assertEqual(record['patch']['roofs']['material'], 'tuff_brick')
+        self.assertIn('weak, tuff_brick is nearly as near', record['fields']['roof_material']['evidence'])
+        self.assertIn('; kept tuff_brick', record['fields']['roof_material']['evidence'])
+
+    def test_a_clear_pick_replaces_a_different_type_material_and_says_so(self):
+        record = self.run_step((98, 96, 130), 'brick')
+        self.assertEqual(record['patch']['roofs']['material'], 'deepslate_tile')
+        self.assertIn('; replaces brick', record['fields']['roof_material']['evidence'])
+        self.assertEqual(record['patch']['roofs']['stairs'], 'slope')
+
+    def test_a_runner_up_is_not_kept_when_the_pick_is_clear(self):
+        record = self.run_step((98, 96, 130), 'tuff_brick')       # runner-up, but the pick is not weak
+        self.assertEqual(record['patch']['roofs']['material'], 'deepslate_tile')
+
+    def test_a_roof_in_deep_shadow_keeps_the_type_material_and_says_so(self):
+        record = self.run_step((98, 96, 130), 'brick', lum_ratio=0.3)
+        self.assertEqual(record['patch']['roofs']['material'], 'brick')
+        self.assertEqual(record['fields']['roof_material'], {'value': 'brick', 'flags': []})
+        self.assertTrue(any('deep shadow' in u for u in record['unsure']))
+
+
 if __name__ == '__main__':
     unittest.main()

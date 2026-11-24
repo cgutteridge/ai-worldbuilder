@@ -407,7 +407,7 @@ def _validate_catalogue(data: dict, path: Path) -> None:
     families = data.get('families')
     if not isinstance(families, dict) or not families:
         raise ValueError(f'{path}: families must be a non-empty object')
-    allowed = {'full', 'slab', 'stairs', 'colour', 'aerial', 'texture', 'triad', 'carpet'}
+    allowed = {'full', 'slab', 'stairs', 'colour', 'aerial', 'texture', 'triad', 'carpet', 'membrane_match'}
     for family_id, family in families.items():
         if not isinstance(family_id, str) or not family_id:
             raise ValueError(f'{path}: family id must be a non-empty string')

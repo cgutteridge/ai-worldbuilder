@@ -278,7 +278,8 @@
       "aerial": [82, 82, 88],
       "carpet": "gray",
       "texture": "rough",
-      "triad": true
+      "triad": true,
+      "membrane_match": false
     },
     "blackstone": {
       "full": "blackstone",
@@ -287,7 +288,8 @@
       "colour": [42, 36, 41],
       "carpet": "black",
       "texture": "rough",
-      "triad": true
+      "triad": true,
+      "membrane_match": false
     },
     "polished_blackstone_brick": {
       "full": "polished_blackstone_bricks",
@@ -296,7 +298,8 @@
       "colour": [48, 43, 50],
       "carpet": "black",
       "texture": "rough",
-      "triad": true
+      "triad": true,
+      "membrane_match": false
     },
     "polished_andesite": {
       "full": "polished_andesite",
