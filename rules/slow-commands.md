@@ -39,10 +39,19 @@ your own long `site_lock.py run` an owner name no other session uses.
 The stop message says `Undo completed; rebuild did not complete cleanly` and ends with the exact
 re-lay command. The plot stays undone until it is run. A lapsed lock is claimed again by the
 wrapper; it stops only when another owner holds a fresh lock (the message then says
-`Held by <owner> ...`: wait for them to release, then re-lay). Steps:
+`Held by <owner> ...`: wait for them to release, then re-lay).
+
+An in-flight journal entry for another plan, owner, or an older seq is not this rebuild's
+failure. The wrapper prints `another session has an in-flight journal entry (cell … stage …
+plan … owner … since …); this rebuild is unaffected` and still exits 0 when this feature's new
+entry landed with zero mismatches. `site_recover.py status` can show that other entry while
+this reapply succeeds.
+
+Steps:
 
 1. `python3 scripts/site_recover.py --world <world> status` and
-   `python3 scripts/site_lock.py --world <world> status`: no unfinished write, lock free.
+   `python3 scripts/site_lock.py --world <world> status`: no unfinished write for this feature,
+   lock free. Another session's in-flight line is not this stop.
 2. Run the printed line, which has this shape (builder argv as the wrapper resolved it):
    `python3 scripts/site_lock.py --world <world> run <owner> "re-lay <feature>" -- python3 scripts/feature_build.py <spec> --world <world> --apply`
 3. Read back: exit 0 and zero mismatches; if not, `cell_registry.py --world <world> reconcile <cell>`.
