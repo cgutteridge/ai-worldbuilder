@@ -341,8 +341,8 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   one-block step) are roof blocks; gable ends and taller steps stay wall. The fitted top replaces
   `zone_roof` before the walls are planned, so walls, clear height and carpets follow it; a carpet finish
   only lands on a full top block. A fit whose ridge would jog falls back to the default stairs with a
-  dry-run line. Not with `frame: "plot"`. Off by default (existing builds and `house_build` roofs are
-  unchanged). Dry run prints `<label> roof stairs fit: <surface>; top blocks: <n> stair(s), <m> bottom
+  dry-run line. Not with `frame: "plot"`. Not set by a hand spec unless it says so; `typology_spec` writes it for
+  every generated pitched feature roof (existing builds and `house_build` roofs are unchanged). Dry run prints `<label> roof stairs fit: <surface>; top blocks: <n> stair(s), <m> bottom
   slab(s), <k> full; <c> of <t> half-block cells missed (<p>%)`.
 
   Optional `roofs[label].frame: "plot"` (pitched roofs without `zones[label]` only; #463): build the hip in the
@@ -530,6 +530,21 @@ copied from a neighbour or the district default where the read has an answer.
 - `feature_build` dry run prints, per roof zone, `roof colour mean rgb=... suggest <family> (distance, weak
   runner-up); spec uses <material> (agrees|differs)` from the same palette. A hand-written spec is not rewritten:
   read the line and set `roofs[label].material` (or `zone_materials` per plateau level) yourself.
+- **Rebuilding a row from a regenerated read (`--replan`)**: a rebuild (`reapply_feature.py`) re-lays each
+  existing plan from *its own* recorded spec, so a combined row spec under a new name is never built (the cell
+  plan has no such feature). `python3 scripts/typology_spec.py --world <w> --ways ... --replan` matches every
+  way to the built `feature_build` plan that covers it (`lib/builds/plan_specs.py`, from the registry's recorded
+  builder spec, one-way plans only) and emits one spec per plan, named for the plan, with that building's own
+  read under label `a` and the row's front. Dry run lists `plan_summary` (plan, way, storeys, roof, stairs, the
+  file it would replace) and `plans_skipped` (house builds, several-way plans and the like, with the reason).
+  With `--write` each replaces its plan's recorded spec file (git in the world repo is the record); ways with no
+  plan stay one row spec under `--out`, which still refuses to overwrite. Then each plan is an ordinary
+  `reapply_feature.py <plan>` (dry run validates, `--apply` undoes then re-lays, so the old awning, sign and
+  facade blocks go with the undo). The tool never places blocks; a live rebuild is the owner's call. No
+  question is asked anywhere on this route, so it runs unattended.
+- **Default stair rule**: every generated pitched feature roof carries `roofs[label].stairs: "fit"` (the octant
+  fit, one block higher in places is an accepted cost); a flat roof carries none; `frame` or an explicit rule
+  in a hand spec is kept. The read's proposal (`roof_read.proposal`) also uses `"fit"`, no longer `"slope"`.
 - Adding another per-building field (fascia colour, roof material from the aerial): write a step
   `step(ctx, record)` and append it to `row_read.STEPS`. `ctx.ask(key, png, prompt)` is the cached designer
   ask (cost recorded on the record); the step adds `record['fields'][name]` and label-keyed spec keys to

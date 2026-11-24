@@ -25,7 +25,7 @@ image alike), so every attribute of every volume is checked against more than on
    green over the volume plus a row disagreement also makes lidar suspect. When both lidar and the image
    are degraded, the value falls back to the row, then the land-use class default.
 5. **Propose.** A ``feature_build`` spec proposal: one zone region per volume inside the way with
-   ``surface: "fit"``, ``stairs: "slope"`` on a pitched roof, ``finish: "carpet"`` for a flat volume on a
+   ``surface: "fit"``, ``stairs: "fit"`` on a pitched roof, ``finish: "carpet"`` for a flat volume on a
    zoned roof, and ``volumes`` for a volume beyond the way whose height rests on lidar. It is written
    beside the read, never over a world spec.
 
@@ -892,7 +892,7 @@ def proposal(result: dict, *, name: str, way_id: str, front: str | None, wall: s
         regions = [frame.polygon(s0, s1, t0, t1) for s0, s1, _forms in spans]
         spec['zones'] = {'a': {'from': 'lidar', 'levels': 'auto', 'bucket': 4, 'axis_deg': 'auto',
                                'regions': regions, 'surface': 'fit'}}
-        roofs['stairs'] = 'slope'
+        roofs['stairs'] = 'fit'
         if any(f == {'flat'} for _s0, _s1, f in spans):    # a flat volume that kept its own region
             roofs['finish'] = 'carpet'
     extra = []

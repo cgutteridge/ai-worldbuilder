@@ -151,7 +151,7 @@ class ReadBuilding(unittest.TestCase):
         self.assertEqual(record['patch']['roofs']['kind'], 'pitched')
         self.assertIn('rgb=(98, 96, 130)', field['evidence'])
         self.assertTrue(any('one aerial source' in f for f in field['flags']))
-        self.assertEqual(record['patch']['roofs']['stairs'], 'slope')     # the rest of the roof is kept
+        self.assertEqual(record['patch']['roofs']['stairs'], 'fit')     # the rest of the roof is kept
         self.assertEqual(len(record['asks']), 1)                          # no extra ask
 
     def test_a_roof_in_leaf_cover_keeps_the_type_material_and_says_so(self):
@@ -244,6 +244,67 @@ class Generator(unittest.TestCase):
         self.assertIn('where read', notes)
         self.assertIn('Not read, class or district default: ways 2.', notes)
 
+    def test_a_read_pitched_roof_fits_its_stairs_and_a_flat_one_has_no_stair_rule(self):
+        evidence = {'1': loaded(TR.shop), '2': loaded(flat_shop)}
+        texts = {'1': pitched_text(), '2': flat_text()}
+        asked = []
+
+        def runner(cmd, stdin):
+            way = '1' if not asked else '2'
+            asked.append(way)
+            return Runner(texts[way])(cmd, stdin)
+        reader = RW.make_reader(loader=lambda way: evidence[way], role_id=ROLE, runner=runner)
+        spec = T.generate(self.row(), STREET, reader)['specs'][0]['spec']
+        self.assertEqual(spec['roofs']['a']['stairs'], 'fit')
+        self.assertNotIn('stairs', spec['roofs']['b'])
+
+    def test_plans_split_the_read_row_into_one_spec_per_plan_each_with_its_own_read(self):
+        import feature_spec as FS
+        evidence = {'1': loaded(TR.shop), '2': loaded(flat_shop)}
+        texts = {'1': pitched_text(), '2': flat_text()}
+        asked = []
+
+        def runner(cmd, stdin):
+            way = '1' if not asked else '2'
+            asked.append(way)
+            return Runner(texts[way])(cmd, stdin)
+        reader = RW.make_reader(loader=lambda way: evidence[way], role_id=ROLE, runner=runner)
+        report = T.generate(self.row(), STREET, reader, {'1': 'w1', '2': 'w2'})
+        self.assertEqual([item['plan'] for item in report['specs']], ['w1', 'w2'])
+        first, second = (item['spec'] for item in report['specs'])
+        self.assertEqual((first['name'], first['ways']), ('w1', {'1': 'a'}))
+        self.assertEqual((second['name'], second['ways']), ('w2', {'2': 'a'}))
+        self.assertEqual(first['roofs']['a']['kind'], 'pitched')
+        self.assertEqual(first['roofs']['a']['stairs'], 'fit')
+        self.assertEqual(second['roofs']['a']['kind'], 'flat')
+        self.assertGreater(first['storeys']['a'], second['storeys']['a'])
+        self.assertEqual(set(first['zones']), {'a'})
+        self.assertNotIn('zones', second)
+        self.assertEqual(first['groups'], [{'nos': ['a'], 'mode': 'each', 'front': first['groups'][0]['front']}])
+        self.assertEqual(first['groups'][0]['front'], second['groups'][0]['front'])
+        self.assertNotIn('Ways 1, 2', first['notes'])
+        with tempfile.TemporaryDirectory() as tmp:
+            for item in report['specs']:
+                path = Path(tmp) / f"{item['plan']}.json"
+                path.write_text(json.dumps(item['spec']))
+                FS.load_spec(path)          # each split spec validates as a feature spec
+
+    def test_a_way_with_no_plan_stays_in_a_row_spec_of_the_others(self):
+        reader = RW.make_reader(loader=lambda _w: loaded(TR.shop), role_id=ROLE, runner=Runner(pitched_text()))
+        row = self.row() + [building(3, rect(16, 0, 8, 7), dict(RETAIL), lidar=4.0)]
+        report = T.generate(row, STREET, reader, {'2': 'w2'})
+        self.assertEqual(sorted(str(item.get('plan')) for item in report['specs']), ['None', 'w2'])
+        rest = next(item['spec'] for item in report['specs'] if not item.get('plan'))
+        self.assertEqual(rest['name'], 'typology_shop_1')
+        self.assertEqual(rest['ways'], {'1': 'a', '3': 'c'})
+        self.assertEqual(set(rest['storeys']), {'a', 'c'})
+        self.assertEqual(rest['groups'][0]['nos'], ['a', 'c'])
+
+    def test_no_plans_keeps_one_row_spec(self):
+        reader = RW.make_reader(loader=lambda _w: loaded(TR.shop), role_id=ROLE, runner=Runner(pitched_text()))
+        report = T.generate(self.row(), STREET, reader, {})
+        self.assertEqual([item.get('plan') for item in report['specs']], [None])
+
     def test_no_reader_leaves_the_row_as_before(self):
         spec = T.generate(self.row(), STREET)['specs'][0]['spec']
         self.assertNotIn('zones', spec)
@@ -304,7 +365,7 @@ class RoofColourStep(unittest.TestCase):
         from types import SimpleNamespace
         volume = {'rgb': [c / 255.0 for c in rgb255], 'green': 0.0, 'lum_ratio': 1.0, **main}
         ctx = SimpleNamespace(main_volume=volume, image_share=lambda: 1.0)
-        roofs = {'kind': kind, 'material': before, 'stairs': 'slope'}
+        roofs = {'kind': kind, 'material': before, 'stairs': 'fit'}
         record = {'fields': {'roof_material': {'value': before, 'flags': []}},
                   'patch': {'roofs': roofs}, 'unsure': []}
         RW.roof_colour_step(ctx, record)
@@ -326,7 +387,7 @@ class RoofColourStep(unittest.TestCase):
         record = self.run_step((98, 96, 130), 'brick')
         self.assertEqual(record['patch']['roofs']['material'], 'deepslate_tile')
         self.assertIn('; replaces brick', record['fields']['roof_material']['evidence'])
-        self.assertEqual(record['patch']['roofs']['stairs'], 'slope')
+        self.assertEqual(record['patch']['roofs']['stairs'], 'fit')
 
     def test_a_runner_up_is_not_kept_when_the_pick_is_clear(self):
         record = self.run_step((98, 96, 130), 'tuff_brick')       # runner-up, but the pick is not weak
