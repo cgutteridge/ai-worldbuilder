@@ -100,13 +100,13 @@
     {
       "id": 470,
       "title": "Shop fronts: stop placing trapdoor awnings and wall signs",
-      "status": "todo",
+      "status": "doing",
       "priority": "high",
       "complexity": "s",
       "blockedBy": [],
       "builderTask": true,
       "notes": "Owner decision 2026-11-24 after the Papa John's and Chaiiwala rebuilds: give up on trapdoor awnings and on signs fixed to buildings ('signs just look bad. stop putting signposts on buildings'). Reference photos show no awning on either shop. World issue I-065 (snags S-122, S-123). Code: lib/builds/feature_facade.py _dress_shop_front and _shop_dressing place the awning row and the oak wall sign; sign support lives in feature_build._check_sign_support (#435) and sign_options.py. Keep the fascia band and its colour (signs.<label>.fascia_colour stays; owner confirmed Papa John's lime fascia). Decide whether the freed awning/sign rows become fascia or wall, and say so in the dry-run summary. Done: no trapdoor or wall sign on any shop front from the shop recipe; dry run of w149814013 and w122706795 shows none; tests cover a dressed shop with a mapped name. Record the fix on I-065 with a check per snag."
-    },
+    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/470-no-shop-awnings-signs"},
     {
       "id": 471,
       "title": "Shop fronts: glass and door replace the wall, with no brick frame or wall behind",
@@ -120,33 +120,33 @@
     {
       "id": 472,
       "title": "Feature roofs: octant-style fit for stairs, slabs and blocks on pitched and stepped shop roofs",
-      "status": "todo",
+      "status": "doing",
       "priority": "high",
       "complexity": "l",
       "blockedBy": [],
       "builderTask": true,
       "notes": "Owner verdict 2026-11-24 after the Papa John's live rebuild (w149814013, roofs.a.stairs 'slope' from #434): 'roof still shows lack of octet level design' (world issue I-064, snag S-119). The swarm steer was an octant-style way to map stairs and slabs neatly, not necessarily the same code; #434 delivered only a rim/slope stair rule and that is not enough. House roofs already have the octant fit (lib/builds/roof_octant.py, #415: design the roof as a half-block-cell volume, then match each block to air, full, bottom/top slab or bottom stair with neighbour-derived shapes). Bring that approach to feature roofs (feature_build roof zones, roof_surface.Surface, roof_geometry pitched_roof_states/align_stair_shapes): lidar gives levels as a guide, the fit may deviate for clean joins and looks; stairs only on a layer edge or a real slope, blocks inside flat layers and at one-block steps; top slabs never over air unless an intended overhang; carpet stays a flat-roof finish. Generic, no shop-specific code; fixtures stand in for the parade. Evidence and prototypes: worlds/southampton-build/site/task-447-papa-johns-* (smooth_roof.py, fit_dry.py, roof_compare*.png). Behind a spec key first (like #434), then #462 decides the default. Done: dry run of w149814013 and the hotpot w122706803 show a stair/slab arrangement the fit chose with no gaps where stairs meet; tests on a rotated L and a stepped flat-plus-pitch roof; preview image for the owner. Record the fix on I-064 with a check for S-119."
-    },
+    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/472-feature-roof-octant-fit"},
     {
       "id": 473,
       "title": "Feature windows: glaze the wall above a lower part of the same building",
-      "status": "todo",
+      "status": "doing",
       "priority": "high",
       "complexity": "s",
       "blockedBy": [],
       "builderTask": false,
       "notes": "Owner snag 2026-11-24, world issue I-068 (S-127, Papa John's w149814013, cell 50,-36): \"no front window in level 2 (bay is probably too much).\"\n\nCause (checked on the recorded 2026-11-24 plan, journal seq 2302; no dry run): the street end of Papa John's is a one-storey flat strip and the two-storey range rises behind it. The wall above the strip roof is a zone step inside the same building. shell_zoned (lib/builds/feature_build.py) makes it wall because a neighbour column's top is lower, but FacadePlanning.windows -> face_runs (lib/builds/feature_facade.py) keeps only cells where exposed() finds the neighbour outside the building's ownership, so a same-building step is never offered windows. The step wall is five columns on a stair-stepped diagonal facing N and W. 6516,-4569, 6517,-4570 and 6517,-4571 have only the strip (same building) on their lower sides, so face_runs never offers them. The end columns 6515,-4568 and 6518,-4572 also touch outside and are refused as corner piers. All are brick y36-38 under the y39 eave. The strip deck is y35 with carpet at y36. Row y37 holds 13 glass blocks elsewhere, none here. The shop band is not the cause (its top is at most y36). Not measured: how many other zoned specs have such walls.\n\nWanted: the window pass treats a zone-step wall face (neighbour in that direction is the same feature with a lower roof) as a window face for the rows above the lower neighbour's roof, with the same rules as an outside face (pier rhythm, facade_plan rows when given, choose_windows checks). Do not change exposed(): doors use it (feature_doors.py about lines 92 and 263) and so does house_build.py. Add a window-only step-face test used by windows() and passed to choose_windows, so the corner and tread rules see step faces. State whether the glazing-share report (face_run) counts step faces. The sill is the lower roof's top, carpet included. Plain windows only, no bays. Generic, keyed on geometry, no shop-specific code.\n\nFiles: lib/builds/feature_facade.py (windows, face_runs), lib/builds/window_openings.py (step face in choose_windows / outside_ground), colocated tests (lib/builds/test_feature_build.py or test_window_openings.py).\n\nOverlap: Shop fronts: glass and door replace the wall (#471) edits the same file (_shop_band_tops, _stair_flights next to windows()) but not the same functions; not a blocker, note merge order. Feature roofs octant fit (#472) may move deck heights; fine, the fix keys on geometry. Dressed-shop windows (#466) does not conflict: its band owns only the ground storey.\n\nDone:\n- fixtures with a one-storey flat zone in front of a two-storey zone, one straight step and one stair-stepped (diagonal) step as at Papa John's, get glass on the step wall's upper storey; a two-face step cell passes the tread rule; a step lower than one window row gets none;\n- no door lands on a step face;\n- outside faces of existing fixtures unchanged;\n- dry run of w149814013 (scratch copy of the spec, as in #466) shows glass on the step wall above the shopfront roof, with upper glass totals before/after; list the glass change on other zoned specs a dry run reaches (e.g. West, Kiddle, Jubilee);\n- log the fix on I-068 with a check for S-127.\n\nCheck per snag: S-127: after the parade rebuild (#461), stand on the shopfront roof near 6515,36,-4570 and see glass in the upper wall behind it at y37 (expected near 6516,37,-4569 or 6517,37,-4570; predicted, not verified).\n"
-    },
+    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/473-step-wall-windows"},
     {
       "id": 474,
       "title": "Shop rows: the read step decides upper storeys and roof shape per building by default, never copied from neighbours",
-      "status": "todo",
+      "status": "doing",
       "priority": "high",
       "complexity": "m",
       "blockedBy": [],
       "builderTask": true,
       "notes": "Owner 2026-11-24 (world I-064 S-120, Chaiiwala w122706795): 'upper part of building entirely missing... the build roof follows the incorrect roof design of its neighbours'; owner wants a process fix, not a spec edit. The read step (scripts/roof_read.py, lib/builds/roof_read.py, designer_ask.py, #459) exists but is a separate manual step; typology_spec row generation (#457) still gives each shop in a row the same storeys and roof. Make spec generation for commercial rows run the read step per building by default (one designer ask per building, cached by plan and image, tokens recorded), and write its storeys, pitched upper storey and roof kind into the spec, with evidence. Where the read is unsure or the image is missing, say so in the dry run and fall back to lidar, never to a neighbour's design. Generic by land-use class, no street or shop names in code. Done: regenerating the parade row gives Chaiiwala a pitched upper storey from its read; tests with a runner double; dry-run summary names each building's read and cost. Record the fix on I-064 with a check for S-120."
-    },
+    , "claimedBy": "claude", "workingIn": "/Users/cjg/Projects/ai-worldbuilder/.worktrees/474-row-read-per-building"},
     {
       "id": 475,
       "title": "Shop fascia colour from street-level imagery, not the class palette default",
