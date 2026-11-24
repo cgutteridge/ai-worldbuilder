@@ -224,6 +224,100 @@ None of these may be lost when the tickets are written. Each ticket should quote
       replay from cell 54,-34, cell 56,-34 failed (a bridge straddled its south edge at 7461,-4033) and cell 56,-35
       worked.
 
+## Trial D (#384): production line feature in the live world
+
+Written 2026-11-24, half way through the trial: feature 1 of the chain is built and ridden; features 2 to 5 are not
+built. Verdict first: **not good enough yet, one planner fix away.** The owner rode feature 1 and called the rail
+"not bad", then "otherwise good". The only defects were four straight rails that should be corners, all at junction
+joins (#480), and one of them is the first cell of the main line. Under the pass bar a main-line defect means "not
+good enough yet". Nothing derailed or stalled in what the owner rode, and the bridge, crossing and junction gaps were
+expected.
+
+### What was built
+
+Feature `railway_54_m34`, start cell 54,-34, planning box 512 by 512 (decision 17), applied 2026-11-24 with the
+production builder through the journal. Five lines, nine tracks, 2,850 rails (powered rail on straight cells), 1,284
+torches, about 100,826 planned positions of which 17,185 changed (the rest were already correct). Spec:
+`worlds/southampton-build/site/builds/railway_54_m34.json`. Read-back checked all 100,826 positions: 0 mismatches
+after one retry round of 37 positions; the journal's write positions equal the planned positions and no guard
+positions were added. I did not separately scan for blocks changed outside the footprint.
+
+Chain joins recorded for the next features: main line ends at cell 56,-34 going east at level 19 (two tracks);
+branch ends at 54,-36 going north at level 16; the two spur lines start at 53,-32 going south at level 16. Cell
+56,-34 cannot be a start cell because a bridge gap straddles its edge.
+
+### Ride result
+
+The owner rode a cart from the main-line start at 6817,-4078 and along the spurs. Per-track coordinates were not
+recorded cell by cell; the owner reported only the items below. No derail or stall was reported on any ridden
+stretch. The east end of the main line (x 7198 to 7231) and the plan 1 far end (6975 to 6986, -4524 to -4543) were
+not confirmed ridden.
+
+### Human-fix list (coordinates)
+
+Defects (fixed by #480 plus a re-apply of feature 1, not by hand):
+
+| Cell | Built as | Should be |
+| --- | --- | --- |
+| 6805,16,-4047 | east-west | north-west corner (plan 3 spur meets plan 4) |
+| 6807,16,-4061 | north-south | north-west corner (plan 1 main line starts; plans 2 and 3 arrive) |
+| 6817,16,-4078 | north-south | north-west corner (start of the main line; plan 4 arrives) |
+| 6825,16,-4088 | north-south | north-west corner (plan 0 track 1 start; plan 2 arrives) |
+
+Expected gaps for a person or a later feature:
+
+| Where | Kind | Cells |
+| --- | --- | --- |
+| 6872,-4194 to 6873,-4195 and 6875,-4193 to 6876,-4194 (plan 0); 6857,-4199 to 6858,-4201 and 6860,-4198 to 6861,-4200 (plan 1) | footbridge (way 28019377), deck height unknown | 3, 3, 4, 4 |
+| 6976,-4342 to 6983,-4345 and 6976,-4337 to 6982,-4340 | level crossing | 11, 10 |
+| 6975,-4524 to 6977,-4529, 6979,-4525 to 6982,-4531, 6979,-4536 to 6982,-4542, 6983,-4537 to 6986,-4543 | overhead decks (ways 153798212, 746773187), height unknown | 8, 10, 10, 10 |
+| 6817,-4078 to 6822,-4092 and 6826,-4103 (plan 1 track 1); 6796,-4034 to 6807,-4061 (plan 3 track 0); 6807,-4061, 6825,-4088, 6805,-4047 (single cells) | junction side tracks | 20, 1, 39, 1, 1, 1 |
+
+The two mapped rail bridge spans (near 7285,-4290 and 7415,-4107) lie beyond feature 1's box and are not built.
+
+### What it cost
+
+| Item | Value | Method |
+| --- | --- | --- |
+| Models and efforts | main thread Sonnet 5.5, effort `high`; implementation and review subagents Sonnet | `get_session`; subagent briefs |
+| Wall clock | about 19 hours session time (2026-11-23 15:48 to 2026-11-24 10:58 UTC), mostly waiting on world access, a usage limit pause and tickets | `get_session` timestamps; not active time |
+| Session tokens | not measured; no billed total was read | `get_usage` was not called, so none is claimed |
+| First apply, 2048 box (abandoned) | about 1 hour, stopped by the owner, nothing landed | apply log; cause: unordered batching made about 4,031 paced scans instead of 516 (#464) |
+| Second apply, 512 box, 24 leaf mismatches | landed, then rolled back | readback report; cause: oak leaves planted without `persistent` (#469) |
+| Third apply, 512 box, clean | about 4 minutes: readiness 22 s, surface warm-up 52 s, backup 11 s, journal begin 75 s, writes 13 s, flush 3 s, readback 51 s plus retry | result report `timings_seconds` |
+| Ghost ground | applied in two runs (29 and 20 cells) for the corridor and its margin; 11 corridor cells had been missed | scratchpad logs; the ticket's claim that the corridor had ghost ground was wrong |
+
+### What looked right and wrong
+
+Right: the line follows the real alignment; corners inside runs and next to bridge and crossing gaps are correct (a scan
+of all 2,850 rails against their path neighbours found only the four cells above); powered rail and torches landed
+as planned; the cut-and-join chain works as designed across plans; the junction rule left side tracks as gaps with
+end records.
+
+Wrong or costly: the four junction corners; a read-back that treated leaf properties as mismatches; an apply
+prefetch that scaled with scan count, not volume; the readiness gate refusing a railway for missing aerial
+(#454); the lock wrapper losing the lock for the builder (#478).
+
+A height comparison with the old 2048 plan found only 94 rails differing, all by +2 and all at the east end of the
+main line (x 7198 to 7231, z -4349 to -4330, join level 19 against 17). The probable cause is the profile fit near
+the clipped box edge; not confirmed. The owner should look at that stretch next ride.
+
+### Process fixes this trial caused
+
+Merged: #450 structure evidence, #451 deck gaps, #452 junction gaps, #453 apply stage name, #454 railway readiness
+without aerial, #464 box 512 and ordered scan batching, #469 leaf state. Filed: #468 supported wait for a busy
+suite, #478 live apply wrapper, #479 dry-run lists every readiness gap, #480 corner shape at junction join cells.
+No world snags were filed: the defects are tool defects with tickets.
+
+### Ready for decor sidings and yards?
+
+**Not yet.** After #480 merges and feature 1 is re-applied, the main line has no known defect, and the answer
+becomes yes for the first clean runs. The brief for the study area (yard around 50.91436,-1.45871, MC 1901,-3299,
+cell 23,-32; 17 sidings, 3 crossovers, 2 spurs, 20 switches, a viaduct) should say: best-effort decor, clean unbroken
+runs only, never tied into junctions, reuse the cell journal, readiness gate and the new apply wrapper (#478), and
+keep the powered-rail rule. Features 2 to 5 of this trial are still to be built and ridden before the final
+Trial D verdict.
+
 ## Ticket plan
 
 Filed 2026-11-22 as #379 to #385 in `tasks/index.json`; the full text for each model is in its `notes`.
