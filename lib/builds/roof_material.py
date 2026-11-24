@@ -11,6 +11,10 @@ the 26.2 list, so the flat(ish)-only concrete rows are the solid colour
 blocks (black, gray, light gray, white). Terracotta and those concretes have
 neither slab nor stairs. ``smooth_stone`` has a slab only.
 
+Each family also names a ``carpet`` dye colour: the flat-roof carpet finish
+(``roofs[label].finish``, #455) lays that carpet over a flat deck, so the roof
+reads as a different material with no extra height. ``carpet_block`` resolves it.
+
 Roof types (``types`` in the catalogue) name the common real roofs a designer
 meets: each maps to a recommended family plus one or two alternates, chosen
 against real roof colours and the vanilla textures. ``roof_type_blocks`` returns
@@ -35,6 +39,11 @@ TEXTURES = frozenset({'smooth', 'rough', 'tile-like', 'shingle-like', 'ridged'})
 SUGGESTION_LIMIT = 3
 # Same-texture families win unless another colour is far closer than this.
 TEXTURE_MISMATCH_PENALTY = 40_000
+# The sixteen vanilla dye colours; each has a ``<dye>_carpet`` block.
+CARPET_DYES = frozenset({
+    'white', 'light_gray', 'gray', 'black', 'brown', 'red', 'orange', 'yellow',
+    'lime', 'green', 'cyan', 'light_blue', 'blue', 'purple', 'magenta', 'pink',
+})
 
 _CACHE: dict[str, dict] = {}
 
@@ -129,6 +138,34 @@ def family_variants(material: str, *, catalogue: dict | None = None) -> dict[str
     if isinstance(stairs, str) and stairs:
         out['stairs'] = stairs
     return out
+
+
+def carpet_block(material: str, finish: str = 'carpet', *, catalogue: dict | None = None) -> str:
+    """Carpet block for a flat-roof carpet finish.
+
+    ``finish`` ``"carpet"`` takes the roof family's ``carpet`` colour; an explicit
+    ``"<dye>_carpet"`` names the block directly.
+
+    @param material: roof family id, block id, or block state
+    @param finish: ``"carpet"`` or ``"<dye>_carpet"``
+    @param catalogue: optional loaded catalogue
+    @returns: carpet block name without ``minecraft:``
+    @raises ValueError: when the finish is not a carpet, or the material has no carpet colour
+    """
+    if finish.endswith('_carpet'):
+        if finish[: -len('_carpet')] not in CARPET_DYES:
+            raise ValueError(f'{finish!r} is not a carpet block; dyes: {", ".join(sorted(CARPET_DYES))}')
+        return finish
+    if finish != 'carpet':
+        raise ValueError(f'roof finish {finish!r} must be "carpet" or "<dye>_carpet"')
+    key = normalise_material(material)
+    family = (catalogue or load_catalogue())['families'].get(key)
+    if family is None or 'carpet' not in family:
+        raise ValueError(
+            f'roof material {key!r} has no carpet colour in config/roof-materials.json; '
+            'name the carpet, e.g. "gray_carpet"'
+        )
+    return f"{family['carpet']}_carpet"
 
 
 def roof_type_names(*, catalogue: dict | None = None) -> list[str]:
@@ -330,7 +367,7 @@ def _validate_catalogue(data: dict, path: Path) -> None:
     families = data.get('families')
     if not isinstance(families, dict) or not families:
         raise ValueError(f'{path}: families must be a non-empty object')
-    allowed = {'full', 'slab', 'stairs', 'colour', 'texture', 'triad'}
+    allowed = {'full', 'slab', 'stairs', 'colour', 'texture', 'triad', 'carpet'}
     for family_id, family in families.items():
         if not isinstance(family_id, str) or not family_id:
             raise ValueError(f'{path}: family id must be a non-empty string')
@@ -354,6 +391,10 @@ def _validate_catalogue(data: dict, path: Path) -> None:
                        and 0 <= channel <= 255 for channel in colour)
         ):
             raise ValueError(f'{path}: families[{family_id!r}].colour must be three 0..255 ints')
+        if 'carpet' in family and family['carpet'] not in CARPET_DYES:
+            raise ValueError(
+                f'{path}: families[{family_id!r}].carpet must be one of {sorted(CARPET_DYES)}'
+            )
         if family.get('texture') not in TEXTURES:
             raise ValueError(
                 f'{path}: families[{family_id!r}].texture must be one of {sorted(TEXTURES)}'

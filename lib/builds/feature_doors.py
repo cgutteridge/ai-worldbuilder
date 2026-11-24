@@ -196,6 +196,7 @@ class DoorPlanning:
         cannot drop them when ground already owns the column (live jubilee/west fail).
         Missing jamb solids at ``b+1``/``b+2`` are built and kept (#164) so stepped
         rotated walls stay on the register cell instead of jumping to a framed cell.
+        Neither clear reaches a carpet-finished deck row (#455) on a low shell.
 
         @param cell: wall ``(x, z)``
         @param face: facing letter
@@ -215,11 +216,17 @@ class DoorPlanning:
         st = (cell[0] + dx, cell[1] + dz)
         self.keep.add((st[0], b, st[1]))
         self.set(st[0], b, st[1], 'smooth_stone')
+        # a carpet-finished deck row (#455) and its carpet are roof, not opening: the clear stops under them
+        decks = {c: y for f in getattr(self, 'features', ()) for c, y in getattr(f, 'carpet_cells', {}).items()}
         for y in range(b + 1, b + 4):
+            if decks.get(st) in (y, y - 1):
+                continue
             self.keep.add((st[0], y, st[1]))
             self.set(st[0], y, st[1], 'air')
         inn = (cell[0] - dx, cell[1] - dz)
         for y in range(b + 1, b + 4):
+            if decks.get(inn) in (y, y - 1):
+                continue
             self.keep.add((inn[0], y, inn[1]))
             self.set(inn[0], y, inn[1], 'air')
 

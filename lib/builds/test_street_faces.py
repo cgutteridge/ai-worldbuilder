@@ -615,6 +615,31 @@ class StreetFaceBuildTest(unittest.TestCase):
                              for state in plan.cells.values()))
 
 
+    def test_carpet_finish_makes_the_deck_row_the_fascia_of_a_single_storey_shop(self):
+        spec = fixtures.build_spec(storeys=1, material='light_gray_concrete')
+        spec['roofs']['A']['finish'] = 'carpet'
+        builder, plan = self._shop(shop='cafe', storeys=1, spec=spec)
+        self.assertNotIn('shell too low for a fascia band', builder.output)
+        self.assertIn('street face shop:', builder.output)
+        deck = 50 + 3
+        fascia = {state for (x, y, z), state in plan.cells.items()
+                  if z == 20 and y == deck and state.endswith('_concrete')}
+        self.assertEqual(len(fascia), 1)
+        self.assertFalse(any(y > deck + 1 for (_x, y, _z), state in plan.cells.items()
+                             if not state.endswith('air')))
+        for x, z in self.cells:
+            self.assertEqual(plan.cells[(x, deck + 1, z)], 'minecraft:light_gray_carpet', (x, z))
+            self.assertNotIn(plan.cells[(x, deck, z)], ('minecraft:air', None))
+        glass = {y for (_x, y, z), state in plan.cells.items() if z == 20 and state == 'minecraft:glass'}
+        self.assertEqual(glass, {51, 52})
+        doors = [(y, z) for (_x, y, z), state in plan.cells.items()
+                 if state.startswith('minecraft:oak_door') and 'half=lower' in state]
+        self.assertEqual(doors, [(51, 20)])
+        (pos, _lines, _colour, _glow), = plan.signs
+        self.assertEqual((pos[1], pos[2]), (deck, 19))
+        self.assertIn('carpet 150 cells on solid blocks; dropped 0', builder.output)
+
+
 class LoadingBayTest(unittest.TestCase):
     def marks(self, streets=(), occupied=(), world=None):
         cells = {(x, z) for x in range(10, 25) for z in range(20, 30)}
