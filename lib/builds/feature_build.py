@@ -28,6 +28,7 @@ from feature_roof_zones import (
     roof_zone_colour_lines,
 )
 from feature_spec import STOREY_H, load_spec
+from feature_volumes import VolumePlanning
 from roof_geometry import (
     ROOF_DELTA,
     ROOF_FACE_ORDER,
@@ -102,11 +103,13 @@ class Feature:
         self.storeys = storeys
         self.roof = roof
         self.front = group['front']
+        # parent way label when this mass is a ``volumes[label]`` entry outside the way (#456)
+        self.volume_of: str | None = None
         # carpet finish (#455): {(x, z): deck row y} whose deck is a wall top course under a carpet
         self.carpet_cells: dict[tuple[int, int], int] = {}
 
 
-class Build(RoofZonePlanning, DoorPlanning, FacadePlanning, DetailPlanning):
+class Build(RoofZonePlanning, VolumePlanning, DoorPlanning, FacadePlanning, DetailPlanning):
     """Plan a non-house feature from a validated spec."""
 
     def __init__(
@@ -139,7 +142,7 @@ class Build(RoofZonePlanning, DoorPlanning, FacadePlanning, DetailPlanning):
         """
         self.spec = spec
         self.name = spec['name']
-        self.groups = spec['groups']
+        self.groups = list(spec['groups'])   # volumes append their own groups; the spec stays as loaded
         self.wall = spec['wall']
         self.floor_mat = spec['floor']
         self.keep = set()
@@ -199,6 +202,8 @@ class Build(RoofZonePlanning, DoorPlanning, FacadePlanning, DetailPlanning):
         self.by_no_all = by_no
         self._zone_pad_lines: list[str] = []
         self._roof_warnings: list[str] = []
+        self._volume_lines: list[str] = []
+        self.volume_cols: set = set()
         self._window_lines: list[str] = []
         self._detail_clip_lines: list[str] = []
         self._pv_lines: list[str] = []
@@ -678,6 +683,8 @@ class Build(RoofZonePlanning, DoorPlanning, FacadePlanning, DetailPlanning):
             for c in f.cells
         }
         for q, v in osm_footprints.guard(self.p.cells)['outside'].items():
+            if (q[0], q[2]) in self.volume_cols:
+                continue  # a volume is outside the map way by design; its roof and walls stay
             name = v[0]
             if 'slab' in name or '_stairs' in name:
                 del self.p.cells[q]
@@ -704,6 +711,7 @@ class Build(RoofZonePlanning, DoorPlanning, FacadePlanning, DetailPlanning):
             if not self._feature_has_zones(f):
                 f.b = self.floor_y(f)
         self.prepare_zones()
+        self.prepare_volumes()
         self.by_no_all_cells = set(self.owner) | self.foreign
         self.shared = {(x + dx, z + dz) for (x, z) in self.foreign for dx, dz in N8} - self.foreign - set(self.owner)
         for g in self.groups:
@@ -720,12 +728,14 @@ class Build(RoofZonePlanning, DoorPlanning, FacadePlanning, DetailPlanning):
                 self.shell(k, f)
         self._window_lines = []
         for k, f in enumerate(self.features):
-            self.doors(k, f)
+            if not f.volume_of:
+                self.doors(k, f)
         # Roof before windows so the eave slab can lintel the top glazed row
         # (opening checks need the finished lintel above the top glazed row).
         self.roof()
         for f in self.features:
-            self.windows(f)
+            if not f.volume_of:
+                self.windows(f)
         if self.idx is not None:
             self._prune_outside_guard_hits()
         own1 = {(x + dx, z + dz) for (x, z) in self.owner for dx in (-1, 0, 1) for dz in (-1, 0, 1)}
@@ -735,6 +745,10 @@ class Build(RoofZonePlanning, DoorPlanning, FacadePlanning, DetailPlanning):
             if (q[0], q[2]) not in own1 and 'leaves' in (self.live.block(*q) or ''):
                 del self.p.cells[q]
         self.p.outside_footprint_ok = 'roof-overhang fringe slabs; evidence: footprint-hits json'
+        if self.volume_cols:
+            self.p.outside_footprint_ok += (
+                '; volumes outside the map way from spec polygons with lidar mass: '
+                + ', '.join(f.no for f in self.features if f.volume_of))
         # Door opening clears (#143) and keep_edits stoops: survive both this filter and apply clash.
         self.keep.update(interior_ground_clears(
             self.p, {c: self._column_floor(f, c) for f in self.features for c in f.inner}))
@@ -748,7 +762,8 @@ class Build(RoofZonePlanning, DoorPlanning, FacadePlanning, DetailPlanning):
         self.pv_rows()
         self.entrance_covers()
         for f in self.features:
-            self.street_face(f)
+            if not f.volume_of:
+                self.street_face(f)
         # Shop doors are placed with the street face, after the earlier frame check.
         guard_door_frames(self.p, self.live.block)
         self.p.keep = set(self.keep)
@@ -766,6 +781,8 @@ class Build(RoofZonePlanning, DoorPlanning, FacadePlanning, DetailPlanning):
         for line in self._zone_pad_lines:
             print(line)
         for line in carpet_lines:
+            print(line)
+        for line in self._volume_lines:
             print(line)
         for line in self._roof_warnings:
             print(line)

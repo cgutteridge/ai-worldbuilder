@@ -61,6 +61,7 @@ def load_spec(path) -> dict:
     spec.setdefault('signs', {})
     spec.setdefault('zones', {})
     spec.setdefault('exclude', {})
+    spec.setdefault('volumes', {})
     if 'facades' in spec:
         raise SystemExit(f'{path}: "facades" was removed; use facade_plan[label].faces[face].glazing')
     if 'doors' in spec:
@@ -97,6 +98,7 @@ def load_spec(path) -> dict:
     _validate_roof_stairs(path, spec)
     _validate_roof_finish(path, spec)
     _validate_exclude(path, spec, labels)
+    _validate_volumes(path, spec, labels)
     _validate_material_regions(path, spec)
     return spec
 
@@ -422,16 +424,68 @@ def _validate_zone_regions(path, lab: str, regions) -> None:
     if not isinstance(regions, list) or not regions:
         raise SystemExit(f'{context} must be a non-empty list of polygons')
     for i, polygon in enumerate(regions):
-        if not isinstance(polygon, list) or len(polygon) < 3:
-            raise SystemExit(f'{context}[{i}] needs at least three vertices')
-        for point in polygon:
-            ok = (isinstance(point, list) and len(point) == 2
-                  and all(isinstance(v, (int, float)) and not isinstance(v, bool)
-                          and math.isfinite(v) for v in point))
-            if not ok:
-                raise SystemExit(f'{context}[{i}] vertices must be finite [x, z] numbers')
-        if len({tuple(p) for p in polygon}) < 3:
-            raise SystemExit(f'{context}[{i}] needs three distinct vertices')
+        _validate_polygon(f'{context}[{i}]', polygon)
+
+
+def _validate_polygon(context: str, polygon) -> None:
+    """Refuse a polygon that is not three or more distinct finite ``[x, z]`` vertices.
+
+    @param context: error-text prefix naming the polygon
+    @param polygon: the value to check
+    @raises SystemExit: on a malformed polygon
+    """
+    if not isinstance(polygon, list) or len(polygon) < 3:
+        raise SystemExit(f'{context} needs at least three vertices')
+    for point in polygon:
+        ok = (isinstance(point, list) and len(point) == 2
+              and all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                      and math.isfinite(v) for v in point))
+        if not ok:
+            raise SystemExit(f'{context} vertices must be finite [x, z] numbers')
+    if len({tuple(p) for p in polygon}) < 3:
+        raise SystemExit(f'{context} needs three distinct vertices')
+
+
+VOLUME_KEYS = frozenset({'polygon', 'kind', 'storeys', 'material', 'mass_m', 'source'})
+
+
+def _validate_volumes(path, spec: dict, labels: set) -> None:
+    """Validate optional masses outside the map way: ``volumes[label]`` (#456).
+
+    Each entry is ``{polygon: [[x, z], ...], kind: flat|pitched, storeys: int >= 1,
+    material?: str, mass_m?: number > 0, source?: str}``.
+
+    @param path: spec path (for error text)
+    @param spec: feature spec being loaded
+    @param labels: labels declared in ``ways``
+    @raises SystemExit: on a malformed entry
+    """
+    volumes = spec.get('volumes') or {}
+    if not isinstance(volumes, dict):
+        raise SystemExit(f'{path}: volumes must be an object')
+    for lab, rows in volumes.items():
+        if lab not in labels or lab not in spec['roofs']:
+            raise SystemExit(f'{path}: volumes label {lab} has no way')
+        if not isinstance(rows, list) or not rows:
+            raise SystemExit(f'{path}: volumes[{lab}] must be a non-empty list')
+        for i, row in enumerate(rows):
+            context = f'{path}: volumes[{lab}][{i}]'
+            if not isinstance(row, dict):
+                raise SystemExit(f'{context} must be an object')
+            extra = set(row) - VOLUME_KEYS
+            if extra:
+                raise SystemExit(f'{context}: unknown keys {sorted(extra)}')
+            _validate_polygon(f'{context}.polygon', row.get('polygon'))
+            if row.get('kind') not in ROOF_KINDS:
+                raise SystemExit(f'{context}.kind must be flat or pitched')
+            storeys = row.get('storeys')
+            if not isinstance(storeys, int) or isinstance(storeys, bool) or storeys < 1:
+                raise SystemExit(f'{context}.storeys must be int >= 1')
+            if 'material' in row and (not isinstance(row['material'], str) or not row['material']):
+                raise SystemExit(f'{context}.material must be a block name')
+            mass = row.get('mass_m', 1)
+            if not isinstance(mass, (int, float)) or isinstance(mass, bool) or not math.isfinite(mass) or mass <= 0:
+                raise SystemExit(f'{context}.mass_m must be a number > 0')
 
 
 def _validate_exclude(path, spec: dict, labels: set) -> None:

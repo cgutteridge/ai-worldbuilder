@@ -206,6 +206,34 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   separate houses, inside it). Clips only the named label; clipped cells are
   not treated as another building's footprint. Dry run still prints the
   footprint counts, so check `cover` after clipping.
+- optional `volumes` — per-label masses **outside** the map way, for a part of the building the map does
+  not draw (a rear bin store, a single-storey rear extension). `exclude` can only remove columns; this key
+  adds them. Off by default: a spec without it plans exactly as before. Example:
+
+  ```json
+  "volumes": {
+    "main": [{"polygon": [[x, z], [x, z], [x, z], [x, z]], "kind": "flat", "storeys": 1,
+              "material": "stone_brick", "mass_m": 2.0, "source": "aerial + lidar 2.5 m flat mass"}]
+  }
+  ```
+
+  `polygon` (from the image or the owner; at least three distinct finite `[x, z]` vertices in MC block
+  coordinates, a column is inside when its centre is) names the volume; lidar confirms it: a column is
+  kept only where the surface stands at least `mass_m` above the ground (default 2.0 m, so a one-storey
+  store of about 2.5 m passes and most fences do not). `kind` is `flat` or `pitched`, `storeys` an int
+  >= 1 (3 blocks each); `material` defaults to `roofs[label].material`; `source` is a free note. Each
+  volume is built as a plain mass of its own, labelled `<label>.v<n>` in the dry run: floor from the lidar
+  ground under it (`floor_min` applies), walls in `wall`, its own roof form at floor + storeys x 3 (the
+  `roofs[label]` keys `edge`, `finish`, `stairs` do not apply), no doors, windows or street face. It
+  shares the wall where it touches the way. A column is refused, and the dry run lists it with the
+  reason, when it is inside this build's map way (left to that label), inside another map way, inside an
+  earlier volume, owned by another feature build in the journal (ground and decor do not count), shows no
+  lidar mass, or is left in a piece under 3 columns. A volume that would move the plan's home cell (the
+  cell holding most of its columns, where the build is planned) is refused whole; one that crosses into a
+  neighbour cell is otherwise built and that cell's evidence must be current at apply, as for any
+  cross-cell build. Dry run: `<label>.v<n> volume of <label>: <n> columns <kind> <material> storeys <n>;
+  floor Y .., roof Y ..; lidar mass median .. m; touches the map way` and one `volume refused` line per
+  reason.
 - optional `zones` — per-label lidar roof plateaus **within one footprint**
   (one vector way, several roof heights). Use when a single `storeys`
   count cannot express that. Example:
