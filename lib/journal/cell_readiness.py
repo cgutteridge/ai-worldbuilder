@@ -336,7 +336,8 @@ class ReadinessPolicy:
         feature = feature if kind else None
         try:
             facts = self.evidence.facts(cell)
-        except (OSError, ValueError, LookupError, RuntimeError, ImportError) as exc:
+        except (OSError, ValueError, LookupError, RuntimeError, ImportError, AttributeError,
+                TypeError) as exc:
             return {'world': str(self.reg.root), 'cell': f'{cell[0]},{cell[1]}',
                     'operation': operation, 'ground': v.ground, 'revision': None,
                     'blockers': [f'evidence error: {exc}'], 'warnings': [],
@@ -620,6 +621,93 @@ class ReadinessPolicy:
         return {'readiness_revision': revisions[f'{primary[0]},{primary[1]}'],
                 'readiness_cells': revisions, **({'parent_feature': parent} if parent else {})}
 
+    def survey_feature(self, build, touched):
+        """Read-only: every readiness gap across touched cells for a feature dry-run (task 479).
+
+        Collects ghost, evidence, journal and lock gaps in one report. Never writes journal
+        notes and never refreshes validation (unlike :meth:`enforce`).
+
+        @param build: the ``Build`` the dry-run would apply
+        @param touched: cells the footprint covers (and any previous feature cells)
+        @returns: survey dict with ``ready``, ``plan``, ``lock``, ``cells``, ``gaps``
+        """
+        if build.pass_ != 'feature':
+            raise ValueError('survey_feature is only for feature builds')
+        primary = build.cell
+        if primary is None:
+            import cellmath
+            primary = cellmath.majority_cell(build.cells, self.reg.cell_size)
+        primary = tuple(primary)
+        parent = ((build.meta or {}).get('parent_feature')
+                  or getattr(build.payload, 'parent_feature', None))
+        feature = (build.plan if (build.meta or {}).get('kind') == 'railway' else None)
+        kind = feature_evidence_kind(self.reg, feature)
+        feature = feature if kind else None
+        lock = site_lock_status()
+        cells = []
+        gaps = []
+        if lock.get('gap'):
+            gaps.append({'cell': None, 'text': lock['gap'], 'clear': lock.get('clear')})
+        for cell in sorted(set(map(tuple, touched)) | {primary}):
+            neighbour = cell != primary
+            report = self.check(cell, 'feature', redoing=(build.plan,), neighbour=neighbour,
+                                feature=feature)
+            blockers = list(report.get('blockers', []))
+            clear_with = dict(report.get('clear_with', {}))
+            if not neighbour:
+                features = {f.id: f.status for f in self.reg.cell(cell).features}
+                if parent:
+                    if features.get(parent) != 'built':
+                        blockers.append(f'parent feature {parent} must be built')
+                    if parent not in build.modifies:
+                        blockers.append(f'parent feature {parent} must be listed in modifies')
+                elif build.plan not in features:
+                    blockers.append(f'feature plan {build.plan} absent from cell plan')
+                    clear_with[blockers[-1]] = (
+                        f'{CLI} propose-features --cell {cell[0]},{cell[1]} --record '
+                        f'(or plan_feature for {build.plan})')
+            journal = feature_journal_state(self.reg, build.plan, cell)
+            if journal.get('recover') and not any(b == 'recovery: unfinished apply' for b in blockers):
+                # Begun entry for this plan may already be in blockers via in_flight.
+                pass
+            evidence = evidence_kinds_status(report, kind)
+            if report.get('scope') == 'evidence':
+                validation = ('validated' if report.get('evidence_validated')
+                              else 'unvalidated')
+            else:
+                validation = 'validated' if report.get('validated') else 'unvalidated'
+            ready = not blockers
+            cell_row = {
+                'cell': f'{cell[0]},{cell[1]}',
+                'ghost': report.get('ground', 'none'),
+                'evidence': evidence,
+                'evidence_validation': validation,
+                'journal': journal,
+                'blockers': blockers,
+                'clear_with': clear_with,
+                'ready': ready,
+                'scope': report.get('scope', 'full'),
+            }
+            cells.append(cell_row)
+            for blocker in blockers:
+                gaps.append({'cell': cell_row['cell'], 'text': f"{cell_row['cell']}: {blocker}",
+                             'clear': clear_with.get(blocker)})
+        if self.require_plan_identity:
+            expected = ((build.meta or {}).get('evidence_revision')
+                        or getattr(build.payload, 'evidence_revision', None))
+            if not expected:
+                text = 'plan has no evidence identity; construct Plan against current inputs'
+                gaps.append({'cell': None, 'text': text, 'clear': None})
+            expected_journal = ((build.meta or {}).get('journal_revision')
+                                or getattr(build.payload, 'journal_revision', None))
+            if not expected_journal:
+                text = 'plan has no journal identity; construct Plan against current inputs'
+                gaps.append({'cell': None, 'text': text, 'clear': None})
+        ready = not gaps
+        return {'plan': build.plan, 'primary': f'{primary[0]},{primary[1]}',
+                'ready': ready, 'lock': lock, 'cells': cells, 'gaps': gaps,
+                'feature_evidence': kind}
+
     def _refresh_validation_if_ready(self, cell, operation, *, redoing=(), neighbour=False, feature=None):
         """Rewrite a stale readiness note when every non-validation check already passes.
 
@@ -648,6 +736,130 @@ class ReadinessPolicy:
             return False
         self.validate(cell, feature=feature)
         return True
+
+
+def evidence_kinds_status(report, kind=None):
+    """Per-kind evidence presence for a check report (task 479).
+
+    @param report: a ``ReadinessPolicy.check`` report (may omit coverage keys on evidence error)
+    @param kind: feature evidence kind (``'railway'``) or None for the default set
+    @returns: ``{map|lidar|aerial: 'present'|'missing'|'waived'}``
+    """
+    needed = FEATURE_EVIDENCE.get(kind, ALL_EVIDENCE)
+    status = {}
+    for name in ('map', 'lidar', 'aerial'):
+        if name not in needed:
+            status[name] = 'waived'
+        elif name == 'map':
+            status[name] = 'missing' if report.get('clip_coverage', 1) < 1 else 'present'
+        elif name == 'lidar':
+            status[name] = 'missing' if report.get('lidar_missing') else 'present'
+        else:
+            status[name] = 'missing' if report.get('aerial_coverage', 1) < 1 else 'present'
+    return status
+
+
+def feature_journal_state(reg, plan, cell):
+    """Journal view of ``plan`` on ``cell`` for a feature dry-run (task 479).
+
+    @param reg: cell journal
+    @param plan: feature plan id
+    @param cell: ``(tx, tz)``
+    @returns: ``{plan, apply, recover}`` where ``plan`` is planned/built/in-progress/absent,
+      ``apply`` is begun/landed/mismatched/none, and ``recover`` is the recover command or None
+    """
+    cell = tuple(cell)
+    features = {f.id: f.status for f in reg.cell(cell).features}
+    plan_status = features.get(plan, 'absent')
+    latest = None
+    for entry in reg.entries(plan=plan):
+        if entry.kind != 'build' or entry.undone or entry.pass_ != 'feature':
+            continue
+        if cell not in entry.cells and entry.cell != cell:
+            continue
+        latest = entry
+    apply_status = latest.status if latest is not None else 'none'
+    recover = None
+    if apply_status == 'begun' or any(f.plan == plan for f in reg.cell(cell).in_flight):
+        recover = f'python3 scripts/site_recover.py --world <world> recover {cell[0]},{cell[1]} --apply'
+    return {'plan': plan_status, 'apply': apply_status, 'recover': recover}
+
+
+def site_lock_status():
+    """Read-only site lock summary for a dry-run (never refreshes the heartbeat).
+
+    @returns: ``{state, owner, task, claimed_at, gap, clear}`` where ``state`` is
+      ``free``, ``held``, ``held-by-other``, or ``stale``
+    """
+    import os
+    import site_lock
+    lk = site_lock.read()
+    owner = os.environ.get('SITE_OWNER')
+    if not site_lock.fresh(lk):
+        if lk is None:
+            return {'state': 'free', 'owner': None, 'task': None, 'claimed_at': None,
+                    'gap': None, 'clear': None}
+        return {'state': 'stale', 'owner': lk.get('owner'), 'task': lk.get('task'),
+                'claimed_at': lk.get('claimed_at'), 'gap': None, 'clear': None}
+    if owner and lk['owner'] == owner:
+        return {'state': 'held', 'owner': lk['owner'], 'task': lk.get('task'),
+                'claimed_at': lk.get('claimed_at'), 'gap': None, 'clear': None}
+    gap = (f"site lock held by {lk['owner']} since {lk.get('claimed_at')} "
+           f"for: {lk.get('task')}")
+    return {'state': 'held-by-other', 'owner': lk['owner'], 'task': lk.get('task'),
+            'claimed_at': lk.get('claimed_at'), 'gap': gap,
+            'clear': 'python3 scripts/site_lock.py --world <world> status '
+                     '(wait for that owner to release; do not take over a fresh lock)'}
+
+
+def format_feature_dry_readiness(survey):
+    """Printable all-gaps report for a feature dry-run (task 479).
+
+    @param survey: return value of :meth:`ReadinessPolicy.survey_feature`
+    @returns: multi-line text ending with the ready / not-ready verdict
+    """
+    lines = [f"feature dry-run readiness: {survey['plan']} "
+             f"({'ready' if survey['ready'] else 'not ready'})"]
+    lock = survey['lock']
+    if lock['state'] == 'free':
+        lines.append('  site lock: free (claim before --apply)')
+    elif lock['state'] == 'held':
+        lines.append(f"  site lock: held by you ({lock['owner']}) for: {lock.get('task')}")
+    elif lock['state'] == 'stale':
+        lines.append(f"  site lock: stale (last owner {lock.get('owner')}); claim before --apply")
+    else:
+        lines.append(f"  site lock: {lock['gap']}")
+        if lock.get('clear'):
+            lines.append(f"    clear: {lock['clear']}")
+    for cell in survey['cells']:
+        ghost = 'present' if cell['ghost'] in ('ghost', 'generated') else 'missing'
+        lines.append(f"  cell {cell['cell']}: ghost={ghost} ground={cell['ghost']} "
+                     f"scope={cell.get('scope', 'full')} "
+                     f"{'ready' if cell['ready'] else 'needs-prep'}")
+        evid = cell['evidence']
+        val = cell['evidence_validation']
+        kinds = ', '.join(f'{k}={v}' for k, v in evid.items())
+        lines.append(f"    evidence: {kinds}; validation={val}")
+        journal = cell['journal']
+        recover = f"; recover: {journal['recover']}" if journal.get('recover') else ''
+        lines.append(f"    journal: plan={journal['plan']} apply={journal['apply']}{recover}")
+        for blocker in cell.get('blockers', []):
+            clear = cell.get('clear_with', {}).get(blocker)
+            if clear:
+                lines.append(f"    gap: {blocker} [clear: {clear}]")
+            else:
+                lines.append(f"    gap: {blocker}")
+    if survey['gaps']:
+        lines.append(f"  gaps ({len(survey['gaps'])}):")
+        for gap in survey['gaps']:
+            if gap.get('clear'):
+                lines.append(f"    - {gap['text']} [clear: {gap['clear']}]")
+            else:
+                lines.append(f"    - {gap['text']}")
+    lines.append(f"  verdict: {'ready' if survey['ready'] else 'not ready'}")
+    if not survey['ready']:
+        lines.append('  next: run each clear command above, then dry-run again before --apply')
+    return '\n'.join(lines)
 
 
 def format_readiness(report):

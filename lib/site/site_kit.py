@@ -1209,7 +1209,11 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     before writes and published only after a clean readback; publication failure leaves the
     entry 'begun' for recovery. A feature apply fails closed on unplanned ghost feature blocks
     left in its columns. Before the journal begin, :func:`ensure_live_identity` requires
-    ``player_uuid`` and ``structure_namespace`` and checks that player is online."""
+    ``player_uuid`` and ``structure_namespace`` and checks that player is online.
+
+    A feature dry-run (``dry=True``, feature pass) first prints an all-gaps readiness survey
+    (ghost, evidence, journal, site lock) with a single ready/not-ready verdict (task 479),
+    then continues the usual dry-run plan preview. Fix every gap before ``--apply``."""
     from mc_paced import Paced
     import cell_registry
     from cell_journal import Build, CellJournalError, Clash, InFlight, Refused
@@ -1220,21 +1224,35 @@ def apply(plan, protect=None, dry=False, modifies=(), stage=None, cell=None, met
     pass_ = stage_pass(stage)
     timings = {}
     input_cells = dict(plan.cells)
+    import cellmath
+    readiness_view = cell_registry.view_registry()
+    touched = {cellmath.cell_of(x, z) for x, _y, z in plan.cells}
+    if cell is not None:
+        touched.add(tuple(cell))
+    previous = next((e for e in reversed(readiness_view.entries(plan=plan.name))
+                     if e.kind == 'build' and not e.undone), None)
+    if pass_ == 'feature' and previous is not None and previous.pass_ == 'feature':
+        touched.update(previous.cells)
+    if dry and pass_ == 'feature':
+        # Task 479: list every readiness gap before the plan preview; keep previewing
+        # so the builder still sees the design. Live --apply still enforces readiness.
+        from cell_readiness import format_feature_dry_readiness
+        from readiness_evidence import survey_feature_dry
+        survey = survey_feature_dry(
+            readiness_view,
+            Build(plan.name, pass_, plan.cells, cell=cell, payload=plan, meta=meta,
+                  modifies=tuple(modifies)),
+            touched)
+        print(format_feature_dry_readiness(survey))
+        if not survey['ready']:
+            print(f"{plan.name}: not ready ({len(survey['gaps'])} readiness gaps); "
+                  'fix each clear command above before --apply')
     if not dry:
         with timed_stage('identity and readiness', timings):
             ensure_region_matches_open_world()
             # Fail before live prefetch, lint scans, backup or begin. The live registry
             # repeats this under the lock immediately before it stages the build.
-            import cellmath
             from readiness_evidence import enforce_live
-            readiness_view = cell_registry.view_registry()
-            touched = {cellmath.cell_of(x, z) for x, _y, z in plan.cells}
-            if cell is not None:
-                touched.add(tuple(cell))
-            previous = next((e for e in reversed(readiness_view.entries(plan=plan.name))
-                             if e.kind == 'build' and not e.undone), None)
-            if pass_ == 'feature' and previous is not None and previous.pass_ == 'feature':
-                touched.update(previous.cells)
             try:
                 enforce_live(readiness_view, Build(plan.name, pass_, plan.cells, cell=cell,
                                                    payload=plan, meta=meta, modifies=tuple(modifies)), touched)

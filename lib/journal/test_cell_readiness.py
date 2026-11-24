@@ -2043,3 +2043,126 @@ class RailwayEvidenceTest(unittest.TestCase):
             code = cell_registry.main(['--world', 'unit-test', 'prepare', '--cell', '1,0', '--evidence-only', '--feature', 'house'])
         self.assertEqual(code, 2)
         self.assertIn('not a railway feature planned in the journal', out.getvalue())
+
+
+class FeatureDryReadinessSurveyTest(unittest.TestCase):
+    """Task 479: feature dry-run lists every readiness gap at once."""
+
+    def setUp(self):
+        from cell_readiness import ReadinessPolicy
+        self.world = JournalWorld()
+        self.addCleanup(self.world.__exit__)
+        self.world.__enter__()
+        self.evidence = Evidence()
+        self.policy = ReadinessPolicy(self.world.reg, self.evidence)
+        from cell_journal import Note
+        self.Note = Note
+        self.Build = Build
+
+    def _plan_feature(self, cell, plan='hall'):
+        self.world.reg.change(self.Note(tuple(cell), 'plan_feature', 'test', plan))
+
+    def _survey(self, cells, plan='hall', primary=(0, 0), meta=None, modifies=()):
+        from cell_readiness import format_feature_dry_readiness
+        from readiness_evidence import survey_feature_dry
+        build = self.Build(plan, 'feature',
+                           {(primary[0] * 128 + 4, 65, primary[1] * 128 + 4): 'minecraft:bricks'},
+                           cell=primary, meta=meta or {}, modifies=tuple(modifies))
+        # Touch every listed cell with at least one column so majority/primary stay stable.
+        for cell in cells:
+            x0, z0 = cell[0] * 128 + 4, cell[1] * 128 + 4
+            build.cells[(x0, 65, z0)] = 'minecraft:bricks'
+        survey = survey_feature_dry(self.world.reg, build, set(cells), policy=self.policy)
+        return survey, format_feature_dry_readiness(survey)
+
+    def test_all_ready_reports_ready_without_writing(self):
+        self.world.seed((0, 0), ghost_ground=True)
+        self.world.seed((1, 0), ghost_ground=True)
+        self._plan_feature((0, 0))
+        self.policy.validate((0, 0))
+        self.policy.validate_evidence((1, 0))
+        before = self.world.reg.journal_path.read_bytes()
+        survey, text = self._survey([(0, 0), (1, 0)])
+        self.assertEqual(before, self.world.reg.journal_path.read_bytes())
+        self.assertTrue(survey['ready'], text)
+        self.assertIn('verdict: ready', text)
+        self.assertEqual(survey['lock']['state'], 'free')
+
+    def test_missing_ghost_and_missing_evidence_are_both_named(self):
+        self.world.seed((0, 0), ghost_ground=True)
+        self._plan_feature((0, 0))
+        self.policy.validate((0, 0))
+        # Neighbour 1,0: no ghost; partial map coverage.
+        self.evidence.fraction = 0.0
+        survey, text = self._survey([(0, 0), (1, 0)])
+        self.assertFalse(survey['ready'])
+        texts = [g['text'] for g in survey['gaps']]
+        self.assertTrue(any('1,0' in t and 'ghost' in t for t in texts), texts)
+        self.assertTrue(any('1,0' in t and 'map query coverage' in t for t in texts), texts)
+        self.assertTrue(any('1,0' in t and 'evidence validation' in t for t in texts), texts)
+        self.assertIn('gap:', text)
+        self.assertIn('verdict: not ready', text)
+
+    def test_unvalidated_evidence_is_named(self):
+        self.world.seed((0, 0), ghost_ground=True)
+        self.world.seed((1, 0), ghost_ground=True)
+        self._plan_feature((0, 0))
+        self.policy.validate((0, 0))
+        # Neighbour has ghost but no evidence note.
+        survey, text = self._survey([(0, 0), (1, 0)])
+        self.assertFalse(survey['ready'])
+        self.assertTrue(any('1,0' in g['text'] and 'evidence validation' in g['text']
+                            for g in survey['gaps']), survey['gaps'])
+        self.assertIn('--evidence-only', text)
+
+    def test_unfinished_apply_names_recover_command(self):
+        self.world.seed((0, 0), ghost_ground=True)
+        self._plan_feature((0, 0))
+        self.policy.validate((0, 0))
+        self.world.reg.begin(self.Build('hall', 'feature', {(4, 65, 4): 'minecraft:bricks'},
+                                        cell=(0, 0)))
+        survey, text = self._survey([(0, 0)])
+        self.assertFalse(survey['ready'])
+        self.assertTrue(any('unfinished apply' in g['text'] for g in survey['gaps']), survey['gaps'])
+        self.assertIn('site_recover.py', text)
+        self.assertEqual(survey['cells'][0]['journal']['apply'], 'begun')
+
+    def test_lock_held_by_another_owner_is_a_gap(self):
+        from unittest import mock
+        self.world.seed((0, 0), ghost_ground=True)
+        self._plan_feature((0, 0))
+        self.policy.validate((0, 0))
+        lk = {'owner': 'other', 'task': 'busy', 'claimed_at': '2026-01-01 00:00:00',
+              'heartbeat': 10**12}
+        with mock.patch('site_lock.read', return_value=lk), \
+                mock.patch('site_lock.fresh', return_value=True), \
+                mock.patch.dict('os.environ', {'SITE_OWNER': 'me'}):
+            survey, text = self._survey([(0, 0)])
+        self.assertFalse(survey['ready'])
+        self.assertEqual(survey['lock']['state'], 'held-by-other')
+        self.assertTrue(any('site lock held by other' in g['text'] for g in survey['gaps']), survey['gaps'])
+        self.assertIn('site_lock.py', text)
+
+    def test_survey_names_every_gap_not_just_the_first(self):
+        """Missing ghost, missing evidence, unfinished apply and foreign lock together."""
+        from unittest import mock
+        self.world.seed((0, 0), ghost_ground=True)
+        self._plan_feature((0, 0))
+        self.policy.validate((0, 0))
+        self.world.reg.begin(self.Build('stuck', 'feature', {(5, 65, 5): 'minecraft:bricks'},
+                                        cell=(0, 0)))
+        self.evidence.fraction = 0.25
+        lk = {'owner': 'other', 'task': 'busy', 'claimed_at': '2026-01-01 00:00:00',
+              'heartbeat': 10**12}
+        with mock.patch('site_lock.read', return_value=lk), \
+                mock.patch('site_lock.fresh', return_value=True), \
+                mock.patch.dict('os.environ', {'SITE_OWNER': 'me'}):
+            survey, text = self._survey([(0, 0), (1, 0)])
+        kinds = ' '.join(g['text'] for g in survey['gaps'])
+        self.assertIn('site lock held by other', kinds)
+        self.assertIn('unfinished apply', kinds)
+        self.assertIn('1,0', kinds)
+        self.assertIn('ghost', kinds)
+        self.assertIn('map query coverage', kinds)
+        self.assertGreaterEqual(len(survey['gaps']), 4, survey['gaps'])
+        self.assertIn('verdict: not ready', text)
