@@ -301,8 +301,11 @@ This file is the spec reference; `lib/builds/feature_spec.py` validates these ke
   take four facings). Heights rise half a block per block along that facing (stair, slab, stair, slab).
   Blocks: on a whole-block height a column on the rim, or whose neighbour along its facing is higher, is a
   stair facing that way; anything else is the level block of its height (full block, or a bottom slab on a
-  half-block height). A rim or eave-ring column on a half-block height drops half a block, so nothing outside the footprint is a
-  slab needing a block under it.
+  half-block height). The eave ring (columns outside the footprint) stays at the eave course, since no wall holds it up; an owned
+  rim column on a half-block height drops half a block, so the rim is a stair. L and T footprints: one that fills
+  its rectangle less than the threshold keeps the default hip; one that passes (a short arm, a ragged corner) is
+  roofed as the hip of the whole rectangle with the notch held at the eave, and the footprint columns beside the
+  notch show roof blocks down to it. For a real L or T roof, leave the key off or zone the roof.
   Wall fill that would show beside a lower roof column becomes the roof's full block. Stairs take their
   corner shape from same-height neighbours. A footprint that is not close to a rectangle keeps the default
   hip. Off by default (existing builds and `house_build` roofs are unchanged). Dry run prints

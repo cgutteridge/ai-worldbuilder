@@ -19,10 +19,14 @@ Here the roof is designed first and the blocks follow from the design:
 4. Blocks: on a whole-block height, a column on the rim (a side neighbour is not a roof column) or whose
    neighbour along its face's facing is higher is a stair facing that way (the edge of the roof, or a real
    slope); otherwise it is the level block of its height (a full block; a half-block height is a bottom
-   slab), so the eave is never a thick full-block lip. A rim or eave-ring column (outside the footprint) on a
-   half-block height is lowered half a block, so it is never a slab that would need a block under it. So a face never mixes facings, and a
-   stair always climbs. Corner shapes come from same-height neighbouring stairs (the game's rule),
-   applied by the caller's final shape pass.
+   slab), so the eave is never a thick full-block lip. So a face never mixes facings, and a stair always
+   climbs. Corner shapes come from same-height neighbouring stairs (the game's rule), applied by the
+   caller's final shape pass.
+5. Nothing outside the footprint rises above the eave: an eave-ring column (not owned) is held at the eave
+   course, because no wall holds it up. This matters where the footprint leaves a notch in its rectangle (a
+   ragged corner, or an L or T that still fills the rectangle well enough): the notch stays at eave height and
+   the footprint columns beside it show roof blocks, not wall, down to it. An owned rim column on a
+   half-block height is lowered half a block, so the rim is a stair, not a slab.
 
 Pure geometry: no world reads, no placing.
 """
@@ -105,9 +109,10 @@ def design_plot_hip(own: set, columns: set, eave_y: int, pad: float = PAD) -> Pl
         facing[(x, z)] = facings[k]
         face[(x, z)] = k
     for (x, z), h in half.items():
-        if h % 2 and ((x, z) not in own or any((x + dx, z + dz) not in half for dx, dz in ROOF_DELTA.values())):
-            # the rim and the eave ring are never a slab: outside the footprint nothing holds one up
-            half[(x, z)] = h - 1
+        if (x, z) not in own:
+            half[(x, z)] = 2 * eave_y     # the eave ring has no wall under it: never above the eave course
+        elif h % 2 and any((x + dx, z + dz) not in half for dx, dz in ROOF_DELTA.values()):
+            half[(x, z)] = h - 1          # an owned rim column is a stair, not a slab
     return PlotHip(half, facing, face, int(deg), float(fill))
 
 

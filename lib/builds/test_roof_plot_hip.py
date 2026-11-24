@@ -11,6 +11,7 @@ import json
 import math
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from block_store import state_props
@@ -61,6 +62,23 @@ def _rotated_rectangle(deg, length, width):
 
 
 DIAGONAL = _rotated_rectangle(45, 20, 11)        # a corner shop on a diagonal plot
+
+
+def _rotated_union(deg, parts):
+    """Cells of axis-frame rectangles ``(u0, u1, v0, v1)`` turned ``deg`` from the x axis (an L or a T)."""
+    c, s = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+    out = set()
+    for x in range(-30, 31):
+        for z in range(-30, 31):
+            u = (x + 0.5) * c + (z + 0.5) * s
+            v = -(x + 0.5) * s + (z + 0.5) * c
+            if any(u0 <= u <= u1 and v0 <= v <= v1 for u0, u1, v0, v1 in parts):
+                out.add((x, z))
+    return out
+
+
+ROTATED_L = _rotated_union(45, [(0, 12, 0, 6), (0, 6, 6, 9)])           # 12 x 9, arms 6 thick
+ROTATED_T = _rotated_union(45, [(0, 20, 0, 8), (6, 14, 8, 12)])         # 20 x 12, stem 8 wide
 L_SHAPE = {(x, z) for x in range(12) for z in range(4)} | {(x, z) for x in range(4) for z in range(4, 12)}
 
 
@@ -180,8 +198,9 @@ class PlotHipBuildTest(unittest.TestCase):
                     if cell is not None:
                         self.assertNotIn('bricks', cell.replace('stone_bricks', ''), (x, yy, z))
 
-    def test_without_the_key_nothing_changes(self):
-        again = _build(_spec(), DIAGONAL)[1]
+    def test_without_the_key_the_plot_hip_is_never_designed(self):
+        with mock.patch.object(RP, 'design_plot_hip', side_effect=AssertionError('plot hip without the key')):
+            again = _build(_spec(), DIAGONAL)[1]
         self.assertEqual(again.cells, self.off[1].cells)
 
     def test_not_a_rectangle_falls_back_to_the_default_hip(self):
@@ -189,6 +208,25 @@ class PlotHipBuildTest(unittest.TestCase):
         _b, on, out = _build(_spec('plot'), L_SHAPE)
         self.assertIn('A roof frame plot: footprint is not close to a rectangle; using the default hip', out)
         self.assertEqual(on.cells, off.cells)
+
+
+class NotchedFootprintTest(unittest.TestCase):
+    """A rotated L or T that passes the rectangle fill test: nothing outside the footprint rises above the eave."""
+
+    def _check(self, cells):
+        builder, plan, out = _build(_spec('plot'), cells)
+        self.assertIn('A roof frame plot: rectangle at 45 degrees', out)
+        f = builder.features[0]
+        eave = f.b + f.storeys * F.STOREY_H
+        above = sorted((x, y, z) for (x, y, z), s in plan.cells.items()
+                       if (x, z) not in cells and y > eave and not s.endswith(':air'))
+        self.assertEqual(above, [])
+
+    def test_rotated_l(self):
+        self._check(ROTATED_L)
+
+    def test_rotated_t(self):
+        self._check(ROTATED_T)
 
 
 class FrameSpecTest(unittest.TestCase):
