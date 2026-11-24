@@ -28,6 +28,7 @@ import feature_roof_fit as RF
 import feature_roof_zones as FZ
 import feature_spec as FS
 from roof_geometry import ROOF_DELTA
+import roof_lint
 from roof_lint import ridge_jogs, stair_shape_mismatches
 from roof_octant import stair_cells
 
@@ -351,6 +352,81 @@ class FitUnitTest(unittest.TestCase):
         fit = RF.RoofFit({(0, 40, 0): ('full',), (0, 41, 0): ('full',), (1, 40, 0): ('stair', 'west', 'straight')},
                          {(0, 0): 41, (1, 0): 40}, 0, 0, 'test')
         self.assertEqual(fit.skin({(0, 0), (1, 0)}), {(0, 40, 0)})
+
+
+class CarpetGateTest(unittest.TestCase):
+    """A fitted roof carpets only the flat-layer columns it tops with a full block."""
+
+    @staticmethod
+    def _feature(blocks):
+        """Stub zoned feature: flat deck columns (0..3, 0) at half-height 10 (y 5), fitted ``blocks`` on top."""
+        cols = [(x, 0) for x in range(4)]
+        fit = mock.Mock(tops={c: 5 for c in cols}, blocks={(c[0], 5, c[1]): blocks[c] for c in cols})
+        return mock.Mock(
+            roof={'kind': 'pitched', 'material': 'stone_brick', 'finish': 'white_carpet'},
+            zone_roof={c: 5 for c in cols}, zone_roof_half={c: 10 for c in cols},
+            zone_flat_cells=set(cols), zone_surface={}, zone_fit=fit)
+
+    def test_no_carpet_above_a_slab_or_stair_top(self):
+        f = self._feature({(0, 0): ('full',), (1, 0): ('slab', 'bottom'),
+                           (2, 0): ('stair', 'east', 'straight'), (3, 0): ('full',)})
+        carpets = F.Build._carpet_columns(f, {})
+        self.assertEqual(set(carpets), {(0, 0), (3, 0)})
+        self.assertTrue(all(b.endswith('white_carpet') for b in carpets.values()))
+
+    def test_without_a_fit_every_flat_column_carpets(self):
+        f = self._feature({(x, 0): ('slab', 'bottom') for x in range(4)})
+        f.zone_fit = None
+        self.assertEqual(set(F.Build._carpet_columns(f, {})), {(x, 0) for x in range(4)})
+
+    def test_built_fit_lays_carpet_over_full_block_decks_only(self):
+        cells = {(x, z) for x in range(10, 36) for z in range(20, 30)}
+        data = _zone_data(cells, lambda x, z: 44.2 if x < 22 else 53.0 - abs(x + 0.5 - 29.0))
+        regions = [[(10, 20), (22, 20), (22, 30), (10, 30)], [(22, 20), (36, 20), (36, 30), (22, 30)]]
+        spec = _spec('fit', zones=_zones(regions))
+        spec['roofs']['A']['finish'] = 'white_carpet'
+        _b, plan, _out = _build(spec, cells, data)
+        carpet = {(x, y, z) for (x, y, z), s in plan.cells.items() if 'white_carpet' in s}
+        self.assertTrue(carpet)
+        for x, y, z in carpet:
+            self.assertLess(x, 22)
+            self.assertEqual(plan.cells[(x, y - 1, z)].removeprefix('minecraft:'), 'bricks')
+
+
+class RidgeJogFallbackTest(unittest.TestCase):
+    """A fitted ridge that would jog falls back to the heightfield stairs or the default hip."""
+
+    JOG = 'the fitted ridge would jog'
+
+    @staticmethod
+    def _jog_once():
+        """Report a jog on the fit's own check only; the build's final lint stays real."""
+        calls = []
+
+        def jogs(cells):
+            calls.append(1)
+            return [(1, 1)] if len(calls) == 1 else ridge_jogs(cells)
+        return jogs
+
+    def test_zoned_falls_back_to_the_heightfield_stairs(self):
+        cells = {(x, z) for x in range(10, 36) for z in range(20, 30)}
+        data = _zone_data(cells, lambda x, z: 53.0 - abs(x + 0.5 - 22.5))
+        regions = [[(10, 20), (36, 20), (36, 30), (10, 30)]]
+        with mock.patch.object(roof_lint, 'ridge_jogs', side_effect=self._jog_once()) as jogs:
+            builder, plan, out = _build(_spec('fit', zones=_zones(regions)), cells, data)
+        self.assertTrue(jogs.called)
+        self.assertIn(f'A roof stairs fit: {self.JOG}; using the heightfield stairs', out)
+        self.assertIsNone(getattr(builder.features[0], 'zone_fit', None))
+        plain = _build(_spec(zones=_zones(regions)), cells, data)[1]
+        self.assertEqual(plan.cells, plain.cells)
+
+    def test_unzoned_falls_back_to_the_default_hip(self):
+        cells = UnzonedHipTest._cells(30, [(0, 14, 0, 6), (0, 6, 6, 13)])
+        with mock.patch.object(roof_lint, 'ridge_jogs', side_effect=self._jog_once()) as jogs:
+            _b, plan, out = _build(_spec('fit'), cells)
+        self.assertTrue(jogs.called)
+        self.assertIn(f'A roof stairs fit: {self.JOG}; using the default hip', out)
+        self.assertEqual(plan.cells, _build(_spec(), cells)[1].cells)
 
 
 class FitSpecTest(unittest.TestCase):
