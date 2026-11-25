@@ -12,7 +12,24 @@ support check). The Papa John's spec carries stairs slope, carpet finish, lime f
 (w122706795) was rebuilt live on 2026-11-24 (journal seq 2298, landed). Fixes recorded on issues I-063, I-059 and I-064 for review after the
 rebuild. Next: #461 (live parade rebuild and owner check; its notes hold the checklist). Filed follow-ups: #462 (stair rule as default, houses
 included), #465 (roof edges on West and Kiddle), #467 (reapply false alarm on a foreign in-flight journal entry). Open owner question: should
-hand-glazed shops still get a name sign?
+hand-glazed shops still get a name sign? (Answered 2026-11-24: no; shops get no wall signs, #470.)
+
+## Status (2026-11-25): shop-snag wave
+
+Owner snags from the 2026-11-24 Papa John's and Chaiiwala rebuilds were fixed as tool tasks, all merged and pushed, each logged on its
+world issue with a per-snag check: #470 no shop awnings or wall signs (I-065), #471 shopfront glass and door replace the wall, green copper
+door default (I-066), #472 opt-in octant roof fit `roofs[label].stairs: "fit"` (I-064 S-119, S-092), #473 windows on zone-step walls
+(I-068), #474 per-building read in `typology_spec` for commercial rows (I-064 S-120, S-111), #475 opt-in fascia colour from street-level
+imagery (`--fascia-read`, `scripts/fascia_read.py`; I-059), #476 roof material from aerial colour (I-067).
+
+- #461 is running its first stage (Papa John's and Chaiiwala only) in its own session. Chaiiwala's hand spec does not get the #474 read; a
+  tool task for that was proposed from that session.
+- Owner: the hotpot row roofs are grey; Muse to Admiral (the Papa John's row) is a mix of grey and red clay. #476's measured colour
+  overrides the image read and the aerial is blue-cast, so do not regenerate that row until #483 (image read decides the roof family) lands.
+- Owner will judge the #472 fit on Papa John's in game before any "one stair facing per roof face" task for angled roofs is filed.
+- #473 adds step-wall glass on other zoned specs (lanchester 340 to 492, w66696201 460 to 586, susu, r3176751): eyeball before rebuilding.
+- Filed follow-ups: #481 (remove inert shop awning flag), #482 (roof lint on dry runs), #483 (roof family from the image read), #484
+  (KartaView certificate failure).
 
 ## What was true at the start
 
