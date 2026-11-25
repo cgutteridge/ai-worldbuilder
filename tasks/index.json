@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the worldbuilder-tasks skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 484,
+  "nextTaskId": 485,
   "tasks": [
     {
       "id": 384,
@@ -133,6 +133,16 @@
       "blockedBy": [],
       "builderTask": true,
       "notes": "Owner 2026-11-25: the hotpot conjoined row (Chaiiwala's row) roofs are all kinda grey; Muse to Admiral (the Papa John's row, ways around 149814017..149814012) are a mix of grey and red clay. The #474 designer image read matched that (Muse-to-Admiral: 6 grey/dark, 5 cinnabar or mud brick), but #476's row_read.roof_colour_step runs after it and replaces the family with the nearest measured aerial colour, keeping the read's material only when it is the pick or a weak pick's runner-up. The aerial reads blue-purple across the whole parade (rgb about 100-125, 100-115, 125-150), so red clay roofs become deepslate_tile. Fix: the image read's roof family wins; the measured colour may only confirm it or add an unsure flag (and pick a shade within the read's family where useful). Also correct the aerial colour cast before measuring (e.g. against road or other neutral surfaces in the same image), and say in the dry run where a roof rests on one source. The feature_build dry-run suggestion for hand specs follows the same rule. Do not regenerate or rebuild the Muse-to-Admiral row from typology_spec until this lands. Done: regenerating both rows (cached reads, no new asks) gives the hotpot row grey families and Muse to Admiral a grey/red-clay mix matching the image read; tests with read doubles where read and measured colour disagree; dry run lists read family, measured colour and agreement per building."
+    },
+    {
+      "id": 484,
+      "title": "Street-level imagery: diagnose the KartaView certificate failure (all frames fell back to Street View)",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "In the #475 fascia read (2026-11-24) every KartaView request failed with an SSL 'Hostname mismatch', so lib/builds/fascia_read.py fell through to Street View for every shop and recorded the failure in its unsure notes. KartaView (CC BY-SA, positioned and headed photos) is the preferred street-level source and has never been exercised live. Find whether the cause is this machine's network or proxy or the provider (endpoint or host change in scripts/kartaview_fetch or the fetcher it reuses), then fix it or record that it does not work here (and how the step reports it). Never disable TLS verification and add no hosts outside the provider allowlist. Done: a real KartaView query near the parade either returns frames or the failure is explained in the provider notes; a test pins the fallback message."
     }
   ]
 }
