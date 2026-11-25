@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the worldbuilder-tasks skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 481,
+  "nextTaskId": 482,
   "tasks": [
     {
       "id": 384,
@@ -103,6 +103,16 @@
       "blockedBy": [],
       "builderTask": false,
       "notes": "GOAL. A railway run-end cell that meets another track at a junction gets the corner shape, not a straight. Found in #384 trial D ride, owner report: \"a few straights where there should be a corner\".\n\nCAUSE. lib/builds/railway_plan.py shapes each rail from the cells before and after it within its own track path. The path's first or last cell next to a junction gap has the junction cell on only one side, so the shape ignores the neighbour that belongs to the other track. Feature 1 (railway_54_m34) has four such cells, all at junction joins, all should be north_west (connect west and north) but were built straight:\n- 6805,16,-4047 east_west (plan 3 track 1 end; plan 4 starts here)\n- 6807,16,-4061 north_south (plan 1 track 0 start; plan 2 and plan 3 track 0 arrive from the west)\n- 6817,16,-4078 north_south (start of the main line, plan 0 track 0; plan 4 arrives from the west)\n- 6825,16,-4088 north_south (plan 0 track 1 start; plan 2 track 1 arrives from the west)\nA scan of all 2,850 rails of the spec for a shape that misses a path neighbour (within or across plans) finds only these four. Crossing, bridge and overhead gaps are fine because the path continues through the gap.\n\nCHANGE. When a track's run begins or ends at a junction gap, take the neighbour on the far side from the junction record's end (cell and direction) and shape this cell by both. Where more than two directions meet, the main-line rule already decides which track builds it (docs/plans/railway.md decision 16); the cell must still connect the main line both ways. Keep powered-rail and torch rules unchanged; a corner cell is an unpowered rail.\n\nCHECKS. Unit fixtures: a side track joining a main line from the west and from the east, a junction whose neighbour sits across a diagonal step, a join that is also a bend. A scan test over a recorded spec finds no rail whose shape misses a path neighbour. Then the owner re-reviews the ride at the four cells above. Applies to every railway feature; feature 1 needs a rollback and re-apply (or an owner-approved fix of the four cells) to get the corners.\n"
+    },
+    {
+      "id": 481,
+      "title": "Land-use classes: remove the inert shop awning flag and its validator rule",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "s",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "Since #470 (2026-11-24) shop fronts place no trapdoor awning or wall sign, but config/land-use-classes.json still carries \"awning\": true for cafe, restaurant, fast_food and food, and lib/sources/land_use.py requires the key. Nothing reads it for placement. Remove the per-kind flag, its validation and the rules/feature-builds.md line that calls it inert, so nobody reads the table as 'shops get awnings' or re-enables them. Leave the big-box facade entrance.awning (door cover, #431) alone. Done: flag and validator rule gone, tests green, no build output changes (dry run of one shop spec unchanged)."
     }
   ]
 }
