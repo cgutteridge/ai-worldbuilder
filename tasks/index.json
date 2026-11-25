@@ -1,7 +1,7 @@
 {
   "_comment": "AGENT: always read this file via the worldbuilder-tasks skill before reading or writing any task state. System tracker for ai-worldbuilder (ADR 002). Never add tasks for individual worlds here",
   "doneRef": "tasks/done.json",
-  "nextTaskId": 482,
+  "nextTaskId": 483,
   "tasks": [
     {
       "id": 384,
@@ -113,6 +113,16 @@
       "blockedBy": [],
       "builderTask": false,
       "notes": "Since #470 (2026-11-24) shop fronts place no trapdoor awning or wall sign, but config/land-use-classes.json still carries \"awning\": true for cafe, restaurant, fast_food and food, and lib/sources/land_use.py requires the key. Nothing reads it for placement. Remove the per-kind flag, its validation and the rules/feature-builds.md line that calls it inert, so nobody reads the table as 'shops get awnings' or re-enables them. Leave the big-box facade entrance.awning (door cover, #431) alone. Done: flag and validator rule gone, tests green, no build output changes (dry run of one shop spec unchanged)."
+    },
+    {
+      "id": 482,
+      "title": "Roof lint: check a feature_build dry-run plan, not only recorded live builds",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "m",
+      "blockedBy": [],
+      "builderTask": false,
+      "notes": "scripts/roof_lint.py (ridge jogs, stair shape and facing mismatches, isolated interior steps, gaps where stairs meet) only reads plans recorded by live builds. In the #472 octant-fit work (2026-11-24) workers had to write one-off harnesses to lint dry runs, and reviewers could not re-check the numbers. Add a way to lint the plan from a feature_build dry run (e.g. feature_build --lint or roof_lint --spec PATH) with the same checks and output, so any roof change can be checked before a live build. Generic, no shop-specific code. Done: roof_lint on w149814013 and w122706803 dry runs reproduces the #472 report numbers; tests through Build; documented in rules."
     }
   ]
 }
